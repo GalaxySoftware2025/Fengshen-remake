@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>封神英傑傳・磻溪 重製</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Serif+TC:wght@500;900&family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
+</script>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl"></canvas>
+  <div id="labels"></div>
+
+  <!-- battle HUD -->
+  <div id="hud" class="hidden">
+    <div id="roundbox">
+      <div class="r-num"><span id="r-round">1</span><small>回合</small></div>
+      <div class="r-fire"><div class="r-fire-label">火勢</div><div class="r-fire-bar"><div id="r-fire-fill"></div></div><div id="r-fire-text"></div></div>
+    </div>
+    <div id="order"></div>
+    <div id="card" class="hidden"></div>
+    <div id="hint"></div>
+    <div id="menu" class="hidden"></div>
+    <div id="list" class="hidden"></div>
+    <div id="forecast" class="hidden"></div>
+    <!-- test tools (battle/index.html: #battle=N&test, and the #arena): shown with body.tools, src/testkit.js -->
+    <div id="pg">
+      <button id="pg-add" class="big">＋ 我方</button>
+      <button id="pg-addfoe">＋ 敵人</button>
+      <button id="pg-max">全員 Lv 99</button>
+      <button id="pg-end">結束回合</button>
+      <button id="pg-act" class="on"></button>
+      <button id="pg-reset">重置敵人</button>
+      <button id="pg-heal">全員回復</button>
+    </div>
+    <div id="pg-heroes" class="pg-fly hidden"></div>
+    <div id="pg-foes" class="pg-fly hidden"></div>
+    <div id="pg-pop" class="hidden"></div>
+    <div id="keys">左鍵 選擇 · 右鍵/Esc 取消 · 滾輪 縮放 · Tab 敵方範圍 · Space 跳過動畫</div>
+  </div>
+
+  <div id="banner" class="hidden"><div class="b-ink"></div><div id="banner-text"></div><div id="banner-sub"></div></div>
+  <div id="dialog" class="hidden"><div id="d-name"></div><div id="d-text"></div><div class="d-next">▼</div></div>
+  <div id="toast" class="hidden"></div>
+  <div id="flash"></div>
+  <div id="fps" style="position:absolute;right:12px;top:10px;font:12px monospace;color:#9f9;pointer-events:none"></div>
+
+  <!-- screens -->
+  <div id="title" class="screen">
+    <div class="t-rays"></div>
+    <div class="t-logo">
+      <!-- the logo [design, the user's pick of the mock-ups, 2026-10-13]: an antique handscroll (aged paper, torn edges, a
+           teal silk border with a gold key-fret, rosewood rollers with verdigris bronze caps) after the original's
+           scroll logo; the title in the user's seal-script glyphs (assets/title/logo-glyphs.png, a mask) in cinnabar.
+           The paper unrolls from the roller, the title is brushed on from the left, the seals stamped. -->
+      <svg class="t-scroll" viewBox="0 0 1200 460" aria-label="封神英傑傳">
+        <defs>
+          <linearGradient id="lg-paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e9d6a6"/><stop offset=".5" stop-color="#dcc28a"/><stop offset="1" stop-color="#c4a466"/></linearGradient>
+          <radialGradient id="lg-burn" cx=".5" cy=".5" r=".72"><stop offset=".62" stop-color="#3a1e06" stop-opacity="0"/><stop offset="1" stop-color="#3a1e06" stop-opacity=".55"/></radialGradient>
+          <linearGradient id="lg-light" x1="0" y1="0" x2="1" y2=".3"><stop offset="0" stop-color="#fff0c8" stop-opacity=".35"/><stop offset=".5" stop-color="#fff0c8" stop-opacity="0"/><stop offset="1" stop-color="#2a1404" stop-opacity=".25"/></linearGradient>
+          <linearGradient id="lg-ink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b42214"/><stop offset=".6" stop-color="#8a120c"/><stop offset="1" stop-color="#5a0806"/></linearGradient>
+          <linearGradient id="lg-wood" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#140804"/><stop offset=".35" stop-color="#4a2410"/><stop offset=".5" stop-color="#7a4422"/><stop offset=".62" stop-color="#3a1a0a"/><stop offset="1" stop-color="#0e0502"/></linearGradient>
+          <linearGradient id="lg-bronze" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2a3a2a"/><stop offset=".3" stop-color="#6a8a6a"/><stop offset=".45" stop-color="#c8a860"/><stop offset=".6" stop-color="#7a6a3a"/><stop offset="1" stop-color="#1a2418"/></linearGradient>
+          <pattern id="pt-fret" width="24" height="24" patternUnits="userSpaceOnUse"><rect width="24" height="24" fill="#1a2a2c"/><path d="M3 21V3h18v14H7V7h10v6h-6" fill="none" stroke="#b8924a" stroke-width="1.6" opacity=".85"/></pattern>
+          <filter id="ft-age" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".012" numOctaves="4" seed="3"/><feColorMatrix values="0 0 0 0 .35  0 0 0 0 .2  0 0 0 0 .06  0 0 0 -2.4 1.25"/><feComposite in2="SourceGraphic" operator="in"/></filter>
+          <filter id="ft-fibre" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".8 .03" numOctaves="3" seed="4"/><feColorMatrix values="0 0 0 0 .3  0 0 0 0 .2  0 0 0 0 .08  0 0 0 -1.4 .95"/><feComposite in2="SourceGraphic" operator="in"/></filter>
+          <filter id="ft-torn" x="-2%" y="-5%" width="104%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="3" seed="11"/><feDisplacementMap in="SourceGraphic" scale="9"/></filter>
+          <filter id="ft-rough"><feTurbulence type="fractalNoise" baseFrequency=".12" numOctaves="2" seed="9"/><feDisplacementMap in="SourceGraphic" scale="4"/></filter>
+          <path id="pp-paper" d="M150 92C360 70 560 108 760 88S1010 74 1052 92L1052 368C880 386 690 350 500 368S300 386 150 366Z"/>
+          <clipPath id="cp-paper"><use href="#pp-paper"/></clipPath>
+          <clipPath id="cp-open"><rect class="t-open" x="130" y="0" width="940" height="460"/></clipPath>
+          <mask id="mk-glyph" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="460"><image href="assets/title/logo-glyphs.png" x="289.5" y="143" width="621" height="179" preserveAspectRatio="none"/></mask>
+          <linearGradient id="lg-wipe" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".83" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
+          <mask id="mk-brush" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="460"><rect class="t-brush" x="-260" y="0" width="1700" height="460" fill="url(#lg-wipe)"/></mask>
+        </defs>
+        <g clip-path="url(#cp-open)"><g filter="url(#ft-torn)"><g clip-path="url(#cp-paper)">
+          <rect x="140" y="60" width="930" height="340" fill="url(#lg-paper)"/>
+          <rect x="140" y="60" width="930" height="340" fill="#fff" filter="url(#ft-fibre)" opacity=".55"/>
+          <rect x="140" y="60" width="930" height="340" fill="#fff" filter="url(#ft-age)" opacity=".75"/>
+          <path d="M150 92C360 70 560 108 760 88S1010 74 1052 92" fill="none" stroke="url(#pt-fret)" stroke-width="36"/>
+          <path d="M150 366C300 386 400 350 500 368S880 386 1052 368" fill="none" stroke="url(#pt-fret)" stroke-width="36"/>
+          <path d="M150 112C360 90 560 128 760 108S1010 94 1052 112M150 346C300 366 400 330 500 348S880 366 1052 348" fill="none" stroke="#a8823e" stroke-width="1.4" opacity=".8"/>
+          <rect x="140" y="60" width="930" height="340" fill="url(#lg-burn)"/>
+          <rect x="140" y="60" width="930" height="340" fill="url(#lg-light)"/>
+        </g></g>
+          <g mask="url(#mk-brush)"><rect x="260" y="120" width="680" height="225" fill="url(#lg-ink)" mask="url(#mk-glyph)" opacity=".95"/></g>
+          <g class="t-seal" transform="translate(214 168) rotate(2)"><g filter="url(#ft-rough)" opacity=".85"><ellipse rx="14" ry="28" fill="#a8241a"/><text y="6" text-anchor="middle" font-size="14" fill="#f0dcc0">封</text></g></g>
+          <g class="t-seal t-seal2" transform="translate(990 306) rotate(-3)"><g filter="url(#ft-rough)" opacity=".9"><rect x="-19" y="-27" width="38" height="54" rx="2" fill="#a8241a"/><rect x="-15" y="-23" width="30" height="46" fill="none" stroke="#f0dcc0" stroke-width="1.5"/>
+            <text y="-3" text-anchor="middle" font-size="16" fill="#f0dcc0">重</text><text y="16" text-anchor="middle" font-size="16" fill="#f0dcc0">製</text></g></g>
+        </g>
+        <g class="t-rod"><rect x="1042" y="72" width="20" height="316" rx="6" fill="url(#lg-wood)"/><rect x="1036" y="56" width="32" height="18" rx="5" fill="url(#lg-bronze)"/><rect x="1036" y="386" width="32" height="18" rx="5" fill="url(#lg-bronze)"/></g>
+        <g class="t-roller"><rect x="110" y="74" width="54" height="312" rx="10" fill="url(#lg-wood)"/><path d="M110 112h54M110 348h54" stroke="#000" stroke-opacity=".35" stroke-width="2"/>
+          <rect x="104" y="60" width="66" height="18" rx="5" fill="url(#lg-bronze)"/><rect x="104" y="382" width="66" height="18" rx="5" fill="url(#lg-bronze)"/>
+          <rect x="122" y="40" width="30" height="22" rx="6" fill="url(#lg-bronze)"/><rect x="122" y="398" width="30" height="22" rx="6" fill="url(#lg-bronze)"/>
+          <circle cx="137" cy="36" r="9" fill="#3a7a5a"/><circle cx="137" cy="424" r="9" fill="#3a7a5a"/></g>
+      </svg>
+      <div class="t-sub"></div>
+    </div>
+    <div class="t-press">點擊或按 Enter 開始</div>
+    <div id="t-menu" class="hidden"><button id="t-new">新的開始</button><button id="t-cont">繼續旅程</button></div>
+    <div id="t-load" class="panel hidden"></div>
+    <div class="t-foot">次世代重製 · 規則與角色取自原作 ROM</div>
+  </div>
+  <div id="brief" class="screen hidden">
+    <div class="scroll">
+      <h2>磻溪</h2>
+      <p class="lore">紂王遣妖獸焚林，大火自東而來。姜子牙被縛於磻溪草廬之前，林雲一行必須在烈焰吞沒之前趕到。</p>
+      <div class="cond"><div><b>勝利條件</b>任一我方角色抵達姜子牙身旁</div><div><b>敗北條件</b>姜子牙葬身火海 · 林雲陣亡</div></div>
+      <div class="press">點擊繼續</div>
+    </div>
+  </div>
+  <div id="camp" class="screen hidden">
+    <div class="c-head"><b id="c-place"></b></div>
+    <div id="c-menu"></div>
+    <div id="c-panel" class="panel"></div>
+  </div>
+  <div id="end" class="screen hidden"><div id="end-title"></div><div id="end-sub"></div><div class="press">點擊重新開始</div></div>
+  <div id="card-screen" class="screen hidden"></div>
+  <div id="fade"></div>
+  <div id="scene-at" class="hidden"></div>
+  <div id="loading" class="screen"><div class="l-text">載入中</div><div class="l-bar"><div id="l-fill"></div></div></div>
+</div>
+<script src="data/common.js"></script>
+<script src="data/parties.js"></script>
+<script src="data/spellsound.js"></script>
+<script src="anim.js"></script>
+<script src="data/actions.js"></script>
+<script src="data/says.js"></script>
+<script src="data/ui.js"></script>
+<script type="module">   // the game, or (the public build's first visit: no data made from the player's ROM yet) the ROM picker
+if (window.COMMON) import('./src/main.js'); else import('./src/loader.js').then(L => L.show());
+</script>
+</body>
+</html>

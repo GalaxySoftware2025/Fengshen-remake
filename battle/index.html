@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>戰役選擇・封神英傑傳重製</title>
+<!-- The test page: pick any of the 32 battles and open it on its own (index.html#battle=N: its lead-in scene, then the
+     preparation screen with the battle's default party and 10 of every item in the bag, then deploy; &test: the test toolbar,
+     src/testkit.js: add heroes and enemies, Lv 99, end turn, enemies on/off, reset, heal; &free: heroes can be put on
+     any empty cell on their turn), or the 演武場 arena (index.html#arena). The campaign never sets these. Local only:
+     the names and conditions come from the ROM-derived data/battles/NN.js files. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Serif+TC:wght@500;900&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0f0c09; --panel: #1c1611; --line: #4a3a26; --ink: #efe3c8; --dim: #a8987c; --gold: #e2bd6a; --red: #b8322a; --ok: #7fbf7a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'LXGW WenKai TC', 'Noto Serif TC', serif; }
+  header { padding: 28px 24px 8px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 24px; }
+  h1 { margin: 0; font: 900 30px 'Noto Serif TC', serif; letter-spacing: 0.25em; color: var(--gold); }
+  .opts { display: flex; gap: 18px; color: var(--dim); font-size: 15px; }
+  .opts label { cursor: pointer; } .opts input { accent-color: var(--gold); }
+  .opts a { color: var(--dim); }
+  main { padding: 8px 24px 40px; }
+  h2 { font: 500 17px 'Noto Serif TC', serif; color: var(--dim); letter-spacing: 0.3em; margin: 22px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  a.b { display: block; text-decoration: none; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; transition: border-color .15s, background .15s; }
+  a.b:hover, a.b:focus { border-color: var(--gold); background: #261d15; outline: none; }
+  .t { display: flex; align-items: baseline; gap: 8px; }
+  .n { color: var(--gold); font-weight: 700; min-width: 1.8em; }
+  .name { font-size: 19px; font-weight: 700; }
+  .st { margin-left: auto; font-size: 12px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+  .st.done { color: var(--ok); border-color: #3e6a3a; }
+  .c { margin-top: 6px; font-size: 13px; color: var(--dim); line-height: 1.6; }
+  .c b { color: var(--ink); font-weight: 400; }
+  @media (max-width: 520px) { header, main { padding-left: 16px; padding-right: 16px; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>戰役選擇</h1>
+  <div class="opts">
+    <label><input type="checkbox" id="auto"> 自動對戰（AI 操作我方）</label>
+    <label><input type="checkbox" id="test"> 測試工具（加人・Lv 99・結束回合…）</label>
+    <label><input type="checkbox" id="qa"> QA 探針</label>
+    <label><input type="checkbox" id="free"> 自由擺放（我方回合可點任意空格）</label>
+    <a href="../">回到正篇</a>
+  </div>
+</header>
+<main id="list"></main>
+<script type="module">
+  const CN = ['', '一', '二', '三', '四', '五', '六', '七'];
+  const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  const { MODULES } = await import('../src/battles/index.js');
+  const nums = Array.from({ length: 32 }, (_, i) => i + 1);
+  await Promise.all(nums.map(n => load('../data/battles/' + String(n).padStart(2, '0') + '.js').catch(() => null)));
+  const B = window.BATTLES || {}, list = document.getElementById('list');
+  const remember = (id, on) => { try { localStorage.setItem('pick-' + id, on ? '1' : ''); } catch (e) {} };
+  for (const id of ['auto', 'test', 'qa', 'free']) { const el = document.getElementById(id); el.checked = id === 'free' || id === 'test'; try { const v = localStorage.getItem('pick-' + id); if (v !== null) el.checked = !!v; } catch (e) {} el.onchange = () => { remember(id, el.checked); draw(); }; }   // test tools and free placement on by default: this page is for testing
+  function draw() {
+    list.innerHTML = '';
+    const flags = ['auto', 'test', 'qa', 'free'].filter(id => document.getElementById(id).checked).map(f => '&' + f).join('');
+    let ch = 0, grid = null;
+    // 演武場: the open arena on 磻溪's data, no win or loss (its own toolbar)
+    const h0 = document.createElement('h2'); h0.textContent = '演武場'; list.appendChild(h0);
+    const g0 = document.createElement('div'); g0.className = 'grid'; list.appendChild(g0);
+    const ar = document.createElement('a'); ar.className = 'b'; ar.href = '../index.html#arena' + (document.getElementById('qa').checked ? '&qa' : '');
+    ar.innerHTML = `<div class="t"><span class="n">∞</span><span class="name">演武場</span><span class="st">練習</span></div>
+      <div class="c">11×8 空地，任意加入我方與敵人、升級、試法術；無勝敗</div>`;
+    g0.appendChild(ar);
+    for (const n of nums) {
+      const b = B[n]; if (!b) continue;
+      if (b.chapter !== ch) { ch = b.chapter; const h = document.createElement('h2'); h.textContent = '第' + (CN[ch] || ch) + '章'; list.appendChild(h); grid = document.createElement('div'); grid.className = 'grid'; list.appendChild(grid); }
+      const a = document.createElement('a'); a.className = 'b'; a.href = '../index.html#battle=' + n + flags;
+      const ported = !!MODULES[n], foes = b.enemies.length;
+      a.innerHTML = `<div class="t"><span class="n">${n}</span><span class="name">${b.name}</span><span class="st ${ported ? 'done' : ''}">${ported ? '已移植' : '通用規則'}</span></div>
+        <div class="c"><b>勝利</b> ${b.win.join('・')}　<b>敗北</b> ${b.lose.join('・')}<br><b>出陣</b> ${b.party.deployMax} 人　<b>敵軍</b> ${foes}　<b>地圖</b> ${b.mapW}×${b.mapH}</div>`;
+      grid.appendChild(a);
+    }
+  }
+  draw();
+</script>
+</body>
+</html>
