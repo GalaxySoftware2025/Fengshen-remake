@@ -11,7 +11,11 @@ const PVS = `attribute vec4 aCol; attribute float aSize; attribute float aShape;
 const PFS = `varying vec4 vCol; varying float vShape;
   void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c);
     vec3 rgb = vCol.rgb; float a;
-    if (vShape > 1.5) {   // a leaf: a pointed oval turned by the shape's fraction, lit along one side
+    if (vShape > 2.5) {   // a grass blade: a thin curved sliver turned by the shape's fraction
+      float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c; q.x -= 0.12 * (q.y + 0.46) * (q.y + 0.46);   // (bent)
+      float w = 0.017; a = (1.0 - smoothstep(w - 0.01, w + 0.004, abs(q.x))) * (1.0 - smoothstep(0.42, 0.46, abs(q.y)));   // as thick at the tip as at the root (the user), rounded off at both ends
+      rgb *= 0.8 + 0.45 * smoothstep(0.46, -0.3, q.y);
+    } else if (vShape > 1.5) {   // a leaf: a pointed oval turned by the shape's fraction, lit along one side
       float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
       float w = 0.17 * (1.0 - pow(abs(q.y) / 0.46, 2.0)); a = (1.0 - smoothstep(w - 0.03, w + 0.01, abs(q.x))) * step(abs(q.y), 0.46);
       rgb *= 0.78 + 0.5 * smoothstep(-0.15, 0.15, q.x) - 0.25 * (1.0 - smoothstep(0.0, 0.02, abs(q.x)));
@@ -48,7 +52,7 @@ class Particles {
       this.pos[j * 3] = p.x; this.pos[j * 3 + 1] = p.y; this.pos[j * 3 + 2] = p.z;
       const flick = p.flicker ? 0.6 + 0.4 * Math.sin(p.age * 40 + p.ph) : 1;
       this.col[j * 4] = p.r * flick; this.col[j * 4 + 1] = p.gg * flick; this.col[j * 4 + 2] = p.b * flick; this.col[j * 4 + 3] = p.a * fade;
-      this.size[j] = p.size1 == null ? p.size : p.size + (p.size1 - p.size) * k; this.shape[j] = p.spin ? 2 + (((p.ph || 0) + p.age * p.spin) % 1 + 1) % 1 * 0.999 : p.shape;   // (spin: a leaf turning)
+      this.size[j] = p.size1 == null ? p.size : p.size + (p.size1 - p.size) * k; this.shape[j] = p.spin ? Math.floor(p.shape || 2) + (((p.ph || 0) + p.age * p.spin) % 1 + 1) % 1 * 0.999 : p.shape;   // (spin: a leaf turning)
       L[w - 1] = p;
     }
     L.length = w;
@@ -386,12 +390,8 @@ export class VFX {
     this.fire.update(dt, t);
   }
   ambient(dt, center) {
-    // drifting dust motes in the sunlight and bamboo leaves falling on the westward wind
+    // drifting dust motes in the sunlight (no falling leaves: a battle's set adds those when it wants them, the user's call)
     if (Math.random() < dt * 9) this.spark(center.x + rand(-9, 9), rand(0.3, 3), center.z + rand(-6, 6), { vx: rand(-0.15, 0.05), vy: rand(-0.03, 0.05), vz: rand(-0.05, 0.05), life: rand(3, 6), size: rand(0.03, 0.05), r: 1, gg: 0.92, b: 0.7, a: 0.5, shape: 0, fadeIn: 1, wob: 0.1, ph: rand(0, 6) });
-    if (Math.random() < dt * 5) {
-      const c = [[0.5, 0.8, 0.28], [0.36, 0.62, 0.2], [0.65, 0.85, 0.4]][(Math.random() * 3) | 0];
-      this.smoke(center.x + rand(-10, 12), rand(3, 5), center.z + rand(-7, 6), { vx: rand(-0.9, -0.4), vy: rand(-0.55, -0.35), vz: rand(-0.1, 0.1), life: 8, size: 0.12, r: c[0], gg: c[1], b: c[2], a: 1, shape: 2, spin: rand(-0.7, 0.7), wob: 0.6, ph: rand(0, 6), floor: 0.05 });   // leaf-shaped (squares read as pixels)
-    }
   }
 }
 

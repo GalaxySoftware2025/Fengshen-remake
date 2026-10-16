@@ -1,5 +1,7 @@
-// Every item's icon, as the battle's 物 header shows it (a port of tools/rom/icons.py, without its battle snapshot):
+// Every item's and spell's icon, as the battle's 物 / 法 header shows it (a port of tools/rom/icons.py, without its battle snapshot):
 //   assets/items/NN.png   32x32 RGBA, colour 0 clear
+//   assets/spells/NN.png  the same for each spell: the ring-icon table goes on past the 36 items with the 58 spells
+//                         (spell n is entry 36 + n: 御劍術's curved sword, 擎天劍's three blades... as the 法 ring shows them)
 // The header [0xE48E] unpacks the item's 16x16 ring icon (0x1B298C + 128 * item) to a pixel buffer (0xC9D8), scales it to
 // 32x32 with the game's own scaler (0xCBE8, mode 1; the zoom's last step, ff0e30 = 13), packs it back to tiles (0xCA40)
 // and sends them to VRAM tile 0x5E0, drawn with palette line 3 (the unit palette, 0x38436). Here those routines run
@@ -7,7 +9,7 @@
 import { MD } from './md.js';
 import { image, cramRGB } from './png.js';
 
-const ICONS = 0x1b298c, COUNT = 36;
+const ICONS = 0x1b298c, COUNT = 36, SPELLS = 58;
 export function icon(R, rom, item) {
   const m = new MD(rom); m.fresh = false;
   const L4 = (a, v) => { for (let k = 0; k < 4; k++) m.ram[(a + k) & 0xffff] = (v >>> (24 - 8 * k)) & 255; };
@@ -28,4 +30,5 @@ export function icon(R, rom, item) {
 }
 export function run(R, rom, files) {
   for (let k = 0; k < COUNT; k++) files['assets/items/' + String(k).padStart(2, '0') + '.png'] = icon(R, rom, k);
+  for (let k = 0; k < SPELLS; k++) files['assets/spells/' + String(k).padStart(2, '0') + '.png'] = icon(R, rom, COUNT + k);
 }

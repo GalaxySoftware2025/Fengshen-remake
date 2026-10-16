@@ -128,7 +128,7 @@ function cell(E, x, y, block) {
 }
 
 export default {
-  build, cell, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'leaves',
+  build, cell, ground: (x, z) => land ? land.at(x, z) : 0,
   props: (() => { const out = []; for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (houseCell(x, y) || groveCell(x, y)) out.push([x, y]); return out.concat([[12, 21]]); })(),   // the halls' and groves' cells, and the cliff foot cleared for the cast (tools/qa/sets.js)
   slopes: STAIRS.flatMap(({ r: [x0, z0, x1, z1] }) => { const out = []; for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) out.push([x, y]); return out; }),
   // a clear day on the hillside: a high sun from the south-west, a soft sky fill

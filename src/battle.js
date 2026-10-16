@@ -8,7 +8,6 @@ import { VFX } from './vfx.js';
 import { playSpell, playItem, arrowMesh, scripted } from './spells.js';
 import { spriteKey } from './sprites.js';
 import { UI, spellDesc, itemDesc } from './ui.js';
-import { spellIcon } from './spellicons.js';
 import * as R from './rules.js';
 import * as E from './battle.js';
 import { sfx, jingle } from './audio.js';
@@ -451,15 +450,16 @@ export async function killAnim(u) {
   const c = a.chest();
   // a yellow explosion [the user's call; was dark miasma]: a fireball tinted gold, white-hot to gold sparks, a gold ring,
   // the ground lit under it, grey smoke after (quick: the burst about half as long, the user's earlier call)
-  vfx.light(c, [1, 0.85, 0.35], 14, 0.5, 6);
-  vfx.decal(P, [1, 0.7, 0.2], 0.7, 0.8, { intensity: 0.5 });
-  vfx.ring(P, [1, 0.88, 0.4], 1.3, 0.3, { intensity: 0.7 });
-  vfx.explode(c, 0.6, { n: 18, tint: [1.45, 1.6, 0.45], smokeTint: [0.26, 0.23, 0.2] });
-  vfx.burst(c, { n: 6, speed: 1.4, col: [1, 0.88, 0.35], size: 0.5, life: 0.35, g: 0, shape: 0, up: 0.1 });   // the flash at its heart
-  vfx.burst(c, { n: 34, speed: 4, cols: [[1, 1, 0.8], [1, 0.9, 0.35], [1, 0.7, 0.15]], size: 0.05, life: 0.6, g: 5, flicker: 1 });
+  const X = 1.25;   // 25% bigger than first made [the user's call]
+  vfx.light(c, [1, 0.85, 0.35], 14, 0.5, 6 * X);
+  vfx.decal(P, [1, 0.7, 0.2], 0.7 * X, 0.8, { intensity: 0.5 });
+  vfx.ring(P, [1, 0.88, 0.4], 1.3 * X, 0.3, { intensity: 0.7 });
+  vfx.explode(c, 0.6 * X, { n: 22, tint: [1.45, 1.6, 0.45], smokeTint: [0.26, 0.23, 0.2] });
+  vfx.burst(c, { n: 6, speed: 1.4 * X, col: [1, 0.88, 0.35], size: 0.5 * X, life: 0.35, g: 0, shape: 0, up: 0.1 });   // the flash at its heart
+  vfx.burst(c, { n: 40, speed: 4 * X, cols: [[1, 1, 0.8], [1, 0.9, 0.35], [1, 0.7, 0.15]], size: 0.05 * X, life: 0.6, g: 5, flicker: 1 });
   await anim(0.55, k => {
     a.dissolve = k; a.flash = 0.6 * (1 - k);
-    for (let i = 0; i < 2; i++) vfx.spark(c.x + rand(-0.35, 0.35), c.y + rand(-0.45, 0.5), c.z + rand(-0.3, 0.3), { vy: rand(1.4, 3), vx: rand(-0.4, 0.4), life: rand(0.35, 0.7), size: rand(0.03, 0.06), r: 1, gg: rand(0.75, 0.95), b: rand(0.2, 0.45), shape: 1, flicker: 1, ph: rand(0, 9) });
+    for (let i = 0; i < 2; i++) vfx.spark(c.x + rand(-0.35, 0.35) * X, c.y + rand(-0.45, 0.5) * X, c.z + rand(-0.3, 0.3) * X, { vy: rand(1.4, 3) * X, vx: rand(-0.4, 0.4), life: rand(0.35, 0.7), size: rand(0.03, 0.06), r: 1, gg: rand(0.75, 0.95), b: rand(0.2, 0.45), shape: 1, flicker: 1, ph: rand(0, 9) });
   });
   a.dissolve = 1; a.act = null; a.flash = 0;
 }
@@ -968,7 +968,7 @@ export async function commandMenu(u) {
       return true;
     }
     if (choice === 'magic') {
-      const rows = u.spells.map(i => { const sp = D.spells[i]; return { icon: spellIcon(sp.id, sp.area), label: sp.name, right: '法力 ' + sp.mp, ok: sp.mp <= u.mp, desc: spellDesc(sp) }; });
+      const rows = u.spells.map(i => { const sp = D.spells[i]; return { icon: 'assets/spells/hd/' + String(sp.id).padStart(2, '0') + '.png', label: sp.name, right: '法力消耗 ' + sp.mp + ' 點', ok: sp.mp <= u.mp, desc: spellDesc(sp) }; });
       const k = await pickRing(a, rows); if (k == null) continue;
       const sp = D.spells[u.spells[k]];
       if (sp.mp > u.mp) { ui.toast('法力不足', 800); continue; }
@@ -992,9 +992,9 @@ export async function commandMenu(u) {
 export function menuPos() { if (!menuAnchor) return [0, 0]; const p = project(menuAnchor.chest()); return [p.x, p.y]; }
 // the item / spell ring round the unit (ui.ring): hover or the arrow keys point, a click or A picks, B goes back
 export async function pickRing(a, rows) {
-  let sel = Math.max(0, rows.findIndex(r => r.ok));
+  let sel = Math.max(0, rows.findIndex(r => r.ok)), top = sel;   // top: turned to the top by the keys; the mouse points without turning it
   menuAnchor = a; ui.hint('');
-  const draw = () => ui.ring(rows, sel, ...menuPos(), i => push({ k: 'RING', i }), i => { if (sel !== i) { sel = i; draw(); } });
+  const draw = () => ui.ring(rows, sel, top, ...menuPos(), i => push({ k: 'RING', i }), i => { if (sel !== i) { sel = i; draw(); } });
   draw();
   const done = k => { ui.ring(null); menuAnchor = null; return k; };
   for (;;) {
@@ -1002,7 +1002,7 @@ export async function pickRing(a, rows) {
     if (ev.k === 'B') return done(null);
     if (ev.k === 'RING') return done(ev.i);
     if (ev.k === 'A') return done(sel);
-    if (ev.k === 'DIR') { const d = { ArrowRight: 1, d: 1, ArrowDown: 1, s: 1, ArrowLeft: -1, a: -1, ArrowUp: -1, w: -1 }[ev.raw]; if (d) { sel = (sel + d + rows.length) % rows.length; draw(); } }
+    if (ev.k === 'DIR') { const d = { ArrowRight: 1, d: 1, ArrowDown: 1, s: 1, ArrowLeft: -1, a: -1, ArrowUp: -1, w: -1 }[ev.raw]; if (d) { sel = top = (sel + d + rows.length) % rows.length; draw(); } }
   }
 }
 export async function pickTarget(u, cells, range, area, color, prefer, attack) {

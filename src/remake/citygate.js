@@ -238,7 +238,7 @@ function ground(x, z) {
 // cells a model blocks (tools/qa/sets.js): each tree's 2 x 2 cells round its foot, the rocks
 const TREE_CELLS = TREES.flatMap(([x, z]) => { const cx = Math.round(x), cz = Math.round(z); return [[cx - 1, cz - 1], [cx, cz - 1], [cx - 1, cz], [cx, cz]]; });
 export default {
-  build, openChest, ground, particles: 'leaves', slopes: STAIR_CELLS,
+  build, openChest, ground, slopes: STAIR_CELLS,
   props: TREE_CELLS.concat(ROCKS.map(([x, z]) => [Math.floor(x), Math.floor(z)]), CHESTS),
   // a clear night: moonlight from the north-west, the gate's torches warm
   mood: { bg: 0x0c1428, voidCol: false, fog: 0x101a34, fogD: 0.014, sky: 0x9ab4e8, under: 0x2a2434, hemi: 0.95,

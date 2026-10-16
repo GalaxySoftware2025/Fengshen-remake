@@ -127,7 +127,7 @@ function found(x, y) {
 
 export default {
   build, openChest, viewShift: 2,   // scene 2's cast stands at the foot of the original's screen (its camera against the map's bottom edge)
-  ground: (x, z) => land ? Math.max(land.at(x, z), (z > 4 && z < 5 && x > BRIDGE.x0) ? BRIDGE.y + 0.07 : -9) : 0, particles: 'leaves',
+  ground: (x, z) => land ? Math.max(land.at(x, z), (z > 4 && z < 5 && x > BRIDGE.x0) ? BRIDGE.y + 0.07 : -9) : 0,
   // late in the day under a low overcast sky, for scene 2 and battle 2 alike: a low pale sun, a cool grey fill, haze in
   // the gorge; darker by exposure and grade, the lights kept up (the move squares read the lit ground, battle.js
   // measureGround, before tone mapping: sand stays sand there)

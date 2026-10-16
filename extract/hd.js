@@ -1,6 +1,6 @@
 // The 4x HD art (a port of tools/hd/upscale.js): xBR 4x of the original pixel art, a sheet of 32 px frames scaled frame
 // by frame (frames never bleed into each other), transparent edges first filled with their opaque neighbours' colours.
-//   assets/units/hd/<gfx>.png, assets/units/act/hd/*.png, assets/items/hd/*.png, assets/fx/hd/*.png
+//   assets/units/hd/<gfx>.png, assets/units/act/hd/*.png, assets/items/hd/*.png, assets/spells/hd/*.png, assets/fx/hd/*.png
 // A sheet whose size is not a multiple of 32 is cut as upscale.js cut it (its last frames read past the row's end).
 import { xbr4x } from './vendor/xbr.js';
 import { image } from './png.js';
@@ -41,7 +41,7 @@ export function upscale(img, tw = 32, th = 32, clampEdges = false) {
   }
   return out;
 }
-const HD = [/^assets\/units\/[0-9a-f]{6}\.png$/, /^assets\/units\/act\/[^/]+\.png$/, /^assets\/items\/[^/]+\.png$/, /^assets\/fx\/(summon_\d+|guanyin|skull)\.png$/];
+const HD = [/^assets\/units\/[0-9a-f]{6}\.png$/, /^assets\/units\/act\/[^/]+\.png$/, /^assets\/items\/[^/]+\.png$/, /^assets\/spells\/[^/]+\.png$/, /^assets\/fx\/(summon_\d+|guanyin|skull)\.png$/];
 // every sprite sheet among files gets its HD sheet beside it, in hd/
 export function run(files) {
   for (const p of Object.keys(files)) if (HD.some(r => r.test(p)) && typeof files[p] === 'object' && files[p].channels === 4) {

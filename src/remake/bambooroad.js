@@ -100,7 +100,7 @@ async function build(E, FX) {
 }
 
 export default {
-  build, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'leaves',
+  build, ground: (x, z) => land ? land.at(x, z) : 0,
   // a green, quiet afternoon under the canes
   mood: { bg: 0xc8d8c0, voidCol: false, fog: 0xb8ccb0, fogD: 0.014, sky: 0xd0e8d8, under: 0x2a4a20, hemi: 1.0,
     sun: 0xfff0d0, sunI: 2.8, sunDir: [-0.4, 0.8, 0.4], sat: 1.05, exposure: 1.02, bloom: 0.3, aoR: 0.8,

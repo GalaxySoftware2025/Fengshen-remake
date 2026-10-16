@@ -82,7 +82,7 @@ async function build(E, FX) {
 }
 
 export default {
-  build, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'leaves',
+  build, ground: (x, z) => land ? land.at(x, z) : 0,
   // a clear afternoon by the sea: a warm sun from the west
   mood: { bg: 0xd0d8c8, voidCol: false, fog: 0xc8d4c0, fogD: 0.01, sky: 0xd8e8ff, under: 0x2a4a20, hemi: 1.0,
     sun: 0xffe8c8, sunI: 3.0, sunDir: [-0.6, 0.7, 0.35], sat: 1.05, exposure: 1.0, bloom: 0.3, aoR: 0.8,

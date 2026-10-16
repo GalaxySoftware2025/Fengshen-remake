@@ -196,7 +196,9 @@ export function setupBattle(chosen) {
   if (D.rooms) { const r = D.rooms[0]; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; MAP_W = r.w; MAP_H = r.h; }   // (a battle in rooms starts in the first)
   G.units = []; G.round = 0; G.terrain = D.terrain.map(r => r.slice()); G.over = null; G.triggerFired = false;
   G.chests = (D.chests || []).map(c => ({ x: c.x, y: c.y, item: c.item, hidden: !!c.hidden, open: false })); G.found = [];
-  chosen.forEach((p, i) => { const u = makeUnit(p, 'player', { slot: i }); [u.x, u.y] = D.deploy[i]; G.units.push(u); });   // slots 0.. in deploy order, as the ROM's
+  const at = p => { const k = (D.party || []).findIndex(q => q.cid === p.cid); return k < 0 ? 99 : k; };
+  [...chosen].sort((a, b) => at(a) - at(b))   // in roster order, whoever was picked first or forced (battle 8: 黃飛虎 on the north bank, (15, 13), where scene 15 leaves him; 楊戩 at (7, 21): the user's report)
+    .forEach((p, i) => { const u = makeUnit(p, 'player', { slot: i }); [u.x, u.y] = D.deploy[i]; G.units.push(u); });   // slots 0.. in deploy order, as the ROM's
   for (const e of D.enemies) spawn(e);
   if (D.rooms) { G.room = 0; G.roomChests = {}; }
   if (H.setup) H.setup(G);

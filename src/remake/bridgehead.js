@@ -155,7 +155,7 @@ function native(E, ev, clock) {
 
 export default {
   build, native, viewShift: 1.5,
-  ground: (x, z) => land ? (z > 7 && z < 8 && x < 3 ? BR.y + 0.07 : land.at(x, z)) : 0, particles: 'leaves',
+  ground: (x, z) => land ? (z > 7 && z < 8 && x < 3 ? BR.y + 0.07 : land.at(x, z)) : 0,
   // the canyon's clear morning (canyon.js)
   mood: { bg: 0xd8d4c4, voidCol: false, fog: 0xd8d0bc, fogD: 0.012, sky: 0xd8e4ff, under: 0x6a4a28, hemi: 1.0,
     sun: 0xffe6b8, sunI: 3.1, sunDir: [-0.5, 0.75, 0.4], sat: 1.05, exposure: 1.0, bloom: 0.32, aoR: 0.8,

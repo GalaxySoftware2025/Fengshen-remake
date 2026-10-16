@@ -125,7 +125,7 @@ function found(x, y) {
 }
 
 export default {
-  build, cell, openChest, standIn, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'leaves',
+  build, cell, openChest, standIn, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'bamboo',   // bamboo leaves on the wind, over battle 1 and scene 0 alike (one place) [the user's call]
   props: [[23, 4], [24, 4]],   // cells blocked by a model, not by the land (tools/qa/sets.js): the cart
   mood: { bg: 0xd8d4c4, voidCol: false, fog: 0xd8d0bc, fogD: 0.012, sky: 0xd8e4ff, under: 0x6a4a28, hemi: 1.05,
     sun: 0xffe2b0, sunI: 3.1, sunDir: [-0.5, 0.8, 0.35], sat: 1.05, exposure: 1.02, bloom: 0.35, aoR: 0.8,

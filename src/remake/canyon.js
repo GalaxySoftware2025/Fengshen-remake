@@ -181,7 +181,7 @@ function found(x, y) {
 export default {
   build, openChest,
   slopes: STAIRS.flatMap(({ r: [x0, z0, x1, z1] }) => { const out = []; for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) out.push([x, y]); return out; }),   // the stairs' cells step down (tools/qa/sets.js lets them)
-  ground: (x, z) => land ? (z > 7 && z < 8 && x > BRIDGE.x0 ? BRIDGE.y + 0.07 : land.at(x, z)) : 0, particles: 'leaves',
+  ground: (x, z) => land ? (z > 7 && z < 8 && x > BRIDGE.x0 ? BRIDGE.y + 0.07 : land.at(x, z)) : 0,
   // a clear morning: a high warm sun, a cool sky fill, light haze down the canyon
   mood: { bg: 0xd8d4c4, voidCol: false, fog: 0xd8d0bc, fogD: 0.012, sky: 0xd8e4ff, under: 0x6a4a28, hemi: 1.0,
     sun: 0xffe6b8, sunI: 3.1, sunDir: [-0.5, 0.75, 0.4], sat: 1.05, exposure: 1.0, bloom: 0.32, aoR: 0.8,

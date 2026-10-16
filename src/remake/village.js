@@ -102,7 +102,7 @@ function cell(E, x, y, block) {
 }
 
 export default {
-  build, cell, standIn, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'leaves',
+  build, cell, standIn, ground: (x, z) => land ? land.at(x, z) : 0,
   mood: { bg: 0xcfd8d0, voidCol: false, fog: 0xcfd8d0, fogD: 0.012, sky: 0xcfe2ff, under: 0x5a4022, hemi: 1.1,
     sun: 0xffe0b0, sunI: 3.0, sunDir: [-0.55, 0.78, 0.32], sat: 1.06, exposure: 1.02, bloom: 0.4, shafts: true, aoR: 0.7,
     env: { top: 0xcfe2ff, mid: 0xb8b0a0, low: 0x6a5a40, lights: [[-6, 7, 3, 0xfff0d0, 4]] } },

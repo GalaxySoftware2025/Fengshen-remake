@@ -91,6 +91,7 @@ async function showMap(E, S, key, court) {
 // three compiles a material and uploads its textures when the object first comes into view: on a pan that is a stall
 // mid-motion (scene 0, f313: 4 programs and 9 textures, ~65 ms). So the first frame of a map, still dark, is drawn
 // once with nothing culled (the shadow pass too), with the world's lights and environment as they will be.
+const WINGED = '061a72';   // 雷震子's sheet
 function warm(E) {
   const W = E.world, off = [];
   W.scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; off.push(o); } });
@@ -209,6 +210,7 @@ export async function play(E, tag, part, hooks) {
       }
       const wx = x / 32 + 0.5, wz = y / 32 + 0.5, P = E.tileCenter(wx - 0.5, wz - 0.5);
       act.pos.set(wx, P.y, wz); act.off.set(0, 0);
+      if (p[3] === WINGED && !act.hover) act.hover = 0.7;   // 雷震子 flies: held in the air, so our tilted view keeps the gap the original shows (scene 15: he hung on 文王 before taking him up, the user)
       const sk = strikes.find(e => e.slot === slot && t >= e.f && t < e.hit + 40);
       if (sk) strike(sk, act, t, snap);
       else if (act.act && act.act.kind === 'atk') act.act = null;

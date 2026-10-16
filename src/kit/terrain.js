@@ -257,16 +257,25 @@ export function grass(pts, o = {}) {
   mat.onBeforeCompile = sh => { swayed(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal *= faceDirection;');
     sh.uniforms.uSteps = STEP.uSteps; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec4 uSteps[16];').replace('#include <project_vertex>', TROD); };
   mat.customProgramCacheKey = () => 'grassTuft2';
-  const m = new THREE.InstancedMesh(geo, mat, pts.length), d = new THREE.Object3D(), c = new THREE.Color();
-  pts.forEach(([x, y, z], i) => {
-    const s = (o.size ?? 0.45) * (0.6 + Math.random() * 0.7); d.position.set(x, y - 0.02, z); d.rotation.set(0, Math.random() * 6.3, 0); d.scale.set(s * 1.25, s * 0.7, s * 1.25); d.updateMatrix(); m.setMatrixAt(i, d.matrix);   // 30% shorter [the user's request]
-    const t = (0.8 + Math.random() * 0.4) * 0.7, warm = Math.random() * 0.06; m.setColorAt(i, c.setRGB(t + warm, t, t * (0.88 - warm)));   // 30% darker [the user's request]
-  });
+  // in chunks of 6 x 6 cells, each its own instanced mesh with its own bounds, so the camera skips those out of view
+  // (battle 8's meadow is ~100k tufts: drawn as one mesh, every one of them went through the GPU each frame)
+  const CH = 6, chunks = new Map();
+  for (const p of pts) { const k = Math.floor(p[0] / CH) + ',' + Math.floor(p[2] / CH); (chunks.get(k) || chunks.set(k, []).get(k)).push(p); }
+  const out = new THREE.Group(), d = new THREE.Object3D(), c = new THREE.Color();
   // drawn before the characters (render order 2) and without writing depth: a unit standing in grass shows whole
   // over it, as the original's sprites do; the ground and rocks still hide the grass behind them
-  mat.depthWrite = false; m.renderOrder = 1;
-  m.onBeforeRender = renderer => fillSteps(renderer);
-  m.receiveShadow = true; m.userData.noAO = true; return m;
+  mat.depthWrite = false;
+  for (const list of chunks.values()) {
+    const m = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach(([x, y, z], i) => {
+      const s = (o.size ?? 0.45) * (0.6 + Math.random() * 0.7); d.position.set(x, y - 0.02, z); d.rotation.set(0, Math.random() * 6.3, 0); d.scale.set(s * 1.25, s * 0.7, s * 1.25); d.updateMatrix(); m.setMatrixAt(i, d.matrix);   // 30% shorter [the user's request]
+      const t = (0.8 + Math.random() * 0.4) * 0.7, warm = Math.random() * 0.06; m.setColorAt(i, c.setRGB(t + warm, t, t * (0.88 - warm)));   // 30% darker [the user's request]
+    });
+    m.computeBoundingSphere(); m.renderOrder = 1;
+    m.onBeforeRender = renderer => fillSteps(renderer);
+    m.receiveShadow = true; m.userData.noAO = true; out.add(m);
+  }
+  out.userData.noAO = true; return out;
 }
 // stones: lumpy displaced icosahedra in rock material
 export function stones(pts, mat, o = {}) {

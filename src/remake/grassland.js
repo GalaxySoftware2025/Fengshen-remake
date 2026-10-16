@@ -29,22 +29,26 @@ async function flowerSpots() {
   }
   return [...hits.values()].filter(h => h.n >= 4).map(h => ({ kind: h.kind, x: h.x / h.n / 32, z: h.y / h.n / 32 }));
 }
-// a clump of small five-petalled flowers on short stems
+// a clump of small five-petalled flowers on short stems: three instanced meshes (stems, heads coloured per flower,
+// their gold eyes) rather than three meshes a flower (~670 draws, twice over with the shadows: frame rate [the user])
 function flowers(spots, at) {
   const g = new THREE.Group(), stem = new THREE.MeshStandardMaterial({ color: 0x4a6a24, roughness: 0.9 });
   const shape = new THREE.Shape(); for (let k = 0; k <= 50; k++) { const a = k / 50 * Math.PI * 2, r = 0.05 * (0.55 + 0.45 * Math.abs(Math.cos(a * 2.5))); shape[k ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); }
-  const head = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2), mid = new THREE.SphereGeometry(0.014, 6, 4);
+  const head = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2), mid = new THREE.SphereGeometry(0.014, 6, 4), stick = new THREE.CylinderGeometry(0.006, 0.008, 1, 4).translate(0, 0.5, 0);
   const cols = { red: [0xe8302a, 0xf070a8], purple: [0xa060f0, 0x7028c0] }, eye = new THREE.MeshStandardMaterial({ color: 0xf8e040, emissive: 0x302000 });
-  const mats_ = Object.fromEntries(Object.entries(cols).map(([k, [a, b]]) => [k, [a, b].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, side: THREE.DoubleSide, emissive: new THREE.Color(c).multiplyScalar(0.12) }))]));
-  let s = 1;
+  const petal = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide, emissive: 0x141414 });
+  const n = spots.length * 6, stems = new THREE.InstancedMesh(stick, stem, n), heads = new THREE.InstancedMesh(head, petal, n), eyes = new THREE.InstancedMesh(mid, eye, n);
+  const d = new THREE.Object3D(), c = new THREE.Color();
+  let s = 1, i = 0;
   const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-  for (const p of spots) for (let i = 0; i < 6; i++) {
+  for (const p of spots) for (let j = 0; j < 6; j++, i++) {
     const x = p.x + (rnd() - 0.5) * 0.4, z = p.z + (rnd() - 0.5) * 0.3, y = at(x, z), h = 0.12 + rnd() * 0.12;
-    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.008, h, 4), stem); st.position.set(x, y + h / 2, z); g.add(st);
-    const fl = new THREE.Mesh(head, mats_[p.kind][i % 2]); fl.position.set(x, y + h, z); fl.rotation.set((rnd() - 0.5) * 0.5, rnd() * 6, (rnd() - 0.5) * 0.5); g.add(fl);
-    const c = new THREE.Mesh(mid, eye); c.position.set(x, y + h + 0.01, z); g.add(c);
+    d.position.set(x, y, z); d.rotation.set(0, 0, 0); d.scale.set(1, h, 1); d.updateMatrix(); stems.setMatrixAt(i, d.matrix);
+    d.position.set(x, y + h, z); d.rotation.set((rnd() - 0.5) * 0.5, rnd() * 6, (rnd() - 0.5) * 0.5); d.scale.set(1, 1, 1); d.updateMatrix(); heads.setMatrixAt(i, d.matrix);
+    heads.setColorAt(i, c.setHex(cols[p.kind][j % 2]));
+    d.position.set(x, y + h + 0.01, z); d.rotation.set(0, 0, 0); d.updateMatrix(); eyes.setMatrixAt(i, d.matrix);
   }
-  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  for (const m of [stems, heads, eyes]) { m.computeBoundingSphere(); m.castShadow = true; g.add(m); }
   return g;
 }
 
@@ -67,7 +71,7 @@ function shoreMask(lay, W, outside) {
 // rippled by noise flowing east (the river runs west to east; slower on the lake), so the sun glints off it; light
 // streaks drawn out along the current; foam bands lapping in and out where the mask falls off at the banks; twinkles
 function riverWater(mask) {
-  const m = new THREE.MeshStandardMaterial({ color: 0x0c1c4a, roughness: 0.24, metalness: 0, envMapIntensity: 0.05 });
+  const m = new THREE.MeshStandardMaterial({ color: 0x0c1c4a, roughness: 0.2, metalness: 0, envMapIntensity: 0.2 });
   const u = m.userData.u = { uTime: { value: 0 }, uMask: { value: mask }, uBox: { value: new THREE.Vector4(-PAD, -PAD, MW + PAD * 2, MH + PAD * 2) } };
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u);
@@ -90,11 +94,18 @@ function riverWater(mask) {
           h.x += A * sin(ph); h.yz += A * cos(ph) * k; }
         return h;
       }
+      // wavelets: ridged noise (crested, soft troughs) drifting with the current, two layers crossing; few of them, large
+      // [the user: the crested version, with fewer ripples]
+      float chop(vec2 p, float flow){ mat2 r = mat2(0.8, -0.6, 0.6, 0.8);
+        float a = 1.0 - abs(wn(p * 2.0 - vec2(uTime * 0.9 * flow, uTime * 0.2)) * 2.0 - 1.0);
+        float b = 1.0 - abs(wn(r * p * 3.3 + vec2(-uTime * 1.3 * flow, uTime * 0.45)) * 2.0 - 1.0);
+        return smoothstep(0.0, 1.0, a) * 0.65 + smoothstep(0.0, 1.0, b) * 0.35; }
       float wetAt(vec2 p){ return texture2D(uMask, (p - uBox.xy) / uBox.zw).r; }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
       vec2 wp = vWp.xz; float flow = smoothstep(11.5, 12.5, wp.y) * (1.0 - smoothstep(20.0, 21.0, wp.y)) * 0.65 + 0.35;   // the river's band flows; the lake barely
       vec3 wv = waves(wp, flow); float w0 = 0.5 + wv.x * 8.0;
-      vec3 wN = normalize(vec3(-wv.y * 1.6, 1.0, -wv.z * 1.6));
+      float ce = 0.025, c0 = chop(wp, flow), cx = chop(wp + vec2(ce, 0.0), flow), cz = chop(wp + vec2(0.0, ce), flow);
+      vec3 wN = normalize(vec3(-wv.y * 1.6 - (cx - c0) / ce * 0.03, 1.0, -wv.z * 1.6 - (cz - c0) / ce * 0.03));   // (gentle: at 0.05 it read as hammered metal, the user)
       normal = normalize((viewMatrix * vec4(wN, 0.0)).xyz);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       float wet = wetAt(wp), lap = sin(uTime * 1.3 + wf(wp * 0.8) * 6.0) * 0.05;   // the waterline (wet 0.5 in the blurred mask) breathing in and out
@@ -105,11 +116,14 @@ function riverWater(mask) {
       float shallow = (1.0 - smoothstep(0.0, 0.45, dist)) * smoothstep(-0.05, 0.05, dist);   // the shallows by the banks, a lighter blue
       float open_ = smoothstep(0.8, 0.95, wet);   // out in the stream
       float streak = smoothstep(0.62, 0.9, wf(wp * vec2(0.6, 4.5) - vec2(uTime * 0.8 * flow, 0.0))) * open_;
-      float crest = smoothstep(0.55, 0.85, w0) * open_;
+      float crest = smoothstep(0.55, 0.85, w0) * open_, glint = smoothstep(0.56, 0.74, c0) * open_ * (0.6 + 0.4 * sin(uTime * 3.0 + wp.x * 2.0 + wp.y * 1.3));   // the wavelets' crests catching the light
       vec2 sg = floor(wp * 6.0); float sr = wh(sg), tw = max(0.0, sin(uTime * (2.0 + 4.0 * sr) + sr * 60.0));   // twinkles: one now and then, at a jittered point in its cell, soft round
       vec2 sj = vec2(wh(sg + 3.1), wh(sg + 7.7)) * 0.6 + 0.2;
       float star = step(0.97, sr) * tw * tw * exp(-pow(length(fract(wp * 6.0) - sj) / 0.07, 2.0)) * open_;
-      totalEmissiveRadiance += vec3(0.6, 0.72, 0.85) * foam * 0.16 + vec3(0.03, 0.1, 0.16) * shallow * (0.8 + 0.2 * sin(uTime * 0.9 + wp.x * 0.7)) + vec3(0.16, 0.3, 0.62) * streak * 0.6 + vec3(0.03, 0.07, 0.16) * crest + vec3(0.9, 0.95, 1.0) * star * 1.4;`);
+      vec3 vv = normalize(cameraPosition - vWp); float fres = pow(1.0 - clamp(dot(wN, vv), 0.0, 1.0), 4.0);   // a little reflection: the pale sky caught more as the eye grazes the surface, rippled by the waves [the user's call]
+      float skyN = wf(reflect(-vv, wN).xz * 1.5 + vec2(uTime * 0.02, 0.0));   // soft clouds in it
+      totalEmissiveRadiance += vec3(0.42, 0.56, 0.72) * fres * (0.6 + 0.5 * skyN) * open_ + vec3(0.06, 0.09, 0.13) * (0.5 + 0.5 * skyN) * open_ * 0.5;
+      totalEmissiveRadiance += vec3(0.6, 0.72, 0.85) * foam * 0.16 + vec3(0.03, 0.1, 0.16) * shallow * (0.8 + 0.2 * sin(uTime * 0.9 + wp.x * 0.7)) + vec3(0.16, 0.3, 0.62) * streak * 0.6 + vec3(0.03, 0.07, 0.16) * crest + vec3(0.16, 0.24, 0.36) * glint + vec3(0.9, 0.95, 1.0) * star * 1.4;`);
   };
   m.customProgramCacheKey = () => 'riverWater';
   return m;
@@ -157,7 +171,8 @@ async function build(E, FX) {
   for (const [x, y] of CHESTS) { const c = chest(M, x + 0.5, y + 0.5, land.at(x + 0.5, y + 0.5), false, 0, 1.4); S.add(c); chestG.set(x + ',' + y, c); }
   // tall golden grass over the plain, shorter at the banks; boulders and pebbles; the wildflowers; scrub on the banks
   const clear = (x, z) => !CHESTS.some(([cx, cy]) => x > cx - 0.2 && x < cx + 1.2 && z > cy - 0.2 && z < cy + 1.2);
-  S.add(grass(land.scatter(CL.grass, 60, clear), { size: 0.62, cols: ['#c8a848', '#b89a3a', '#d8bc5a', '#a88c34', '#9a8a3a'] }));
+  const near = (x, z) => x > -2.5 && z > -2.5 && x < MW + 2.5 && z < MH + 2.5;   // past the map (seen only at the view's edges) a third as thick: frame rate [the user]
+  S.add(grass(land.scatter(CL.grass, 48, clear).filter(([x, , z]) => near(x, z) || Math.random() < 0.35), { size: 0.67, cols: ['#c8a848', '#b89a3a', '#d8bc5a', '#a88c34', '#9a8a3a'] }));
   S.add(grass(land.scatter(CL.ground, 6, clear), { size: 0.4, cols: ['#b0983e', '#9a8a3a', '#c0a448'] }));
   const rockM = T.material(T.rock(0x6a5240, 'bankRock', 0.25), { color: 0xf0d0b0 }, [0.5, 0.5]);
   S.add(stones(land.scatter(CL.rock, 7, () => true), rockM, { size: 0.32 }));
@@ -183,7 +198,7 @@ function found(x, y) {
 }
 
 export default {
-  build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'leaves', props: CHESTS,
+  build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'grass', props: CHESTS,
   // a bright morning over the plain: a warm low sun from the east, a clear sky
   mood: { bg: 0xd8d4c4, voidCol: false, fog: 0xd8d4bc, fogD: 0.006, sky: 0xd8e4ff, under: 0x6a5a30, hemi: 1.0,
     sun: 0xfff0d0, sunI: 3.0, sunDir: [0.55, 0.7, 0.35], sat: 1.05, exposure: 1.0, bloom: 0.3, aoR: 0.8,

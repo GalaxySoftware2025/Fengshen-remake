@@ -63,27 +63,42 @@ export class UI {
     }
     [...m.children].forEach((b, i) => { b.classList.toggle('sel', i === sel); b.classList.toggle('off', !opts[i].ok); });
   }
-  // ---------- the item / spell ring: icons only, round the unit [the user's call, after the camp's 裝備物品 ring]; the
-  // pointed one's name, cost and effect in a small caption under the ring
-  ring(rows, sel, sx, sy, onPick, onHover) {
-    let R = $('ring');
+  // ---------- the item / spell ring, after the original's 物 / 法 rings: the bare icons on a circle round the unit, the
+  // chosen one at the top inside a pale corner-bracket cursor (here also enlarged: the user's call), the ring turning to
+  // bring the next one up (the arrow keys); a bar across the top of the screen with its icon, name and effect. The mouse
+  // may point at any icon where it stands (the ring does not turn under the cursor) and click it.
+  //   rows [{ icon, label, right, desc, ok }], sel: the pointed one, top: the one turned to the top
+  ring(rows, sel, top, sx, sy, onPick, onHover) {
+    let R = $('ring'), H = $('ringhead');
     if (!R) { R = el('div', 'hidden'); R.id = 'ring'; $('menu').after(R); }
-    if (!rows) { R.classList.add('hidden'); R.innerHTML = ''; R._n = 0; return; }
-    R.classList.remove('hidden'); R.style.left = sx + 'px'; R.style.top = sy + 'px';
-    const n = rows.length, rad = Math.max(92, Math.min(170, n * 15));
-    if (R._n !== n || R._rows !== rows) {
-      R.innerHTML = ''; R._n = n; R._rows = rows;
+    if (!H) { H = el('div', 'hidden'); H.id = 'ringhead'; R.after(H); }
+    if (!rows) { R.classList.add('hidden'); H.classList.add('hidden'); R.innerHTML = ''; R._rows = null; return; }
+    R.classList.remove('hidden'); H.classList.remove('hidden'); R.style.left = sx + 'px'; R.style.top = sy + 'px';
+    const n = rows.length, rad = Math.max(94, Math.min(175, n * 15)), step = Math.PI * 2 / n;   // (room for the 72 px squares side by side)
+    if (R._rows !== rows) {   // build: the icons and the bracket
+      R.innerHTML = ''; R._rows = rows; R._ang = -top * step; R._goal = R._ang;
       rows.forEach((r, i) => {
-        const a = -Math.PI / 2 + i / n * Math.PI * 2, b = el('div', 'rb' + (r.ok ? '' : ' off'), `<img src="${r.icon}" alt="">`);
-        b.style.left = Math.cos(a) * rad + 'px'; b.style.top = Math.sin(a) * rad + 'px'; b.style.animationDelay = i * 25 + 'ms';
-        b.onclick = e => { e.stopPropagation(); onPick(i); }; b.onmouseenter = () => onHover(i);
+        const b = el('div', 'rb' + (r.ok ? '' : ' off'), `<img src="${r.icon}" alt="">`); b.style.animationDelay = i * 25 + 'ms';
+        b.onclick = e => { e.stopPropagation(); onPick(i); }; b.onmousemove = () => onHover(i);   // (move, not enter: an icon turning in under a still pointer takes no focus)
         R.appendChild(b);
       });
-      const cap = el('div', 'rcap'); cap.style.top = (rad + 50) + 'px'; R.appendChild(cap);
+      const cur = el('div', 'rcur', '<i></i><i></i><i></i><i></i>'); R.appendChild(cur);
+      const place = () => {
+        if (!R._rows) return;
+        R._ang += (R._goal - R._ang) * 0.28; if (Math.abs(R._goal - R._ang) < 1e-3) R._ang = R._goal;
+        const bs = R.querySelectorAll('.rb');
+        bs.forEach((b, i) => { const a = -Math.PI / 2 + i * step + R._ang; b.style.left = Math.cos(a) * rad + 'px'; b.style.top = Math.sin(a) * rad + 'px'; });
+        const sb = bs[R._sel]; if (sb) { cur.style.left = sb.style.left; cur.style.top = sb.style.top; }
+        requestAnimationFrame(place);
+      };
+      requestAnimationFrame(place);
     }
+    // turn the shortest way round to bring `top` up
+    let goal = -top * step; while (goal - R._ang > Math.PI) goal -= Math.PI * 2; while (goal - R._ang < -Math.PI) goal += Math.PI * 2; R._goal = goal;
+    R._sel = sel;
     [...R.querySelectorAll('.rb')].forEach((b, i) => b.classList.toggle('sel', i === sel));
-    const r = rows[sel], cap = R.querySelector('.rcap');
-    cap.innerHTML = r ? `<b>${r.label}</b>${r.right ? `<small>${r.right}</small>` : ''}<div>${r.desc || ''}</div>` : '';
+    const r = rows[sel];
+    H.innerHTML = r ? `<img src="${r.icon}" alt=""><b>${r.label}</b><span>${r.right || r.desc || ''}</span>` : '';
   }
   forecast(a, d, f) {
     const F = $('forecast');
