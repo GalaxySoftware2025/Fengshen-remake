@@ -53,6 +53,7 @@ export function run(R, files, common, battles, { legacy = false } = {}) {
   const sheets = new Map(), add = (g, t) => { if (!sheets.has(g)) sheets.set(g, new Set()); sheets.get(g).add(t); };
   for (const h of common.heroes) add(h.gfx, heroes[h.cid]);
   for (let n = 1; n <= 32; n++) battles[n].enemies.forEach((e, i) => add(e.gfx, bt[n][i]));
+  for (let n = 1; n <= 32; n++) for (const r of battles[n].rooms || []) for (const e of r.enemies) add(e.gfx, R.B(e.template + 0x2b));   // the rooms' (battles 10, 11)
   for (const rec of HOOKED) add(R.L(rec + 6), R.B(rec + 0x2b));
   const keep = g => legacy || !LEGACY.has(g), sorted = [...sheets.keys()].sort((a, b) => a - b);
   for (const g of sorted) if (keep(g)) for (const t of sheets.get(g)) if (t <= 2) files['assets/units/act/' + g.toString(16).padStart(6, '0') + '-' + t + '.png'] = actSheet(R, g, t);

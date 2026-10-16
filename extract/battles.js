@@ -47,9 +47,9 @@ export function rec(b) {
 }
 // a battle map: idx = map table 0x1586 index (op 0), or d = a descriptor (op 13): block grid, block table, tile art (to
 // tile 0x200), packed terrain, 2 palette lines; the art and terrain unpacked by the game's own routines
-export function mapOf(R, rom, idx, d = null) {
-  d = d || R.L(0x1586 + 4 * idx);
-  const [grid, blocks, art, terr, pal] = [0, 1, 2, 3, 4].map(k => R.L(R.L(d + 4 * k)));
+export function mapOf(R, rom, idx, d = null, ptrs = null) {   // ptrs: the five pointers themselves (a room's, below)
+  d = d || (ptrs ? 0 : R.L(0x1586 + 4 * idx));
+  const [grid, blocks, art, terr, pal] = (ptrs || [0, 1, 2, 3, 4].map(k => R.L(d + 4 * k))).map(p => R.L(p));
   const w = R.B(grid), h = R.B(grid + 1);
   const m = new MD(rom); m.reg[15] = 2;
   m.call(0x5af6, [art, 0x200]); m.call(0x6bce, [0xff139a, terr]);
@@ -70,6 +70,31 @@ export function mapOf(R, rom, idx, d = null) {
   const grows = []; for (let y = 0; y < h; y++) grows.push(R.list(grid + 2 + y * w, w));
   return [{ index: idx, w, h, grid: grows, terrain, addr: { grid, blocks, art, terrain: terr, palette: pal } }, img];
 }
+// rooms: a battle fought through several maps (battle 10's cave, battle 11's training hall). Its turn hook points ff0f90
+// at a table of room records [0x0ED9B0, 0x0EEF6A]; when a hero stands on an exit (terrain 4: on, 3: back) the routine at
+// 0x1D52A loads the next or the previous room. A record: the heroes' cells by slot (10 pairs) and the camera's cell,
+// coming forward (+0) and coming back (+0x16); the grid, blocks, art and terrain (+0x2C: pointers to pointers); the
+// chest table's index (+0x3C, 0x1AFF6); the palette (+0x3E); the enemies (+0x42: 8 bytes each, x, y, item, -, template;
+// to 0xFFFF), spawned afresh each time the room is entered
+export function roomsOf(R, rom, turn) {
+  // the table goes in ff0f90; a handler per room follows, picked by the room's number (ff0f4f) from the table the hook
+  // then takes (lea abs.l, a0): as many rooms as handlers
+  let t = -1, a = turn; for (; a < turn + 64; a += 2) if (R.W(a) === 0x23fc && R.L(a + 6) === 0xff0f90) { t = R.L(a + 2); break; }
+  if (t < 0) return null;
+  while (a < turn + 64 && R.W(a) !== 0x41f9) a += 2;
+  if (R.W(a) !== 0x41f9) return null;   // (battle 18's hook takes its rooms another way: not read yet)
+  const code = R.L(a + 2), recs = [];
+  for (let k = 0; ; k++) { const c = R.L(code + 4 * k); if (c < 0x200 || c >= 0x100000 || c & 1) break; recs.push(R.L(t + 4 * k)); }
+  return recs.map((r, room) => {
+    const side = b => ({ cells: Array.from({ length: 10 }, (_, k) => [R.B(b + 2 * k), R.B(b + 2 * k + 1)]).filter(([x]) => x !== 0xff), cam: [R.B(b + 20), R.B(b + 21)] });
+    const ptrs = [0, 1, 2, 3].map(k => R.L(r + 0x2c + 4 * k)).concat([R.L(r + 0x3e)]), [map, img] = mapOf(R, rom, null, null, ptrs);
+    const spawns = []; for (let a = r + 0x42; R.W(a) !== 0xffff; a += 8) {
+      const tp = R.L(a + 4), u = rec(R.bytes(tp, 64));
+      spawns.push(Object.assign(u, { x: R.B(a), y: R.B(a + 1), item: R.B(a + 2) === 0xff ? null : R.B(a + 2), template: tp }));
+    }
+    return { room, addr: r, fwd: side(r), back: side(r + 0x16), chestTable: R.W(r + 0x3c), map, img, enemies: spawns };
+  });
+}
 export function extractBattle(R, rom, n, walk, index) {
   const b = index[n - 1], si = b.scene, h = R.L(0x1f0a + 4 * si), sc = walk[si];
   if (h !== parseInt(b.header, 16)) throw new Error('battle ' + n + ': header mismatch');
@@ -85,7 +110,7 @@ export function extractBattle(R, rom, n, walk, index) {
   return { n, name: b.name, scene: si, chapter: sc.chapter, win: b.win, lose: b.lose, deploy: b.deploy, header: h, music: R.W(h + 20),
     camera: [R.B(h + 22), R.B(h + 23)], partyTable: R.W(h + 32),
     hooks: { ff3226: R.L(h + 24), ff322a: R.L(h + 28), turn: R.L(h + 34), frame: R.L(h + 42) }, text: R.L(h + 38),
-    map: mp, party: { deployMax: ops[bi].deployMax, flags: ops[bi].heroFlags }, enemies: spawns, scene_ops: ops, img };
+    map: mp, party: { deployMax: ops[bi].deployMax, flags: ops[bi].heroFlags }, enemies: spawns, scene_ops: ops, img, rooms: roomsOf(R, rom, R.L(h + 34)) };
 }
 
 // ---------------------------------------------------------------- export.py
@@ -142,24 +167,36 @@ function walkUpto(walk, scene) {   // hero joins (ops 35 / 42) since the previou
   if (prev >= 0) { const ops = walk[prev].ops, k = ops.findIndex(o => o.op === 10); out.unshift(ops.slice(k + 1).filter(o => 'join' in o).map(o => o.join)); }
   return out;
 }
-export function exportBattle(R, b, walk, sheets) {
-  const NAMES = names(R), enemies = [];
-  for (const e of b.enemies) {
-    const u = {}; for (const k of UNIT_KEYS) u[k] = e[k];
-    Object.assign(u, { x: e.x, y: e.y, name: NAMES[e.cid], sprite: e.gfx.toString(16).padStart(6, '0') });
-    u.aip = Array.from(Buffer_from_hex(e.raw).subarray(0x34, 0x3c));
-    if (e.item !== null) u.drop = e.item;
-    enemies.push(u); sheets.add(e.gfx);
+const chestsOf = (R, t) => { const out = []; for (let k = 0; k < 8; k++) { const c = R.bytes(0x168e + 32 * t + 4 * k, 4); if (c[0] !== 0xff) out.push({ x: c[0], y: c[1], item: c[2], opened: c[3] }); } return out; };
+// a chest the map's art draws: its cell's block shares tiles with the chest the art keeps at its bottom-left corner (the
+// chest tiles' own block); one sharing none is hidden, found only by striking its cell (as battles 1-8's, by hand)
+const drawnChest = (R, m, c) => { const tiles = k => Array.from({ length: 16 }, (_, i) => R.W(m.addr.blocks + k * 32 + 2 * i)), icon = tiles(m.grid[m.h - 1][0]);
+  return !!m.grid[c.y] && m.grid[c.y][c.x] != null && tiles(m.grid[c.y][c.x]).some(v => icon.includes(v)); };   // (a cell off the room's map: hidden)
+const enemiesOut = (list, NAMES, sheets, R = null) => list.map(e => {   // R: with the attack type (+0x2B; a room's, data/actions.js has the battle's own)
+  const u = {}; for (const k of UNIT_KEYS) u[k] = e[k];
+  if (R) u.atkType = R.B(e.template + 0x2b);
+  if (R && e.ai === 0x82) {   // a summoner (AI 0x82, 0x0EFD06): its waking range (+32) and the record it calls up (+36)
+    const t = R.L(e.template + 0x36), sm = rec(R.bytes(t, 64)), v = {}; for (const k of UNIT_KEYS) v[k] = sm[k];
+    u.wake = R.B(e.template + 0x32); u.summon = Object.assign(v, { name: NAMES[sm.cid], sprite: sm.gfx.toString(16).padStart(6, '0'), atkType: R.B(t + 0x2b), aip: Array.from(R.bytes(t + 0x34, 8)), template: t });
+    sheets.add(sm.gfx);
   }
-  const t = b.partyTable, chests = [];
-  for (let k = 0; k < 8; k++) { const c = R.bytes(0x168e + 32 * t + 4 * k, 4); if (c[0] !== 0xff) chests.push({ x: c[0], y: c[1], item: c[2], opened: c[3] }); }
+  Object.assign(u, { x: e.x, y: e.y, name: NAMES[e.cid], sprite: e.gfx.toString(16).padStart(6, '0') });
+  u.aip = Array.from(Buffer_from_hex(e.raw).subarray(0x34, 0x3c));
+  if (e.item !== null) u.drop = e.item;
+  sheets.add(e.gfx); return u;
+});
+export function exportBattle(R, b, walk, sheets) {
+  const NAMES = names(R), enemies = enemiesOut(b.enemies, NAMES, sheets), chests = chestsOf(R, b.partyTable);
   const ops = b.scene_ops, cut = ops.findIndex(o => o.op === 10), f = b.party.flags;
   const party = { deployMax: b.party.deployMax, forced: [...Array(12).keys()].filter(c => f[c] === 2), unavailable: [...Array(12).keys()].filter(c => f[c] === 1),
     joins: walkUpto(walk, b.scene).flat().map(j => ({ cid: j, lv: R.B(R.L(0x1d8e + 4 * j) + 0x22) })) };
   const say = part => part.filter(o => o.op === 4 || o.op === 55).map(line);
+  const rooms = b.rooms && b.rooms.map(r => ({ w: r.map.w, h: r.map.h, terrain: r.map.terrain, fwd: r.fwd, back: r.back, chestTable: r.chestTable,
+    chests: chestsOf(R, r.chestTable).map(c => drawnChest(R, r.map, c) ? c : Object.assign(c, { hidden: true })), enemies: enemiesOut(r.enemies, NAMES, sheets, R), rom: r.addr.toString(16).padStart(6, '0') }));
   return { n: b.n, name: b.name, chapter: b.chapter, scene: b.scene, win: b.win, lose: b.lose, mapW: b.map.w, mapH: b.map.h, terrain: b.map.terrain,
     deploy: b.deploy, camera: b.camera, music: b.music, party, enemies, chests, intro: say(ops.slice(0, cut)), outro: say(ops.slice(cut + 1)),
-    rom: { header: b.header.toString(16).padStart(6, '0'), hooks: Object.fromEntries(Object.entries(b.hooks).map(([k, v]) => [k, v.toString(16).padStart(6, '0')])) } };
+    rom: { header: b.header.toString(16).padStart(6, '0'), hooks: Object.fromEntries(Object.entries(b.hooks).map(([k, v]) => [k, v.toString(16).padStart(6, '0')])) },
+    ...(rooms ? { rooms } : {}) };
 }
 function Buffer_from_hex(h) { const out = new Uint8Array(h.length / 2); for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(2 * i, 2), 16); return out; }
 
@@ -173,6 +210,7 @@ export function run(R, rom, files, log = () => {}) {
     const b = extractBattle(R, rom, n, walk, index), out = exportBattle(R, b, walk, sheets);
     battles[n] = b;
     files['assets/battles/' + String(n).padStart(2, '0') + '/map.png'] = b.img;
+    for (const r of b.rooms || []) if (r.room) files['assets/battles/' + String(n).padStart(2, '0') + '/room-' + r.room + '.png'] = r.img;   // (room 0 is the battle's own map)
     files['data/battles/' + String(n).padStart(2, '0') + '.js'] = '// battle ' + n + ' ' + b.name + ': generated by the extractor from the player\'s ROM.\n(window.BATTLES ||= {})[' + n + '] = ' + JSON.stringify(out) + ';\n';
     log('battle ' + n);
   }

@@ -2,7 +2,7 @@
 
 Every battle plays from its generated data (`data/battles/NN.js`), with the engine's generic rules: dormant enemies (AI 7 and 8) wake when a hero comes within their range (to the AI in their record's +35), AI 9 walks to a cell and then takes the AI in +37, AI 10 paces a zone until a hero comes near (`rules.js`; the record's AI bytes +34..+3B are each unit's `aip`), and chests (`D.chests`) open when a hero picks the chest's cell as the move target or attacks it from next to it (a chest marked `hidden` gets no highlight and is not a move target: a hero finds it only by attacking its cell from next to it). This folder holds only what is unique to a battle,
 ported from its ROM hook code (`research/battles/NN-hooks.txt`). Register a battle in `index.js`
-(`MODULES = { 1: '01-fushan', 2: '02-fushan', 3: '03-dungeon', 4: '04-fushan', 5: '05-feizhong', 6: '06-feizhong2', 7: '07-chaoge', 8: '08-lintong', 13: '13-panxi' }`). Its scripted checks go in `test/battles.mjs`. A battle without a module uses the generic rules: the win and lose conditions are read
+(`MODULES = { 1: '01-fushan', 2: '02-fushan', 3: '03-dungeon', 4: '04-fushan', 5: '05-feizhong', 6: '06-feizhong2', 7: '07-chaoge', 8: '08-lintong', 9: '09-ziyang', 10: '10-hailong', 11: '11-lianggong', 13: '13-panxi' }`). Its scripted checks go in `test/battles.mjs`. A battle without a module uses the generic rules: the win and lose conditions are read
 from the condition text (rout; named units falling), and the scene's pre- and post-battle lines play over the map.
 
 ## `NN-name.js`: rules (pure; `test/sim.mjs` runs it too)

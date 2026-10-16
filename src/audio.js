@@ -80,7 +80,7 @@ export const play = id => id < 0x8000 ? music(id) : sfx(id);
 export function attach() {
   const wake = () => { init().then(() => { if (ctx && ctx.state !== 'running') ctx.resume().then(() => { if (want != null && !cur) music(want); }); }); };
   for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, wake, { capture: true });
-  const pick = el => el && el.closest && el.closest('button, #menu > *, #list li, #c-panel [class*="row"], #camp .tab');
+  const pick = el => el && el.closest && el.closest('button, #menu > *, #ring .rb, #c-panel [class*="row"], #camp .tab');
   document.addEventListener('click', e => { const el = pick(e.target); if (!el || el.disabled) return; sfx(/返回|取消/.test(el.textContent) ? 'cancel' : 'ok'); }, true);
   let over = null;
   document.addEventListener('pointerover', e => { const el = pick(e.target); if (el && el !== over && !el.disabled) sfx('cursor'); over = el; }, true);

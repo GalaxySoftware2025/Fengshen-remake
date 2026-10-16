@@ -148,8 +148,29 @@ export function descent(R, rom, files, snap) {
   return { frames: F.length, fadeIn, fadeOut, sprite: '04f0fc', marker: [(MARKER[0] + MARKER[1]) / 2, MARKER[3]], label: [(LABEL[0] + LABEL[1]) / 2, LABEL[2]], path };
 }
 
-// all four, as files and as the measurements extract/scenes.js takes
+// ---------------------------------------------------------------- 海龍王's dragon (scene 19, native cut 0x0EE120)
+// The cut unpacks the 32x32 graphic at 0x0EDF20 (0xC9D8), grows it over 18 frames with the game's scaler (0xCBE8, the
+// zoom ff0e30 from 18 down), packing each step to VRAM tile 0x61 (sprite entry 37, palette line 2: the unit palette),
+// the sprite rising a pixel a frame (and left every other); then loads the graphic as it is (0x5920). Its sheet: that
+// graphic at full size, one frame: the cut's own unpack (0xC9D8, with its settings) leaves it as a pixel per byte, 64
+// bytes a row. Where it stands comes from the recording's hardware sprites (extract/scenes.js).
+export const DRAGON = 0x0edf20;
+export function dragon(R, rom, files) {
+  const m = new MD(rom); m.fresh = false;
+  const L4 = (a, v) => { for (let k = 0; k < 4; k++) m.ram[(a + k) & 0xffff] = (v >>> (24 - 8 * k)) & 255; }, W2 = (a, v) => { m.ram[a & 0xffff] = v >> 8; m.ram[(a + 1) & 0xffff] = v & 255; };
+  L4(0xff0e30, 0x12); L4(0xff0e34, 0x12); L4(0xff0e48, 1); L4(0xff0eb0, 4); L4(0xff0eb4, 4); W2(0xff0f50, 0x40); W2(0xff0f52, 9); m.ram[0x0f54] = 6;   // as 0x0EE124 sets them
+  m.call(0xc9d8, [0xff9000, DRAGON]);
+  const rgb = unitRGB(R), img = image(32 * 9, 32, 4);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const p = m.ram[0x9000 + y * 64 + x] & 15, o = (y * 32 * 9 + x) * 4;
+    img.px[o] = rgb[p][0]; img.px[o + 1] = rgb[p][1]; img.px[o + 2] = rgb[p][2]; img.px[o + 3] = p ? 255 : 0;
+  }
+  files['assets/units/' + DRAGON.toString(16).padStart(6, '0') + '.png'] = img;
+}
+
+// all of them, as files and as the measurements extract/scenes.js takes
 export function run(R, rom, files, snap) {
+  dragon(R, rom, files);
   const out = { hunt: hunt(R, rom, files), toss: toss(R, rom, files, snap), bridge: bridge(R, rom), descent: descent(R, rom, files, snap) };
   for (const [k, v] of Object.entries(out)) files['research/scenes/' + k + '.json'] = JSON.stringify(v);
   return out;

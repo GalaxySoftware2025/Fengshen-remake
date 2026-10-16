@@ -48,6 +48,73 @@ function flowers(spots, at) {
   return g;
 }
 
+// where the water is, 4 texels a cell over the map and 20 cells round it (the set's `outside` past the map), blurred: the
+// shader finds the banks where it falls off (foam)
+const PAD = 20;
+function shoreMask(lay, W, outside) {
+  const K = 4, cw = (MW + PAD * 2) * K, ch = (MH + PAD * 2) * K, c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  const g = c.getContext('2d'), img = g.createImageData(cw, ch);
+  for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
+    const x = i / K - PAD, z = j / K - PAD, xi = Math.floor(x * 4), zi = Math.floor(z * 4);
+    const wet = x >= 0 && z >= 0 && x < MW && z < MH ? lay[zi * W + xi] === CL.water : outside(x, z) === CL.water;
+    const k = (j * cw + i) * 4; img.data[k] = img.data[k + 1] = img.data[k + 2] = wet ? 255 : 0; img.data[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const b = document.createElement('canvas'); b.width = cw; b.height = ch; const bg = b.getContext('2d'); bg.filter = 'blur(3px)'; bg.drawImage(c, 0, 0);
+  const t = new THREE.CanvasTexture(b); t.colorSpace = THREE.NoColorSpace; t.minFilter = t.magFilter = THREE.LinearFilter; return t;
+}
+// the river's material: the old flat blue (MeshStandardMaterial, so it lights as before) with, in its shader, a normal
+// rippled by noise flowing east (the river runs west to east; slower on the lake), so the sun glints off it; light
+// streaks drawn out along the current; foam bands lapping in and out where the mask falls off at the banks; twinkles
+function riverWater(mask) {
+  const m = new THREE.MeshStandardMaterial({ color: 0x0c1c4a, roughness: 0.24, metalness: 0, envMapIntensity: 0.05 });
+  const u = m.userData.u = { uTime: { value: 0 }, uMask: { value: mask }, uBox: { value: new THREE.Vector4(-PAD, -PAD, MW + PAD * 2, MH + PAD * 2) } };
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vWp; uniform float uTime; uniform sampler2D uMask; uniform vec4 uBox;
+      float wh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      // smooth noise: quintic blend, each octave turned so no grid lines up (the old value noise read as pixels: the user)
+      float wn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); return mix(mix(wh(i), wh(i + vec2(1, 0)), f.x), mix(wh(i + vec2(0, 1)), wh(i + vec2(1, 1)), f.x), f.y); }
+      float wf(vec2 p){ mat2 r = mat2(0.8, -0.6, 0.6, 0.8); float s = 0.0, a = 0.5; for (int i = 0; i < 3; i++) { s += wn(p) * a; p = r * p * 2.07 + 5.3; a *= 0.5; } return s / 0.875; }
+      // the ripples: directional waves running mostly downstream, each with its exact slope (smooth at any distance),
+      // their heights swelling and easing with a slow noise
+      vec3 waves(vec2 p, float flow){
+        vec3 h = vec3(0.0);   // height, d/dx, d/dz
+        const int N = 6; vec2 D[6]; D[0] = vec2(1.0, 0.18); D[1] = vec2(0.92, -0.38); D[2] = vec2(0.7, 0.71); D[3] = vec2(1.0, -0.05); D[4] = vec2(0.45, -0.89); D[5] = vec2(0.85, 0.52);
+        float F[6]; F[0] = 3.1; F[1] = 4.3; F[2] = 5.9; F[3] = 8.2; F[4] = 10.7; F[5] = 13.9;
+        float sw = 0.6 + 0.8 * wf(p * 0.35 + vec2(-uTime * 0.05, 0.0));
+        for (int i = 0; i < N; i++) { vec2 k = normalize(D[i]) * F[i]; float A = 0.05 / F[i] * sw, ph = dot(k, p) - uTime * (1.2 + F[i] * 0.22) * mix(0.5, 1.0, flow) + float(i) * 1.7;
+          h.x += A * sin(ph); h.yz += A * cos(ph) * k; }
+        return h;
+      }
+      float wetAt(vec2 p){ return texture2D(uMask, (p - uBox.xy) / uBox.zw).r; }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      vec2 wp = vWp.xz; float flow = smoothstep(11.5, 12.5, wp.y) * (1.0 - smoothstep(20.0, 21.0, wp.y)) * 0.65 + 0.35;   // the river's band flows; the lake barely
+      vec3 wv = waves(wp, flow); float w0 = 0.5 + wv.x * 8.0;
+      vec3 wN = normalize(vec3(-wv.y * 1.6, 1.0, -wv.z * 1.6));
+      normal = normalize((viewMatrix * vec4(wN, 0.0)).xyz);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      float wet = wetAt(wp), lap = sin(uTime * 1.3 + wf(wp * 0.8) * 6.0) * 0.05;   // the waterline (wet 0.5 in the blurred mask) breathing in and out
+      float ge = 0.08; vec2 gw = vec2(wetAt(wp + vec2(ge, 0.0)) - wetAt(wp - vec2(ge, 0.0)), wetAt(wp + vec2(0.0, ge)) - wetAt(wp - vec2(0.0, ge))) / (2.0 * ge);
+      float dist = (wet - 0.56) / max(length(gw), 0.6) - lap;   // cells out from the waterline (by the mask's slope: a corner's slow falloff no longer widens it)
+      float line = exp(-pow(dist / 0.035, 2.0));   // a thin lapping edge
+      float foam = line * smoothstep(0.45, 0.8, wf(wp * vec2(2.5, 6.0) + vec2(-uTime * 0.5 * flow, uTime * 0.15))) * smoothstep(0.3, 0.45, wet);   // broken up, drifting with the current
+      float shallow = (1.0 - smoothstep(0.0, 0.45, dist)) * smoothstep(-0.05, 0.05, dist);   // the shallows by the banks, a lighter blue
+      float open_ = smoothstep(0.8, 0.95, wet);   // out in the stream
+      float streak = smoothstep(0.62, 0.9, wf(wp * vec2(0.6, 4.5) - vec2(uTime * 0.8 * flow, 0.0))) * open_;
+      float crest = smoothstep(0.55, 0.85, w0) * open_;
+      vec2 sg = floor(wp * 6.0); float sr = wh(sg), tw = max(0.0, sin(uTime * (2.0 + 4.0 * sr) + sr * 60.0));   // twinkles: one now and then, at a jittered point in its cell, soft round
+      vec2 sj = vec2(wh(sg + 3.1), wh(sg + 7.7)) * 0.6 + 0.2;
+      float star = step(0.97, sr) * tw * tw * exp(-pow(length(fract(wp * 6.0) - sj) / 0.07, 2.0)) * open_;
+      totalEmissiveRadiance += vec3(0.6, 0.72, 0.85) * foam * 0.16 + vec3(0.03, 0.1, 0.16) * shallow * (0.8 + 0.2 * sin(uTime * 0.9 + wp.x * 0.7)) + vec3(0.16, 0.3, 0.62) * streak * 0.6 + vec3(0.03, 0.07, 0.16) * crest + vec3(0.9, 0.95, 1.0) * star * 1.4;`);
+  };
+  m.customProgramCacheKey = () => 'riverWater';
+  return m;
+}
+
 async function build(E, FX) {
   const S = E.world.scene; M = mats(); world = E.world; chestG = new Map();
   const lay = await readLayout('assets/maps/0ec58e.png', MW, MH, PALETTE, { [CL.water]: 1.3 });
@@ -82,9 +149,10 @@ async function build(E, FX) {
     tex: { dirt: T.dirt(0xa88a46, 'plainDirt'), turf: T.turf(0xa89a36), rock: T.rock(0x6a5240, 'bankRock', 0.25), rockTop: T.rock(0x7a6248, 'bankTop', 0.4) },
     tint: { dirt: 0xfff0d8, turf: 0xf0e4b0, rock: 0xe8c8a8 } });
   S.add(land.mesh({ dirtK: 0.3, rockK: 0.5, topGreen: 0.4, bed: 0x283a48 }));
-  // the water: a deep blue that catches the sky, a slow glint (the original cycles two of its blues every 10 frames)
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40).rotateX(-Math.PI / 2),
-    new THREE.MeshStandardMaterial({ color: 0x0c1c4a, roughness: 0.85, metalness: 0, envMapIntensity: 0.05 }));   // (dark: the bright sky light lifts it to a deep blue)
+  // the water: a deep blue that catches the sky (the original cycles two of its blues every 10 frames), alive [the user:
+  // the same blue, more water effects]: ripples flowing downstream catch the sun, streaks drift with the current, foam
+  // laps at the boulder banks, and points of light twinkle (riverWater)
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40).rotateX(-Math.PI / 2), riverWater(shoreMask(lay, W, outside)));
   water.position.set(MW / 2, WATER, MH / 2); water.receiveShadow = true; S.add(water);
   for (const [x, y] of CHESTS) { const c = chest(M, x + 0.5, y + 0.5, land.at(x + 0.5, y + 0.5), false, 0, 1.4); S.add(c); chestG.set(x + ',' + y, c); }
   // tall golden grass over the plain, shorter at the banks; boulders and pebbles; the wildflowers; scrub on the banks
@@ -96,7 +164,7 @@ async function build(E, FX) {
   S.add(stones([...land.scatter(CL.rock, 2.2, () => true), ...lay.pebbles.filter(([x, z]) => clear(x, z)).map(([x, z]) => [x, land.at(x, z), z])], rockM, { size: 0.2 }));
   S.add(shrubs(land.scatter(CL.rock, 0.5, (x, z) => land.weight(x, z, CL.grass) > 0.05), { size: 0.36, cols: ['#6a7a2a', '#7a8a32', '#5a6a24'] }));
   S.add(flowers((await flowerSpots()).filter(p => walk(Math.floor(p.x), Math.floor(p.z)) && clear(p.x, p.z)), (x, z) => land.at(x, z)));
-  E.world.updaters.push((dt, t) => { windTick(t); water.material.color.setHSL(0.63, 0.7, 0.12 + Math.sin(t * 2.1) * 0.01); });
+  E.world.updaters.push((dt, t) => { windTick(t); water.material.color.setHSL(0.63, 0.7, 0.12 + Math.sin(t * 2.1) * 0.01); water.material.userData.u.uTime.value = t; });
 }
 
 function openChest(x, y) {

@@ -132,10 +132,10 @@ function particles(E, kind) {
   let acc = 0;
   E.world.updaters.push(dt => {
     const c = E.cam.target, r = 9; acc += dt;
-    if (kind === 'dust') while (acc > 0.05) { acc -= 0.05; E.vfx.smoke(c.x + rand(-r, r), rand(0.3, 3), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(-0.05, 0.05), vy: rand(-0.03, 0.06), life: rand(4, 7), size: rand(0.02, 0.035), r: 1, gg: 0.85, b: 0.6, a: 0.7, shape: 1, wob: 0.5, ph: rand(0, 6), fadeIn: 1 }); }
+    if (kind === 'dust') while (acc > 0.05) { acc -= 0.05; E.vfx.smoke(c.x + rand(-r, r), rand(0.3, 3), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(-0.05, 0.05), vy: rand(-0.03, 0.06), life: rand(4, 7), size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.6, a: 0.7, shape: 0, wob: 0.5, ph: rand(0, 6), fadeIn: 1 }); }   // soft round motes (squares read as pixels)
     if (kind === 'fireflies') while (acc > 0.12) { acc -= 0.12; E.vfx.spark(c.x + rand(-r, r), rand(0.3, 1.6), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(-0.2, 0.2), vy: rand(-0.05, 0.12), vz: rand(-0.2, 0.2), life: rand(2.5, 4), size: rand(0.03, 0.05), r: 0.75, gg: 1, b: 0.45, shape: 0, flicker: 1, wob: 0.8, ph: rand(0, 9) }); }
     if (kind === 'sparkles') while (acc > 0.04) { acc -= 0.04; E.vfx.spark(c.x + rand(-r, r), rand(0, 2.5), c.z + rand(-r * 0.7, r * 0.7), { vy: rand(0.1, 0.35), life: rand(2, 3.5), size: rand(0.05, 0.09), r: 1, gg: rand(0.92, 0.98), b: rand(0.78, 0.9), shape: 0, flicker: 1, wob: 0.5, ph: rand(0, 9) }); }   // soft glints (not the pixel squares)
-    if (kind === 'leaves') while (acc > 0.18) { acc -= 0.18; E.vfx.smoke(c.x + rand(-r, r), rand(2, 3.5), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(0.15, 0.4), vy: -rand(0.25, 0.45), life: rand(5, 7), size: rand(0.05, 0.08), r: rand(0.6, 0.85), gg: rand(0.55, 0.75), b: 0.25, a: 1, shape: 1, wob: 1.2, ph: rand(0, 6) }); }
+    if (kind === 'leaves') while (acc > 0.18) { acc -= 0.18; E.vfx.smoke(c.x + rand(-r, r), rand(2, 3.5), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(0.15, 0.4), vy: -rand(0.25, 0.45), life: rand(5, 7), size: rand(0.1, 0.15), r: rand(0.6, 0.85), gg: rand(0.55, 0.75), b: 0.25, a: 1, shape: 2, spin: rand(-0.6, 0.6), wob: 1.2, ph: rand(0, 6) }); }   // leaf-shaped, turning as they fall (squares read as pixels: the user)
   });
 }
 

@@ -61,7 +61,7 @@ function people(E, box, state) {
   let cur = state.roster[0].cid;
   const draw = () => {
     box.innerHTML = '<h3>查看人物</h3>';
-    const wrap = h('div', 'people'), list = h('div', 'plist'), card = h('div', 'pcard');
+    const wrap = h('div', 'people'), list = h('div', 'htabs'), card = h('div', 'pcard');   // the heroes as 裝備物品's tabs, the card under them
     for (const r of state.roster) {
       const p = D.party.find(u => u.cid === r.cid) || r, t = h('div', 'pt' + (r.cid === cur ? ' on' : ''));
       t.appendChild(E.bank.portrait(p.sprite, 2)); t.insertAdjacentHTML('beforeend', `<span>${C().heroes[r.cid].name}</span><small>Lv ${r.lv}</small>`);
@@ -69,7 +69,7 @@ function people(E, box, state) {
     }
     const r = K.heroRec(state, cur), H = C().heroes[cur], g = H.growth, next = r.lv < 99 ? g[r.lv].map((v, i) => v - g[r.lv - 1][i]) : null;
     const p = D.party.find(u => u.cid === cur);
-    card.appendChild(E.bank.portrait(p.sprite, 4));
+    card.appendChild(E.bank.walker(p.sprite, 4));   // the chosen hero marking time, as on 裝備物品 [the user's call]
     card.insertAdjacentHTML('beforeend', `<div class="pn"><b>${H.name}</b><span>${H.cls}・${H.elem}　Lv ${r.lv}　經驗 ${r.exp}</span></div>
       <div class="ps">${statLine(r)}</div>
       ${next ? `<div class="pg"><b>下一級</b>生命 +${next[0]}　法力 +${next[1]}　攻 +${next[2]}　防 +${next[3]}　速 +${next[4]}${g[r.lv][5] !== 255 ? '　學會「' + C().spells[g[r.lv][5]].name + '」' : ''}</div>` : ''}

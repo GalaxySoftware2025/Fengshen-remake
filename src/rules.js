@@ -138,6 +138,8 @@ export function loadBattle(B, party, hooks, tweak) {
   Object.assign(D, globalThis.COMMON, B, { party, partyRules: B.party });   // party: the roster; partyRules: cap, forced, unavailable
   const AT = ((globalThis.ACTIONS || {}).battles || {})[B.n] || [];   // each unit's attack type (data/actions.js: its template's +0x2B)
   D.enemies = B.enemies.map((e, i) => Object.assign({}, e, { slot: 10 + i, sprite: spriteKey(e.gfx), atkType: AT[i] }));   // slots 10.. as in the ROM's unit table
+  const withSummon = e => e.summon ? { summon: Object.assign({}, e.summon, { sprite: spriteKey(e.summon.gfx) }) } : {};
+  if (B.rooms) { D.rooms = B.rooms.map(r => Object.assign({}, r, { enemies: r.enemies.map((e, i) => Object.assign({}, e, { slot: 10 + i, sprite: spriteKey(e.gfx) }, withSummon(e))) })); D.chests = D.rooms[0].chests; G.room = 0; G.chests = null; }
   SHAPES[1] = D.shapes.s1;
   H = hooks || {};
   if (H.load) H.load(D);              // a battle can add the units its hook spawns, or adjust the map
@@ -191,17 +193,52 @@ export function startRound() {
   return ev;
 }
 export function setupBattle(chosen) {
+  if (D.rooms) { const r = D.rooms[0]; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; MAP_W = r.w; MAP_H = r.h; }   // (a battle in rooms starts in the first)
   G.units = []; G.round = 0; G.terrain = D.terrain.map(r => r.slice()); G.over = null; G.triggerFired = false;
   G.chests = (D.chests || []).map(c => ({ x: c.x, y: c.y, item: c.item, hidden: !!c.hidden, open: false })); G.found = [];
   chosen.forEach((p, i) => { const u = makeUnit(p, 'player', { slot: i }); [u.x, u.y] = D.deploy[i]; G.units.push(u); });   // slots 0.. in deploy order, as the ROM's
-  for (const e of D.enemies) {
-    const side = e.side || 'enemy', u = makeUnit(e, side, { slot: e.slot, guest: e.guest, follow: e.follow });
-    u.x = e.x; u.y = e.y; u.facing = e.facing || (side === 'npc' ? 'down' : side === 'player' ? 'right' : 'left');
-    // the spawn loader [ROM 0x13354]: an AI 10 unit's zone is centred on the cell it starts on, whatever its record says
-    if (u.ai === 10) { setAiP(u, 0x34, u.x); setAiP(u, 0x35, u.y); }
-    G.units.push(u);
-  }
+  for (const e of D.enemies) spawn(e);
+  if (D.rooms) { G.room = 0; G.roomChests = {}; }
   if (H.setup) H.setup(G);
+}
+function spawn(e) {
+  const side = e.side || 'enemy', u = makeUnit(e, side, { slot: e.slot, guest: e.guest, follow: e.follow });
+  u.x = e.x; u.y = e.y; u.facing = e.facing || (side === 'npc' ? 'down' : side === 'player' ? 'right' : 'left');
+  // the spawn loader [ROM 0x13354, a room's 0x1D7B0]: an AI 10 unit's zone is centred on the cell it starts on, whatever
+  // its record says
+  if (u.ai === 10) { setAiP(u, 0x34, u.x); setAiP(u, 0x35, u.y); }
+  if (e.summon) { u.summon = e.summon; u.wake = e.wake; }   // a summoner's call (AI 0x82)
+  G.units.push(u);
+  return u;
+}
+
+// ---------------------------------------------------------------- rooms [ROM 0x1D52A]
+// A battle fought through several maps (battle 10's cave, battle 11's training hall: D.rooms). Before each unit's turn
+// its hook looks at the heroes (slots 0-9, in order): one standing on an exit (terrain 4 leads on, 3 back) takes the
+// party to the next or the previous room. Returns +1, -1 or 0.
+export function roomExit() {
+  if (!D.rooms) return 0;
+  for (const u of G.units.filter(v => v.side === 'player' && v.alive && v.slot < 10).sort((a, b) => a.slot - b.slot)) {
+    const t = G.terrain[u.y] && G.terrain[u.y][u.x];
+    if (t === 4 && G.room + 1 < D.rooms.length) return 1;
+    if (t === 3 && G.room > 0) return -1;
+  }
+  return 0;
+}
+// into room k: its map; the heroes on its cells by slot (coming back, its back cells), facing down; its enemies spawned
+// afresh (a room left and entered again is full again); its chests as they were left (the opened flags ff3252 stay);
+// the round count back to 0
+export function enterRoom(k, back = false) {
+  const r = D.rooms[k];
+  if (G.chests) G.roomChests[G.room] = G.chests;
+  G.room = k; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; MAP_W = r.w; MAP_H = r.h;
+  G.terrain = r.terrain.map(row => row.slice());
+  const cells = (back ? r.back : r.fwd).cells;
+  G.units = G.units.filter(u => u.side === 'player');
+  for (const u of G.units) { if (!u.alive) continue; const c = cells[u.slot]; if (c) [u.x, u.y] = c; u.facing = 'down'; }
+  for (const e of r.enemies) spawn(e);
+  G.chests = G.roomChests[k] || r.chests.map(c => ({ x: c.x, y: c.y, item: c.item, hidden: !!c.hidden, open: false }));
+  G.round = 0;
 }
 // a guest on the heroes' side (battles 6 and 7's 文王, side 'player', guest): no one commands him, his turn is his AI's
 export const isGuest = u => !!u.guest;
@@ -324,6 +361,30 @@ function guestPlan(u, r) {
   }
   return stay;
 }
+// AI 0x82 [ROM 0x0EFD06, from the turn dispatch at 0x1354]: a summoner (battle 11's 召喚師). Asleep until a hero comes
+// within its record's +32 (u.wake; then that is cleared and it acts at once); awake, its count (+35) rises every turn and
+// when it reaches +34 it starts over and calls up the record at +36 (u.summon, battle 11's 鬼靈) on the first of twelve
+// cells round it (table 0x11268) that record may enter and no one holds, in the first free enemy slot (10-29), unless
+// 19 enemies stand already (ff0a2b); it never moves or strikes. The newcomer acts from the next round (G.joined).
+const RING = [[0, -1], [0, 1], [1, 0], [-1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, -2], [0, 2], [-2, 0], [2, 0]];
+function summoner(u, r) {
+  const stay = { cell: r.get(key(u.x, u.y)), kind: 'wait', r };
+  if (u.wake) { if (players().some(p => manhattan(p, u) <= u.wake)) u.wake = 0; else return stay; }
+  if (G.units.filter(v => v.alive && v.side === 'enemy').length >= 19) return stay;
+  const n = aiP(u, 0x35) + 1; setAiP(u, 0x35, n); if (aiP(u, 0x34) > n) return stay;
+  setAiP(u, 0x35, 0);
+  const sm = u.summon, c = D.costs[sm.moveType];
+  for (const [dx, dy] of RING) {
+    const x = u.x + dx, y = u.y + dy; if (!inMap(x, y) || unitAt(x, y) || c[G.terrain[y][x]] >= 127) continue;
+    let s = 10; while (s < 30 && G.units.some(v => v.alive && v.slot === s)) s++;
+    if (s >= 30) break;
+    for (const v of G.units) if (!v.alive && v.slot === s) v.slot = null;
+    const v = makeUnit(Object.assign({ exp: 0, items: [] }, sm), 'enemy', { slot: s }); v.x = x; v.y = y; v.facing = 'down';
+    G.units.push(v); (G.joined ||= []).push(v); G.summoned = (G.summoned || 0) + 1;
+    break;
+  }
+  return stay;
+}
 function aiScript(u, r) {
   if (u.side === 'player' && u.guest && u.ai === 9) return guestPlan(u, r);
   if (u.side !== 'enemy') return null;
@@ -340,6 +401,7 @@ function aiScript(u, r) {
       return { cell: r.get(key(u.x, u.y)), kind: 'wait', r };
     }
   }
+  if (u.ai === 0x82 && u.summon) return summoner(u, r);
   if (u.ai >= 0x80 && !u.spells.some(i => D.spells[i] && D.spells[i].mp <= u.mp)) u.ai = aiP(u, 0x34);
   if (u.ai === 9) {
     const gx = aiP(u, 0x34), gy = aiP(u, 0x35), cell = toward(u, r, gx, gy);

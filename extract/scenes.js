@@ -131,7 +131,8 @@ function materialise(tr, slot, events, ghosts, gap = 14) {
 }
 // where the hardware draws a unit's sheet (unique on screen, worn by this unit alone) 8 px or more from its track for
 // 12 frames or more, the track follows the hardware (scene 8: 紂王 pacing before his throne)
-function follow(pts0, drawn, sole, near = 64, off = 8, run = 12) {
+const RAW_CUTS = [[0x0ee120, '0edf20', '30', 18]];   // native cut, the sheet of its sprite (extract/natives.js), the slot it takes, frames of growth
+function follow(pts0, drawn, sole, near = 128, off = 8, run = 12) {   // (near: a stale record can trail a slow walk by 95 px, scene 16 f1060)
   let pts = [];
   pts0.forEach((p, k) => { pts.push(p); if (k + 1 < pts0.length) for (let f = p[0] + 1; f < pts0[k + 1][0]; f++) { const q = p.slice(); q[0] = f; pts.push(q); } });
   const vis = []; pts.forEach((p, k) => { if (p[1] !== null) vis.push(k); });
@@ -304,7 +305,9 @@ export function exportScenes(R, rom, recs, battles, natives = {}, files = {}, sh
         events.push(e); extraMaps['world-95a9'] = { w: 8, h: 7, terrain: Array.from({ length: 7 }, () => Array(8).fill(0)) };
       } else if (w === 38 && L4(0) === 0xe86cc && TOSS) events.push({ f, kind: 'toss', sprite: 'jade', path: TOSS.path });
       else if (w === 38 && L4(0) === 0xea6b8 && BRIDGE) events.push({ f, kind: 'native', name: 'bridge', end: BRIDGE.end, strikes: BRIDGE.strikes });
-      else if (w === 38 && L4(0) === 0x2a0a) {   // the fox spirit takes 妲己 (prologue f2633): the cut holds the script until it is done
+      else if (w === 38 && L4(0) === 0xeed30) {   // scene 23: the 龍吟劍 (0x0EED30): a light 96 frames, the middle chest opens on the sword (cell 12, 6), 96 frames more, the find sound and 20 frames of blinking
+        events.push({ f, kind: 'native', name: 'sword', open: f + 96, found: f + 192, end: f + 212 }, { f: f + 192, kind: 'music', id: 0x8061 });
+      } else if (w === 38 && L4(0) === 0x2a0a) {   // the fox spirit takes 妲己 (prologue f2633): the cut holds the script until it is done
         const nxt = rec.ops.find(x => x.at > o.at).f;
         events.push({ f, kind: 'native', name: 'possess', end: nxt });
       } else if (w === 38 && NATIVE_CARDS[L4(0)] !== undefined) {   // a native cut: its text as a card
@@ -368,6 +371,16 @@ export function exportScenes(R, rom, recs, battles, natives = {}, files = {}, sh
       const until = actors['8'][HUNT.track.length][0];
       events = events.filter(e => !(e.kind === 'appear' && e.slot === '8' && e.f <= until));
       if (HUNT.hit) events.push({ f: HUNT.hit, kind: 'music', id: 0x8089 });
+    }
+    // a cut that grows a raw sprite of its own (海龍王's dragon, 0x0EE120): it stands as a unit of that sheet where the
+    // hardware draws it from the cut on (the first raw sprite after it, and those within 48 px of it), fading in over
+    // the cut's 18 frames of growth
+    for (const [cut, gfx, slot, grow] of RAW_CUTS) {
+      const op = rec.ops.find(o => o.op === 38 && parseInt(o.arg, 16) === cut); if (!op || !rec.drawn) continue;
+      const pts = []; let first = null;
+      for (const [f, list] of rec.drawn) { if (f < op.f) continue; const r = list.find(d => d[2] === '' && (!first || Math.hypot(d[0] - first[0], d[1] - first[1]) <= 48)); if (!r) continue; first = first || r; pts.push([f, r[0], r[1], gfx, 'down', 0]); }
+      if (!pts.length) continue;
+      actors[slot] = pts; events.push({ f: pts[0][0], kind: 'appear', slot, dur: grow });
     }
     for (const [t, slot, f0, f1, d] of FACE) if (t === tag && actors[slot]) actors[slot] = actors[slot].map(p => p.length > 1 && f0 <= p[0] && p[0] < f1 ? [...p.slice(0, 4), d, ...p.slice(5)] : p);
     // lines whose frame's unit changes all come after them in the script: shown as the cast stood before (`pre`)

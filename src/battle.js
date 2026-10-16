@@ -8,9 +8,11 @@ import { VFX } from './vfx.js';
 import { playSpell, playItem, arrowMesh, scripted } from './spells.js';
 import { spriteKey } from './sprites.js';
 import { UI, spellDesc, itemDesc } from './ui.js';
+import { spellIcon } from './spellicons.js';
 import * as R from './rules.js';
 import * as E from './battle.js';
 import { sfx, jingle } from './audio.js';
+import { dress } from './sets.js';
 const { D, G } = R;
 const AD = globalThis.ANIM_DATA;
 const $ = id => document.getElementById(id);
@@ -70,8 +72,22 @@ export class Cam {
 // evening battle's sand still takes the dark squares)
 let groundLum = null, LUM_DARK = 0.16;
 export function measureLight() {
-  try { groundLum = measureGround(); const a = [...groundLum].filter(v => v > 0.01).sort((p, q) => p - q); LUM_DARK = Math.min(0.16, (a[a.length >> 1] || 1) * 0.6); }
+  try {
+    groundLum = smoothLum(measureGround()); const a = [...groundLum].filter(v => v > 0.01).sort((p, q) => p - q);
+    LUM_DARK = Math.min(0.16, (a[a.length >> 1] || 1) * 0.6) * 0.8;   // (0.8: only ground clearly darker than the map's run; on battle 7's evenly dark night court a wall's shadow, 0.04 against 0.05 round it, turned two cells white: the user's report)
+  }
   catch (e) { groundLum = null; }
+}
+// each cell's brightness averaged with its neighbours' (its own counted twice), so that a shadow's edge or a speck does
+// not flip one cell's fill against the cells round it
+function smoothLum(L) {
+  const W = R.MAP_W, H = R.MAP_H, out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let s = L[y * W + x], n = 1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < W && Y < H) { s += L[Y * W + X]; n++; } }
+    out[y * W + x] = s / n;
+  }
+  return out;
 }
 function measureGround() {
   const W = R.MAP_W, H = R.MAP_H, K = 8, S = world.scene, rt = new THREE.WebGLRenderTarget(W * K, H * K);
@@ -312,13 +328,38 @@ export function syncActors() {
 // turn order is already set
 async function joinHeroes(list) {
   syncActors();
+  for (const v of list) { const a = actorOf(v); placeActor(a); a.fade = 0; }   // the whole wave hidden until each comes in (else the rest showed, vanished and faded in: the user's report)
   for (const v of list) {
-    const a = actorOf(v); placeActor(a); a.fade = 0;
+    const a = actorOf(v);
     cam.release(); cam.focus(a.pos); await wait(450);
     if (FX.join) await FX.join(E, v); else for (let k = 1; k <= 20; k++) { a.fade = k / 20; await wait(30); }
     a.fade = 1;
   }
 }
+// a battle in rooms (src/rules.js enterRoom): the screen goes dark, the world is built again for the room the party has
+// entered (the battle's look, FX.look, reads G.room), the units are put on their cells, the camera on the heroes; then
+// it comes up again [the ROM fades out and in, 0x1D5B8 / 0x1D8A0]
+export async function enterRoom(k, back) {
+  const f = $('fade'); f.style.transition = 'opacity 0.3s'; f.style.opacity = 1; await wait(320);
+  R.enterRoom(k, back);
+  ready = false;
+  for (const a of actors.values()) a.dispose(world.scene);
+  actors.clear(); ui.clearUnits(); world.reset();
+  setLook(FX.look || { mapSD: roomArt(k) });
+  await world.build(() => {}); resize();
+  vfx = new VFX(world); tiles = new Tiles(world.scene); activeMark = new ActiveMark(world.scene); targetMark = new TargetMark(world.scene);
+  if (FX.look && FX.look.set) await dress(E, FX.look.set);
+  measureLight();
+  Object.assign(window.__remake, { tiles, vfx, world, W: world });
+  await bank.load([...new Set(G.units.map(u => u.sprite))]);
+  syncActors(); for (const a of actors.values()) { placeActor(a); a.dissolve = a.u.alive ? 0 : 1; }
+  if (FX.room) FX.room(E, k);
+  ready = true;
+  const lead = R.players()[0]; if (lead) { cam.release(tileCenter(lead.x, lead.y)); cam.snap(); }
+  hudRound();
+  f.style.transition = 'opacity 0.4s'; f.style.opacity = 0; await wait(400);
+}
+const roomArt = k => 'assets/battles/' + String(D.n).padStart(2, '0') + (k ? '/room-' + k : '/map') + '.png';
 export function placeActor(a) { const p = tileCenter(a.u.x, a.u.y); a.pos.copy(p); a.off.set(0, 0); }
 const FV = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 
@@ -484,11 +525,18 @@ export async function attackAnim(au, du, r, onHit) {
   a.act = d.act = null; a.off.set(0, 0); d.off.set(0, 0);
   vfx.screen.barsTarget = 0; cam.release();
 }
+// a spell's or item's result reaches its target's numbers as it lands (ctx.hit), not as it is cast: damage comes off,
+// and a remedy's HP / MP (worked out by eff.apply, then held back until now) go on [the user's call]
+function landResult(t, r) {
+  if (r.dmg !== undefined) t.hp = Math.max(0, t.hp - r.dmg);
+  else if (r.restore) { t.hp = r.restore.hp; t.mp = r.restore.mp; }
+  r.applied = true;
+}
 export function spellCtx(u, at, targets, results, cells) {
   const a = actorOf(u), ctx = {
     vfx, cam, caster: a, targets: targets.map(actorOf), at: tileCenter(...at), wait,
     cells: (cells || [at]).filter(c => R.inMap(...c)).map(c => tileCenter(...c)),   // the spell's area, on the ground (the aimed cell first)
-    hit: i => { if (ctx.onHit) { const f = ctx.onHit; ctx.onHit = null; f(); } const list = i == null ? targets.map((t, j) => j) : [i]; for (const j of list) { const r = results[j]; if (r && r.dmg !== undefined && !r.applied) { targets[j].hp = Math.max(0, targets[j].hp - r.dmg); r.applied = true; } showResult(targets[j], r); } },   // damage shows in the HP bar as it lands
+    hit: i => { if (ctx.onHit) { const f = ctx.onHit; ctx.onHit = null; f(); } const list = i == null ? targets.map((t, j) => j) : [i]; for (const j of list) { const r = results[j]; if (r && !r.applied) landResult(targets[j], r); showResult(targets[j], r); } },   // damage and healing show in the HP bar as they land
     pose: kind => {
       if (!kind) { a.act = null; return; }
       if (a.texAct) { let k = 0; const loop = () => { if (a.act && a.act.kind === 'pose' && a.act.base === 6) { a.act.fixed = Math.min(2, Math.floor(k++ / 7)); requestAnimationFrame(loop); } }; a.act = { kind: 'pose', row: 2, base: 6, fixed: 0 }; loop(); }
@@ -504,6 +552,59 @@ const LV = {
   guard: a => { a.act = { kind: 'pose', row: 2, base: 3 }; },
   spin: (a, t, rate) => { a.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * rate) % 4]; },
 };
+// 天女散花 for 燕蓉's level-up: the arrow bursts into a ring of coloured stars, then blossoms and petals of many colours
+// spin and flutter down round her (petal meshes, not square particles: the user's call)
+const FLOWER_COLS = [[1, 0.45, 0.7], [1, 0.18, 0.35], [1, 0.8, 0.2], [1, 0.95, 0.85], [0.7, 0.4, 1], [0.35, 0.7, 1], [1, 0.9, 0.55]];
+let PETAL_TEX = null, BLOSSOM_TEX = null;
+function petalTex() {   // a cherry petal: notched tip, white heart blushing to the edge (tinted by the material)
+  const c = document.createElement('canvas'); c.width = 64; c.height = 96; const g = c.getContext('2d');
+  const path = () => { g.beginPath(); g.moveTo(32, 92); g.bezierCurveTo(4, 70, 2, 26, 20, 8); g.lineTo(32, 18); g.lineTo(44, 8); g.bezierCurveTo(62, 26, 60, 70, 32, 92); g.closePath(); };
+  const gr = g.createRadialGradient(32, 80, 2, 32, 50, 48); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.45, '#f4f4f4'); gr.addColorStop(1, '#b8b8b8');
+  g.fillStyle = gr; path(); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 1.5; for (const dx of [-8, 0, 8]) { g.beginPath(); g.moveTo(32, 86); g.quadraticCurveTo(32 + dx * 0.6, 50, 32 + dx, 22); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function blossomTex() {   // a five-petalled blossom with a gold heart
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.translate(64, 64);
+  for (let i = 0; i < 5; i++) {
+    g.save(); g.rotate(i / 5 * Math.PI * 2);
+    const gr = g.createLinearGradient(0, 0, 0, -60); gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, '#c8c8c8'); g.fillStyle = gr;
+    g.beginPath(); g.moveTo(0, -4); g.bezierCurveTo(-30, -20, -26, -58, -8, -60); g.lineTo(0, -52); g.lineTo(8, -60); g.bezierCurveTo(26, -58, 30, -20, 0, -4); g.fill(); g.restore();
+  }
+  const h = g.createRadialGradient(0, 0, 1, 0, 0, 16); h.addColorStop(0, '#fff6b0'); h.addColorStop(0.6, '#ffc030'); h.addColorStop(1, 'rgba(255,170,40,0)');
+  g.fillStyle = h; g.beginPath(); g.arc(0, 0, 16, 0, 6.28); g.fill();
+  g.fillStyle = '#ffe070'; for (let i = 0; i < 8; i++) { const a = i / 8 * 6.28; g.beginPath(); g.arc(Math.cos(a) * 9, Math.sin(a) * 9, 2, 0, 6.28); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function flowerRain(q, P) {
+  PETAL_TEX = PETAL_TEX || petalTex(); BLOSSOM_TEX = BLOSSOM_TEX || blossomTex();
+  const pick = () => FLOWER_COLS[(Math.random() * FLOWER_COLS.length) | 0];
+  vfx.flash([1, 0.85, 0.9], 0.25); vfx.light(q, [1, 0.8, 0.85], 16, 1.2, 9);
+  // the shell: a ring of round stars in every colour, each trailing a sparkle as it falls
+  for (let i = 0; i < 90; i++) {
+    const c = pick(), a = rand(0, 6.28), e = rand(-0.9, 0.9), sp = rand(2.6, 3.8);
+    vfx.spark(q.x, q.y, q.z, { vx: Math.cos(a) * Math.cos(e) * sp, vy: Math.sin(e) * sp + 0.4, vz: Math.sin(a) * Math.cos(e) * sp, g: 1.2, drag: 1.6, life: rand(1.2, 1.8), size: rand(0.12, 0.18), r: c[0], gg: c[1], b: c[2], shape: 0, flicker: 1, ph: rand(0, 9) });
+  }
+  vfx.burst(q, { n: 30, speed: 1.2, cols: [[1, 1, 1], [1, 0.9, 0.95]], size: 0.05, life: 0.6, g: 0, shape: 0 });
+  // the flowers: petals and blossoms open out from the burst and flutter down round her, spinning as they fall
+  for (let i = 0; i < 72; i++) {
+    const bloom = i % 3 === 0, c = pick(), sz = bloom ? rand(0.2, 0.28) : rand(0.12, 0.17);   // (40% smaller than first made: the user's call)
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(bloom ? sz : sz * 0.67, sz), new THREE.MeshBasicMaterial({ map: bloom ? BLOSSOM_TEX : PETAL_TEX, color: new THREE.Color(...c), transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+    m.renderOrder = 6;
+    const a = rand(0, 6.28), r1 = rand(0.6, 1.9), fall = rand(2.4, 3.6), slow = rand(2.6, 3.4), life = rand(1.7, 2.3), d = rand(0, 0.25),   // slow: the drift down as before; life: how soon it has faded [the user's call: fade faster, not fall faster]
+      spin = V(rand(-4, 4), rand(-3, 3), rand(-4, 4)), ph = rand(0, 6.28);
+    const end = Math.max(P.y + 0.05, groundH(q.x + Math.cos(a) * r1, q.z + Math.sin(a) * r1) + 0.05);
+    vfx.timed(m, life + d, (k, dt, t) => {
+      const f = Math.max(0, t - d), out = 1 - Math.exp(-f * 4), drop = Math.min(q.y - end, Math.max(0, f - 0.2) * fall / slow * (q.y - end + 0.4));
+      const sway = Math.sin(f * 2.6 + ph) * 0.25;
+      m.position.set(q.x + Math.cos(a) * r1 * out + Math.cos(a + 1.57) * sway, q.y + out * 0.35 - drop, q.z + Math.sin(a) * r1 * out + Math.sin(a + 1.57) * sway);
+      m.rotation.set(spin.x * f, spin.y * f + ph, spin.z * f * (bloom ? 0.3 : 1));
+      m.material.opacity = Math.min(1, f * 6) * Math.max(0, 1 - Math.max(0, f - 0.45) / (life - 0.45)) ** 1.5;   // fading from the moment they start to drop, gone before they land [the user's call]
+      if (Math.random() < dt * 4) vfx.spark(m.position.x, m.position.y, m.position.z, { vy: -0.2, life: 0.6, size: 0.06, r: c[0], gg: c[1], b: c[2], shape: 0 });
+    });
+  }
+}
 const LEVEL_POSE = {
   // 林雲: two spins, then a sword thrust to the sky inside a sweeping ring of sword light
   p0: async (a, P) => {
@@ -514,16 +615,14 @@ const LEVEL_POSE = {
     vfx.ring(P, [0.5, 0.85, 1], 2, 0.7); vfx.burst(a.head(), { n: 30, speed: 3, col: [0.7, 0.9, 1], size: 0.05, life: 0.8, g: 2 });
     await wait(900);
   },
-  // 燕蓉: facing us, draws and looses an arrow into the sky that bursts into petals of light
+  // 燕蓉: facing us, draws and looses an arrow into the sky that bursts into 天女散花, flowers of many colours
   p1: async (a, P) => {
     a.u.facing = 'down'; LV.atk(a, 0); await wait(250); LV.atk(a, 1); await wait(350); LV.atk(a, 2);   // facing the front, the arrow loosed skywards [the user's call; she turned her back before]
     const ar = arrowMesh([1, 0.75, 0.9], 0.5), from = a.chest().add(V(0, 0.3, 0)), rib = vfx.ribbon({ col: [1, 0.8, 0.9], width: 0.04, n: 14 });
     vfx.timed(ar, 0.45, k => { ar.position.copy(from).add(V(0, k * 3.2, 0)); rib.push(ar.position); }, () => {
-      rib.end(); const q = from.clone().add(V(0, 3.2, 0));
-      vfx.burst(q, { n: 60, speed: 3.5, cols: [[1, 0.75, 0.9], [1, 0.9, 0.6], [1, 1, 1]], size: 0.06, life: 1.4, g: 1.5, shape: 1, flicker: 1 });
-      for (let i = 0; i < 24; i++) vfx.smoke(q.x + rand(-1, 1), q.y + rand(-0.3, 0.3), q.z + rand(-1, 1), { vy: -rand(0.4, 0.9), life: 2.2, size: 0.07, r: 1, gg: rand(0.6, 0.8), b: 0.85, a: 1, shape: 1, wob: 1, ph: rand(0, 6) });
+      rib.end(); ar.visible = false; flowerRain(from.clone().add(V(0, 3.2, 0)), P);
     });
-    await wait(500); a.u.facing = 'down'; a.act = null; await wait(800);
+    await wait(500); a.u.facing = 'down'; a.act = null; await wait(1200);
   },
   // 楊戩: the third eye opens — a golden eye of light above his brow and a sweeping beam, spirit wisps circling
   p2: async (a, P) => {
@@ -559,7 +658,7 @@ const LEVEL_POSE = {
     a.u.facing = 'down'; LV.cast(a, 1);
     vfx.runeCircle(P, [1, 0.8, 0.35], 1.1, 1.8, { spin: 0.4, intensity: 0.8 });
     vfx.pillar(P, [1, 0.8, 0.4], 0.45, 5, 1.7, { taper: 1.2, intensity: 0.22, grow: 1 });
-    for (let i = 0; i < 40; i++) setTimeout(() => vfx.smoke(P.x + rand(-1, 1), P.y + rand(2.2, 3), P.z + rand(-1, 1), { vy: -rand(0.5, 0.9), life: 2.2, size: 0.07, r: 1, gg: rand(0.75, 0.9), b: 0.4, a: 1, shape: 1, wob: 1, ph: rand(0, 6) }), i * 25);
+    for (let i = 0; i < 40; i++) setTimeout(() => vfx.smoke(P.x + rand(-1, 1), P.y + rand(2.2, 3), P.z + rand(-1, 1), { vy: -rand(0.5, 0.9), life: 2.2, size: 0.1, r: 1, gg: rand(0.75, 0.9), b: 0.4, a: 1, shape: 2, spin: rand(-0.8, 0.8), wob: 1, ph: rand(0, 6) }), i * 25);   // petal-shaped
     await wait(500); LV.cast(a, 2); await wait(1000);
   },
   // 雷震子: beats his wings and leaps high; lightning strikes him from the storm and he lands crackling
@@ -732,14 +831,19 @@ export async function useItem(u, idx, at) {
 export async function useEffect(u, eff, cells, at, name, script) {
   const isHarm = eff.kind === 13;
   const targets = cells.map(([x, y]) => R.unitAt(x, y)).filter(t => t && (isHarm ? R.foes(u).includes(t) : t.side === u.side));
-  const results = targets.map(t => { const r = eff.apply(t); return r && r.dmg !== undefined && R.SPELL_IMMUNE.includes(t.moveType) ? { immune: true } : r; });
+  const results = targets.map(t => {
+    const hp = t.hp, mp = t.mp, r = eff.apply(t);
+    if (r && r.dmg === undefined && (t.hp !== hp || t.mp !== mp)) { r.restore = { hp: t.hp, mp: t.mp }; t.hp = hp; t.mp = mp; }   // held back until it lands
+    return r && r.dmg !== undefined && R.SPELL_IMMUNE.includes(t.moveType) ? { immune: true } : r;
+  });
   ui.toast(u.name + '　·　' + name, 1100);
   await script(spellCtx(u, at, targets, results, cells));
   cam.release();
   let gained = 0, killedAny = false;
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i], r = results[i];
-    if (r && r.dmg !== undefined) { if (!r.applied) t.hp = Math.max(0, t.hp - r.dmg); if (t.hp <= 0) { t.alive = false; killedAny = true; await killAnim(t); } }
+    if (r && !r.applied && !r.immune) landResult(t, r);   // (a script that never called ctx.hit)
+    if (r && r.dmg !== undefined) { if (t.hp <= 0) { t.alive = false; killedAny = true; await killAnim(t); } }
     else if (r) gained += r.exp || 0;
   }
   if (!targets.length && !opts.arena) await ui.toast('沒有效果', 800);
@@ -864,8 +968,8 @@ export async function commandMenu(u) {
       return true;
     }
     if (choice === 'magic') {
-      const rows = u.spells.map(i => { const sp = D.spells[i]; return { label: sp.name, right: '法力 ' + sp.mp, ok: sp.mp <= u.mp, desc: spellDesc(sp) }; });
-      const k = await pickList('法術', rows); if (k == null) continue;
+      const rows = u.spells.map(i => { const sp = D.spells[i]; return { icon: spellIcon(sp.id, sp.area), label: sp.name, right: '法力 ' + sp.mp, ok: sp.mp <= u.mp, desc: spellDesc(sp) }; });
+      const k = await pickRing(a, rows); if (k == null) continue;
       const sp = D.spells[u.spells[k]];
       if (sp.mp > u.mp) { ui.toast('法力不足', 800); continue; }
       const range = R.cellsInShape(u.x, u.y, sp.range);
@@ -874,8 +978,8 @@ export async function commandMenu(u) {
       await castSpell(u, sp, at); return true;
     }
     if (choice === 'item') {
-      const rows = u.items.map(i => ({ label: D.items[i].name, right: '', ok: !!R.itemEffect(u, D.items[i]) && !D.items[i].equip, desc: itemDesc(i) }));
-      const k = await pickList('道具', rows); if (k == null) continue;
+      const rows = u.items.map(i => ({ icon: 'assets/items/hd/' + String(i).padStart(2, '0') + '.png', label: D.items[i].name, right: '', ok: !!R.itemEffect(u, D.items[i]) && !D.items[i].equip, desc: itemDesc(i) }));
+      const k = await pickRing(a, rows); if (k == null) continue;
       const it = D.items[u.items[k]], eff = R.itemEffect(u, it);
       if (!eff || it.equip) { ui.toast('無法使用', 800); continue; }
       const range = R.cellsInShape(u.x, u.y, it.range);
@@ -886,16 +990,19 @@ export async function commandMenu(u) {
   }
 }
 export function menuPos() { if (!menuAnchor) return [0, 0]; const p = project(menuAnchor.chest()); return [p.x, p.y]; }
-export async function pickList(title, rows) {
+// the item / spell ring round the unit (ui.ring): hover or the arrow keys point, a click or A picks, B goes back
+export async function pickRing(a, rows) {
   let sel = Math.max(0, rows.findIndex(r => r.ok));
-  const draw = () => ui.list(title, rows, sel, i => push({ k: 'LIST', i }), i => { sel = i; draw(); });
+  menuAnchor = a; ui.hint('');
+  const draw = () => ui.ring(rows, sel, ...menuPos(), i => push({ k: 'RING', i }), i => { if (sel !== i) { sel = i; draw(); } });
   draw();
+  const done = k => { ui.ring(null); menuAnchor = null; return k; };
   for (;;) {
     const ev = await input();
-    if (ev.k === 'B') { ui.list(null); return null; }
-    if (ev.k === 'LIST') { if (ev.i === sel) { ui.list(null); return sel; } sel = ev.i; draw(); }
-    if (ev.k === 'A') { ui.list(null); return sel; }
-    if (ev.k === 'DIR') { const dy = { ArrowUp: -1, w: -1, ArrowDown: 1, s: 1 }[ev.raw]; if (dy) { sel = (sel + dy + rows.length) % rows.length; draw(); } }
+    if (ev.k === 'B') return done(null);
+    if (ev.k === 'RING') return done(ev.i);
+    if (ev.k === 'A') return done(sel);
+    if (ev.k === 'DIR') { const d = { ArrowRight: 1, d: 1, ArrowDown: 1, s: 1, ArrowLeft: -1, a: -1, ArrowUp: -1, w: -1 }[ev.raw]; if (d) { sel = (sel + d + rows.length) % rows.length; draw(); } }
   }
 }
 export async function pickTarget(u, cells, range, area, color, prefer, attack) {
@@ -956,6 +1063,8 @@ export async function runBattle() {
       if (u.status.sleep) { u.status.sleep--; u.done = true; if (u.side === 'player') { cam.focus(actorOf(u).pos); await ui.toast(u.name + ' 正在睡眠', 800); } continue; }
       if (u.status.seal) u.status.seal--;
       G.active = u;
+      const step = R.roomExit();   // a battle in rooms: a hero on an exit takes the party on (or back), and the round starts over
+      if (step) { G.active = null; await enterRoom(G.room + step, step < 0); break; }
       const lines = R.beforeTurn(u);   // the battle's turn hook: scripted lines (and wake-ups) before this unit moves
       if (G.joined && G.joined.length) await joinHeroes(G.joined.splice(0));   // units the hook brought in (battle 4's 楊戩, battle 7's reinforcements)
       if (lines) { for (const l of lines) { cam.release(); if (l.unit) cam.focus(actorOf(l.unit).pos); await ui.say(l.text, l.who || null); } if (!u.alive || G.over) { G.active = null; continue; } }
@@ -1020,7 +1129,7 @@ export function frame(now) {
     for (const a of actors.values()) a.update(gameT, world.camera, cam.yaw, cam.pitch);
     tiles.update(gameT); activeMark.update(gameT, G.active ? actorOf(G.active) : null); targetMark.update(gameT);
     ui.layout(project, [...actors.values()], dt, !$('hud').classList.contains('hidden'));
-    if (menuAnchor) { const m = $('menu'); const [x, y] = menuPos(); m.style.left = x + 'px'; m.style.top = y + 'px'; }
+    if (menuAnchor) { const [x, y] = menuPos(); for (const m of [$('menu'), $('ring')]) if (m) { m.style.left = x + 'px'; m.style.top = y + 'px'; } }
     if (PG.frame) PG.frame();
     world.render();
     if (window.__qaFrame) window.__qaFrame();   // #qa probes read the frame just drawn (src/qa.js)
@@ -1068,7 +1177,7 @@ export async function loadWorld(fx, progress) {
   await world.build(p => progress && progress(p * 0.8));
   resize();
   vfx = new VFX(world); tiles = new Tiles(world.scene); activeMark = new ActiveMark(world.scene); targetMark = new TargetMark(world.scene);
-  const names = new Set([...D.party, ...D.enemies].map(u => u.sprite).concat(FX.sprites || [])
+  const names = new Set([...D.party, ...D.enemies, ...(D.rooms || []).flatMap(r => r.enemies.flatMap(e => e.summon ? [e, e.summon] : [e]))].map(u => u.sprite).concat(FX.sprites || [])
     .concat(opts.test ? globalThis.COMMON.heroes.map(h => spriteKey(h.gfx)) : []));   // the test tools can bring in any hero
   await bank.load([...names]);
   progress && progress(1);

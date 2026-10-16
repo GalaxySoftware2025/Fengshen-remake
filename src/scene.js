@@ -99,14 +99,16 @@ function warm(E) {
 
 // play one part of a scene; hooks: { join(cid) }. Resolves 'battle' when the intro reaches the battle, else 'end'.
 // development: #scene=N&at=F starts the first scene played at frame F (the events before it run at once: maps, set
-// edits, joins, the song; no lines, cards or fades), posed as the original has it then; within the scene's first part
-// (before its battle); with &hold the clock then stays at F
+// edits, joins, the song; no lines, cards or fades), posed as the original has it then; a frame past the scene's
+// battle starts its outro there (the battle skipped); with &hold the clock then stays at F
 let seekAt = +((location.hash.match(/[#&]at=(\d+)/) || [])[1] ?? NaN);
+// (a frame past the scene's battle: its second part, the outro, is played from there, the battle skipped: main.js)
+export const seekPast = S => { const b = S.events.find(e => e.kind === 'battle'); return !!b && Number.isFinite(seekAt) && seekAt > b.f; };
 const seekHold = /[#&]hold\b/.test(location.hash);   // &hold: and stay there (the clock stopped: tools/qa/compare.js shots)
 export async function play(E, tag, part, hooks) {
   const S = await sceneData(tag);
-  let seek = Number.isFinite(seekAt) && part !== 'outro' ? seekAt : null, lit = false; seekAt = NaN;
   const bi = S.events.findIndex(e => e.kind === 'battle');
+  let seek = Number.isFinite(seekAt) && (part !== 'outro' || (bi >= 0 && seekAt > S.events[bi].f)) ? seekAt : null, lit = false; seekAt = NaN;
   let t0 = 0, evs = S.events;
   if (part === 'outro') { if (bi < 0) return 'end'; t0 = S.events[bi].f; evs = S.events.slice(bi + 1); }
   else if (bi >= 0) evs = S.events.slice(0, bi + 1);

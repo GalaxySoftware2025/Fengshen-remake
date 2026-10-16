@@ -63,15 +63,27 @@ export class UI {
     }
     [...m.children].forEach((b, i) => { b.classList.toggle('sel', i === sel); b.classList.toggle('off', !opts[i].ok); });
   }
-  list(title, rows, sel, onPick, onHover) {
-    const L = $('list');
-    if (!rows) { L.classList.add('hidden'); return; }
-    L.classList.remove('hidden'); L.innerHTML = `<h3>${title}</h3>`;
-    rows.forEach((r, i) => {
-      const li = el('div', 'li' + (i === sel ? ' sel' : '') + (r.ok ? '' : ' off'), `<span>${r.label}</span><small>${r.right || ''}</small>`);
-      li.onclick = e => { e.stopPropagation(); onPick(i); }; li.onmouseenter = () => onHover(i); L.appendChild(li);
-    });
-    L.appendChild(el('div', 'desc', rows[sel] ? rows[sel].desc || '' : ''));
+  // ---------- the item / spell ring: icons only, round the unit [the user's call, after the camp's 裝備物品 ring]; the
+  // pointed one's name, cost and effect in a small caption under the ring
+  ring(rows, sel, sx, sy, onPick, onHover) {
+    let R = $('ring');
+    if (!R) { R = el('div', 'hidden'); R.id = 'ring'; $('menu').after(R); }
+    if (!rows) { R.classList.add('hidden'); R.innerHTML = ''; R._n = 0; return; }
+    R.classList.remove('hidden'); R.style.left = sx + 'px'; R.style.top = sy + 'px';
+    const n = rows.length, rad = Math.max(92, Math.min(170, n * 15));
+    if (R._n !== n || R._rows !== rows) {
+      R.innerHTML = ''; R._n = n; R._rows = rows;
+      rows.forEach((r, i) => {
+        const a = -Math.PI / 2 + i / n * Math.PI * 2, b = el('div', 'rb' + (r.ok ? '' : ' off'), `<img src="${r.icon}" alt="">`);
+        b.style.left = Math.cos(a) * rad + 'px'; b.style.top = Math.sin(a) * rad + 'px'; b.style.animationDelay = i * 25 + 'ms';
+        b.onclick = e => { e.stopPropagation(); onPick(i); }; b.onmouseenter = () => onHover(i);
+        R.appendChild(b);
+      });
+      const cap = el('div', 'rcap'); cap.style.top = (rad + 50) + 'px'; R.appendChild(cap);
+    }
+    [...R.querySelectorAll('.rb')].forEach((b, i) => b.classList.toggle('sel', i === sel));
+    const r = rows[sel], cap = R.querySelector('.rcap');
+    cap.innerHTML = r ? `<b>${r.label}</b>${r.right ? `<small>${r.right}</small>` : ''}<div>${r.desc || ''}</div>` : '';
   }
   forecast(a, d, f) {
     const F = $('forecast');
@@ -120,8 +132,8 @@ export class UI {
     }
     for (const a of actors) {
       const u = a.u, bar = this.hpbar(u), p = project(a.head());
-      const vis = showBars && u.alive && a.dissolve === 0 && p.z < 1;
-      bar.style.opacity = vis ? (u.hp < u.mhp ? 1 : 0.55) : 0; bar.style.left = p.x + 'px'; bar.style.top = (p.y - 10) + 'px';
+      const vis = showBars && u.alive && a.dissolve === 0 && !a.hidden && p.z < 1, fade = a.fade ?? 1;   // (a unit still to come in, faded out, shows no bar)
+      bar.style.opacity = vis ? (u.hp < u.mhp ? 1 : 0.55) * fade : 0; bar.style.left = p.x + 'px'; bar.style.top = (p.y - 10) + 'px';
       const w = (u.hp / u.mhp * 100) + '%'; bar.children[1].style.width = w; bar.children[0].style.width = w;
       const st = u.status.sleep ? 'Zz 睡眠' : u.status.seal ? '封法' : u.status.poison ? '中毒' : '';
       this.tag(u, u.alive ? st : '');

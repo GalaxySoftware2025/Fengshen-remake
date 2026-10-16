@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { groundH } from './world.js';
 import { isLegacy, LEGACY } from './sprites.js';
+import { steppers } from './kit/terrain.js';
 
 const AD = globalThis.ANIM_DATA;
 const TMP = new THREE.Vector3();
@@ -137,7 +138,7 @@ export class Actor {
       const ts = Object.keys(this.sheet.acts), t = this.sheet.acts[unit.atkType] ? unit.atkType : ts[0];
       if (t != null) this.sheet = Object.assign({}, this.sheet, this.sheet.acts[t]);
     }
-    this.pos = new THREE.Vector3(unit.x + 0.5, 0, unit.y + 0.5); this.pos.y = groundH(this.pos.x, this.pos.z);
+    this.pos = new THREE.Vector3(unit.x + 0.5, 0, unit.y + 0.5); this.pos.y = groundH(this.pos.x, this.pos.z); steppers.add(this);   // (the grass round its feet trodden: kit/terrain.js)
     this.off = new THREE.Vector2(); this.act = null; this.walking = false; this.flash = 0; this.dissolve = 0; this.hover = unit.sprite === 'ghost' ? 0.22 : 0;
     // normal frames (32px cells) and attack composites (64px cells)
     this.texWalk = tex(this.sheet.walk); this.texWalk.repeat.set(1 / 9, 1);
@@ -230,5 +231,5 @@ export class Actor {
   }
   head() { return new THREE.Vector3(this.pos.x + this.off.x, this.pos.y + 1.05 + this.hover + (this.lift || 0), this.pos.z + this.off.y); }
   chest() { return new THREE.Vector3(this.pos.x + this.off.x, this.pos.y + 0.5 + this.hover + (this.lift || 0), this.pos.z + this.off.y); }
-  dispose(scene) { scene.remove(this.root); }
+  dispose(scene) { scene.remove(this.root); steppers.delete(this); }
 }

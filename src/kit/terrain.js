@@ -182,6 +182,34 @@ function sway(mat, k = 1) {
       transformed.x += sin(uTime * 1.6 + ph) * 0.07 * hh * ${k.toFixed(2)}; transformed.z += cos(uTime * 1.2 + ph) * 0.04 * hh * ${k.toFixed(2)};`);
   };
 }
+// characters standing in the grass (every src/actors.js Actor registers here): round each one's feet the tufts are
+// pressed down and parted outward, a little darker, as trodden grass [the user's call]. Read once a frame, by the first
+// grass mesh drawn (up to 16 characters: shown, on the ground, not fading away)
+export const steppers = new Set();
+const STEP = { uSteps: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) } };
+let stepFrame = -1;
+function fillSteps(renderer) {
+  const f = renderer.info.render.frame; if (f === stepFrame) return; stepFrame = f;
+  const v = STEP.uSteps.value; let i = 0;
+  for (const a of steppers) { if (i >= v.length) break; if (!a.root.visible || a.root.parent == null || a.hover > 0.15 || a.dissolve > 0.5 || (a.fade ?? 1) < 0.5) continue; v[i++].set(a.pos.x + a.off.x, a.pos.y, a.pos.z + a.off.y, 1); }
+  for (; i < v.length; i++) v[i].w = 0;
+}
+const TROD = `vec4 mvPosition = vec4(transformed, 1.0);
+  #ifdef USE_INSTANCING
+  mvPosition = instanceMatrix * mvPosition;
+  #endif
+  vec4 wq = modelMatrix * mvPosition; vec3 root = (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xyz;
+  float press = 0.0; vec2 away = vec2(1.0, 0.0);
+  for (int i = 0; i < 16; i++) { vec4 st = uSteps[i]; if (st.w < 0.5) break;   // (filled from the front) each blade by where it stands (not its tuft's root): a clear patch round the feet
+    vec2 d = (wq.xz - st.xz) * vec2(1.0, 1.4); float l = length(d), k = (1.0 - smoothstep(0.12, 0.42, l)) * (1.0 - step(0.6, abs(root.y - st.y)));   // (squashed in depth: the patch shows either side of the sprite)
+    if (k > press) { press = k; away = l > 0.001 ? normalize(wq.xz - st.xz) : vec2(1.0, 0.0); } }
+  float up = max(0.0, wq.y - root.y);
+  wq.y = root.y + up * (1.0 - 0.5 * press); wq.xz += away * up * press * 0.35;   // flattened and laid outward from the feet
+  #ifdef USE_COLOR
+  vColor *= 1.0 - 0.1 * press;
+  #endif
+  mvPosition = viewMatrix * wq;
+  gl_Position = projectionMatrix * mvPosition;`;
 // grass blades on a canvas: about 140 tapering blades in several greens, each darker at its root and lit at its tip,
 // with a pale midrib; a few bend over; some carry a seed head. Soft edges, so the alpha cut stays smooth (alpha)
 const BLADES = new Map();
@@ -226,8 +254,9 @@ export function grass(pts, o = {}) {
   const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.38, side: THREE.DoubleSide, roughness: 0.82, vertexColors: true, color: o.color ?? 0xffffff });
   sway(mat, 1);
   const swayed = mat.onBeforeCompile;   // both faces keep the tuft's upward normal (a double-sided material flips it on the back face: dark cores)
-  mat.onBeforeCompile = sh => { swayed(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal *= faceDirection;'); };
-  mat.customProgramCacheKey = () => 'grassTuft';
+  mat.onBeforeCompile = sh => { swayed(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal *= faceDirection;');
+    sh.uniforms.uSteps = STEP.uSteps; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec4 uSteps[16];').replace('#include <project_vertex>', TROD); };
+  mat.customProgramCacheKey = () => 'grassTuft2';
   const m = new THREE.InstancedMesh(geo, mat, pts.length), d = new THREE.Object3D(), c = new THREE.Color();
   pts.forEach(([x, y, z], i) => {
     const s = (o.size ?? 0.45) * (0.6 + Math.random() * 0.7); d.position.set(x, y - 0.02, z); d.rotation.set(0, Math.random() * 6.3, 0); d.scale.set(s * 1.25, s * 0.7, s * 1.25); d.updateMatrix(); m.setMatrixAt(i, d.matrix);   // 30% shorter [the user's request]
@@ -236,6 +265,7 @@ export function grass(pts, o = {}) {
   // drawn before the characters (render order 2) and without writing depth: a unit standing in grass shows whole
   // over it, as the original's sprites do; the ground and rocks still hide the grass behind them
   mat.depthWrite = false; m.renderOrder = 1;
+  m.onBeforeRender = renderer => fillSteps(renderer);
   m.receiveShadow = true; m.userData.noAO = true; return m;
 }
 // stones: lumpy displaced icosahedra in rock material
@@ -307,4 +337,49 @@ export function mergeSimple(geos, keepNormals) {
   const m = new THREE.BufferGeometry();
   m.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); m.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); m.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); m.setIndex(I);
   void keepNormals; return m;
+}
+// bamboo: tall culms (green canes, a pale ring at every node) leaning a little, sprays of narrow drooping leaves on their
+// upper half; pts: [x, y, z, height]. A grove reads as a wall of green with dark gaps between the canes
+let BAMBOO = null;
+function bambooTex() {
+  if (BAMBOO) return BAMBOO;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 64, 0); gr.addColorStop(0, '#3c6a1c'); gr.addColorStop(0.35, '#86b840'); gr.addColorStop(0.6, '#6a9a30'); gr.addColorStop(1, '#2e5214');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 256);
+  for (let y = 0; y < 256; y += 64) { g.fillStyle = 'rgba(230,240,190,0.75)'; g.fillRect(0, y, 64, 4); g.fillStyle = 'rgba(30,50,10,0.5)'; g.fillRect(0, y + 4, 64, 3); }
+  for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(40,70,20,0.25)'; g.fillRect(Math.random() * 64, Math.random() * 256, 1, 20 + Math.random() * 30); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  const l = document.createElement('canvas'); l.width = 256; l.height = 256; const h = l.getContext('2d');
+  for (let i = 0; i < 60; i++) {   // leaves from a twig across the card, hanging down and out
+    const x0 = 20 + Math.random() * 216, y0 = 30 + Math.random() * 120, ang = Math.PI * (0.25 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1) + Math.PI / 2, len = 40 + Math.random() * 46;
+    h.save(); h.translate(x0, y0); h.rotate(ang - Math.PI / 2); h.fillStyle = ['#3e7020', '#5a9030', '#2c5418', '#6aa438'][i % 4];
+    h.beginPath(); h.moveTo(0, 0); h.quadraticCurveTo(7, len * 0.4, 0, len); h.quadraticCurveTo(-7, len * 0.4, 0, 0); h.fill(); h.restore();
+  }
+  const lt = new THREE.CanvasTexture(l); lt.colorSpace = THREE.SRGBColorSpace;
+  return (BAMBOO = { cane: t, leaf: lt });
+}
+export function bamboo(pts, o = {}) {
+  const tx = bambooTex(), g = new THREE.Group();
+  const caneGeo = new THREE.CylinderGeometry(0.03, 0.036, 1, 7, 1, true); caneGeo.translate(0, 0.5, 0);
+  const caneMat = new THREE.MeshStandardMaterial({ map: tx.cane, roughness: 0.5, metalness: 0.02, side: THREE.DoubleSide });
+  sway(caneMat, 0.12);
+  const sprays = new THREE.PlaneGeometry(1, 0.8); sprays.translate(0, -0.15, 0);
+  const sp2 = sprays.clone().rotateY(Math.PI / 2), leafGeo = mergeSimple([sprays, sp2]);
+  const leafMat = new THREE.MeshStandardMaterial({ map: tx.leaf, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.8, color: o.color ?? 0xffffff });
+  sway(leafMat, 0.25);
+  const canes = [], leaves = [];
+  for (const [x, y, z, hh] of pts) {
+    const n = 2 + (Math.random() * 2 | 0);
+    for (let k = 0; k < n; k++) {
+      const cx = x + (Math.random() - 0.5) * 0.35, cz = z + (Math.random() - 0.5) * 0.35, h = hh * (0.75 + Math.random() * 0.4), lean = (Math.random() - 0.5) * 0.12;
+      canes.push({ x: cx, y: y - 0.05, z: cz, h, lean, r: 0.8 + Math.random() * 0.5 });
+      for (let s = 0; s < Math.round(h * 1.6); s++) { const f = 0.45 + Math.random() * 0.55; leaves.push({ x: cx + Math.sin(lean) * h * f + (Math.random() - 0.5) * 0.2, y: y + h * f, z: cz + (Math.random() - 0.5) * 0.2, s: 0.5 + Math.random() * 0.45, ry: Math.random() * 6.3 }); }
+    }
+  }
+  const cm = new THREE.InstancedMesh(caneGeo, caneMat, canes.length), lm = new THREE.InstancedMesh(leafGeo, leafMat, leaves.length), d = new THREE.Object3D(), c = new THREE.Color();
+  canes.forEach((s, i) => { d.position.set(s.x, s.y, s.z); d.rotation.set(s.lean * 0.6, 0, s.lean); d.scale.set(s.r, s.h, s.r); d.updateMatrix(); cm.setMatrixAt(i, d.matrix); tx.cane.repeat.set(1, 1); const t = 0.8 + Math.random() * 0.35; cm.setColorAt(i, c.setRGB(t * 0.95, t, t * 0.8)); });
+  leaves.forEach((l, i) => { d.position.set(l.x, l.y, l.z); d.rotation.set(0, l.ry, 0); d.scale.setScalar(l.s); d.updateMatrix(); lm.setMatrixAt(i, d.matrix); const t = 0.7 + Math.random() * 0.45; lm.setColorAt(i, c.setRGB(t, t, t * 0.85)); });
+  for (const m of [cm, lm]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
+  lm.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tx.leaf, alphaTest: 0.45 });
+  return g;
 }

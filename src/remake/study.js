@@ -157,7 +157,7 @@ let tree = null, treeT = null;
 const standIn = {
   '087306': (E, x, z, moving, ctx) => {
     const fresh = !tree || tree.g.parent !== E.world.scene;
-    if (fresh) { tree = moneyTree(); E.world.scene.add(tree.g); }
+    if (fresh) { tree = moneyTree(); E.world.scene.add(tree.g); if (window.__remake) window.__remake.moneyTree = tree.g; }   // (QA close-ups find it here)
     const st = treeState(ctx.tag, ctx.t); st.snap = fresh || treeT == null || Math.abs(ctx.t - treeT) > 40; treeT = ctx.t;
     tree.pose(E, x, LV.at(x, z), z, st);
   },
