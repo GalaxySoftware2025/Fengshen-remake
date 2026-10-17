@@ -243,7 +243,6 @@ export function enterRoom(k, back = false) {
   G.round = 0;
 }
 // a guest on the heroes' side (battles 6 and 7's 文王, side 'player', guest): no one commands him, his turn is his AI's
-export const isGuest = u => !!u.guest;
 export const heroes = () => players().filter(u => !u.guest);
 export const turnOrder = () => G.units.filter(u => u.alive && u.side !== 'npc').sort((a, b) => b.spd - a.spd);   // [ROM]
 

@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { World, groundH, rand, setLook, U as WU } from './world.js';
 import { SpriteBank, Actor } from './actors.js';
+import { LEVEL_POSE, yangPose } from './levelup.js';
+import { speed } from './speed.js';
 import { VFX } from './vfx.js';
 import { playSpell, playItem, arrowMesh, scripted } from './spells.js';
 import { spriteKey } from './sprites.js';
@@ -33,7 +35,8 @@ opts.test = opts.arena || (/[#&]test\b/.test(location.hash) && /battle=\d+/.test
 const tweens = [];
 export function anim(sec, fn) { return new Promise(res => tweens.push({ t: 0, d: Math.max(0.0001, sec), fn, res })); }
 export const wait = ms => anim(ms / 1000);
-let timeScale = 1;
+let timeScale = 1, frozen = false, stepDt = 0, stepDone = null;   // frozen: QA's still frame (tools/qa/tiles.js): no game time, camera or resolution change;
+// while frozen, step(dt) advances exactly dt and resolves once that frame is drawn (tools/qa/video.js: real speed at any render speed)
 export let gameT = 0;
 
 // ---------------------------------------------------------------- camera rig
@@ -70,10 +73,16 @@ export class Cam {
 // dark ground (white move squares): under 0.16, or under 0.6 of the map's median where the whole battle is lit low (an
 // evening battle's sand still takes the dark squares)
 let groundLum = null, LUM_DARK = 0.16;
+export const groundLight = () => ({ lum: groundLum, dark: LUM_DARK });   // (tools/qa/tiles.js)
 export function measureLight() {
+  SURF = null;   // the set or the room changed: the flier surfaces are measured again
   try {
-    groundLum = smoothLum(measureGround()); const a = [...groundLum].filter(v => v > 0.01).sort((p, q) => p - q);
-    LUM_DARK = Math.min(0.16, (a[a.length >> 1] || 1) * 0.6) * 0.8;   // (0.8: only ground clearly darker than the map's run; on battle 7's evenly dark night court a wall's shadow, 0.04 against 0.05 round it, turned two cells white: the user's report)
+    // the map's run of light from high up; each cell the darker of that and its ground under any canopy (battle 13's bamboo
+    // tops read the shaded ground under them as light: tools/qa/tiles.js)
+    const above = measureGround(false), under = measureGround(true), a = [...smoothLum(above)].filter(v => v > 0.01).sort((p, q) => p - q);
+    groundLum = smoothLum(above.map((v, i) => Math.min(v, under[i])));
+    const med = a[a.length >> 1] || 1;
+    LUM_DARK = med < 0.05 ? 0.16 : Math.min(0.16, med * 0.6) * 0.8;   // a map too dark for dark squares to show on at all takes white ones: the dark interiors, battles 3, 5, 6, 11 (median 0.040-0.043), not battle 2's night sand (0.057; tools/qa/tiles.js)   // (0.8: only ground clearly darker than the map's run; on battle 7's evenly dark night court a wall's shadow, 0.04 against 0.05 round it, turned two cells white: the user's report)
   }
   catch (e) { groundLum = null; }
 }
@@ -88,12 +97,19 @@ function smoothLum(L) {
   }
   return out;
 }
-function measureGround() {
+// each cell's brightness from straight above. under: from just above the highest open ground, so a canopy or roof over
+// a cell is left out (its shadow on the ground still counts); otherwise from high up (the whole set, as the play view
+// mostly sees it)
+function measureGround(under) {
   const W = R.MAP_W, H = R.MAP_H, K = 8, S = world.scene, rt = new THREE.WebGLRenderTarget(W * K, H * K);
-  const cam = new THREE.OrthographicCamera(0, W, 0, -H, 1, 200); cam.position.set(0, 80, 0); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0);
-  cam.left = 0; cam.right = W; cam.top = 0; cam.bottom = -H; cam.position.set(0, 80, 0); cam.updateProjectionMatrix();
+  let top = 79.4; if (under) { top = -99; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!R.D.terrain || R.D.terrain[y][x] === 0) top = Math.max(top, tileY(x, y)); }
+  const cam = new THREE.OrthographicCamera(0, W, 0, -H, 0.01, 200); cam.up.set(0, 0, -1);
+  cam.position.set(0, top + 0.6, 0); cam.lookAt(0, top - 10, 0); cam.updateProjectionMatrix();
+  // drifting particles and see-through glows are not ground: left in, battle 4's dust moved a cell's reading by up to
+  // 0.2 from one load to the next, so the squares came out light or dark by chance (tools/qa/tiles.js)
+  const hid = []; S.traverse(o => { const m = o.material; if (o.visible && (o.isPoints || (m && !Array.isArray(m) && (m.blending === THREE.AdditiveBlending || (m.transparent && !m.depthWrite))))) { o.visible = false; hid.push(o); } });
   const fog = S.fog; S.fog = null; const r = world.renderer, prev = r.getRenderTarget();
-  r.setRenderTarget(rt); r.render(S, cam); r.setRenderTarget(prev); S.fog = fog;
+  r.setRenderTarget(rt); r.render(S, cam); r.setRenderTarget(prev); S.fog = fog; for (const o of hid) o.visible = true;
   const px = new Uint8Array(W * K * H * K * 4); r.readRenderTargetPixels(rt, 0, 0, W * K, H * K, px); rt.dispose();
   const out = new Float32Array(W * H);
   for (let py = 0; py < H * K; py++) for (let qx = 0; qx < W * K; qx++) {
@@ -106,6 +122,8 @@ function measureGround() {
 // a tile's height: the highest ground in its cell, a little above, in steps of 0.1, so that neighbours on level
 // ground lie at exactly one height (their overlap, a hair wide, is shaded once) and none sinks into a lump
 const tileY = (x, y) => { let h = -99; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) h = Math.max(h, groundH(x + 0.1 + i * 0.4, y + 0.1 + j * 0.4)); return Math.ceil((h + 0.04) / 0.1) * 0.1; };
+// a tile's height on a blocked cell (a roof, a cliff a flier can reach) sits on top of what is there
+const cellY = (x, y) => (G.terrain && G.terrain[y] && G.terrain[y][x] !== 0) ? Math.max(tileY(x, y), Math.ceil((surfaceY(x, y) + 0.04) / 0.1) * 0.1) : tileY(x, y);
 class Tiles {
   constructor(scene) {
     const geo = new THREE.PlaneGeometry(1.01, 1.01); geo.rotateX(-Math.PI / 2);   // a hair over a cell: no seams between tiles
@@ -123,8 +141,8 @@ class Tiles {
           float a = mix(0.11 + 0.02 * sin(uT * 2.5), 0.32, red) + edge * 0.5;
           vec3 col = vC * (0.55 + edge * 0.35);
           float lite = step(0.5, vC.r);
-          col = mix(col, vC, mv); a = mix(a, mix(0.66, 0.4, lite), mv);
-          float w = fwidth(d), hair = mv * (1.0 - lite) * smoothstep(1.0 - 1.8 * w, 1.0 - 0.8 * w, d);   // dark squares: a one-pixel black line keeps the cells apart
+          col = mix(col, vC, mv); a = mix(a, mix(0.66, 0.3, lite), mv);
+          float w = fwidth(d), hair = mv * smoothstep(1.0 - 1.8 * w, 1.0 - 0.8 * w, d);   // a one-pixel black line keeps the cells apart (white squares too: on a dark floor they merged into one block)
           col = mix(col, vec3(0.0), hair); a = mix(a, 0.92, hair);
           gl_FragColor = vec4(col, a); }`,
     });
@@ -143,9 +161,10 @@ class Tiles {
     this.dots = new THREE.InstancedMesh(dg, new THREE.MeshBasicMaterial({ color: new THREE.Color(0.75, 0.85, 1) }), 40); this.dots.count = 0; this.dots.frustumCulled = false; scene.add(this.dots);
   }
   set(list) {
+    this.last = list;   // (tools/qa/tiles.js reads the cells shown)
     const m = new THREE.Matrix4(), c = new THREE.Color();
     list.slice(0, 600).forEach((t, i) => {
-      const p = tileCenter(t.x, t.y), move = t.c === C.move; m.makeTranslation(p.x, tileY(t.x, t.y) + (t.lift || 0), p.z); this.mesh.setMatrixAt(i, m);
+      const p = tileCenter(t.x, t.y), move = t.c === C.move; m.makeTranslation(p.x, cellY(t.x, t.y) + (t.lift || 0), p.z); this.mesh.setMatrixAt(i, m);
       c.setRGB(...(move && groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);
       this.edge.array[i] = move ? 1 : 0;
     });
@@ -279,6 +298,10 @@ function pick(ev) {
   mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(mouse, world.camera);
   const o = ray.ray.origin, d = ray.ray.direction; if (d.y >= -1e-4) return null;
+  if (tiles && tiles.mesh.count && tiles.last) {   // a square that is shown, raised ones (on a roof) included
+    const hit = ray.intersectObject(tiles.mesh, false)[0], t = hit && tiles.last[hit.instanceId];
+    if (t && R.inMap(t.x, t.y)) return [t.x, t.y];
+  }
   let h = 0.1, px = 0, pz = 0;
   for (let i = 0; i < 4; i++) { const t = (h - o.y) / d.y; px = o.x + d.x * t; pz = o.z + d.z * t; h = groundH(px, pz); }
   const x = Math.floor(px), y = Math.floor(pz);
@@ -320,7 +343,10 @@ export function setupInput() {
 // ---------------------------------------------------------------- presentation helpers
 export function syncActors() {
   for (const [u, a] of actors) if (!G.units.includes(u)) { a.dispose(world.scene); actors.delete(u); }
-  for (const u of G.units) if (!actors.has(u)) { const a = new Actor(bank, u, world.scene); actors.set(u, a); if (!u.alive) a.dissolve = 1; }
+  for (const u of G.units) if (!actors.has(u)) {
+    const a = new Actor(bank, u, world.scene); actors.set(u, a); if (!u.alive) a.dissolve = 1;
+    if (isFlier(u)) { a.pos.copy(standAt(u, u.x, u.y)); a.over = true; for (const m of [a.mesh, a.big]) { m.material.depthTest = false; m.renderOrder = 6.5; } }   // a flier is drawn over the scenery: nothing on the ground hides it, flames and see-through leaves neither (tools/qa/fliers.js)
+  }
 }
 // a unit joining mid-battle (a hero, battle 4's 楊戩; or the enemy's reinforcements, battle 7's): the camera goes to where
 // it appears, and it comes in (the battle's own entrance, FX.join, or a fade); it acts from the next round, as the round's
@@ -359,7 +385,34 @@ export async function enterRoom(k, back) {
   f.style.transition = 'opacity 0.4s'; f.style.opacity = 0; await wait(400);
 }
 const roomArt = k => 'assets/battles/' + String(D.n).padStart(2, '0') + (k ? '/room-' + k : '/map') + '.png';
-export function placeActor(a) { const p = tileCenter(a.u.x, a.u.y); a.pos.copy(p); a.off.set(0, 0); }
+// where a unit stands on a cell: the ground; a flier (a move type that may enter terrain 2) stands on whatever is there
+// instead, a roof, a wall or a cliff (battle 9's 雷震子 was drawn inside the temple hall, hidden under its roof)
+export const isFlier = u => { const c = D.costs && D.costs[u.moveType]; return !!(c && c[2] < 127); };
+export const standAt = (u, x, y) => { const p = tileCenter(x, y); if (isFlier(u)) p.y = Math.max(p.y, surfaceY(x, y)); return p; };
+export function placeActor(a) { a.pos.copy(standAt(a.u, a.u.x, a.u.y)); a.off.set(0, 0); }
+// the top of whatever stands on a cell: rays straight down at five points of it through the set's solid pieces (not
+// grass or leaf cards, effects, sprites, the tiles, a sky dome); the highest hit within 6 of the ground, or the ground.
+// Cached until the set or the room changes (measureLight resets it).
+let SURF = null; const _down = new THREE.Raycaster(), DOWN = new THREE.Vector3(0, -1, 0);
+function surfaceY(x, y) {
+  if (!SURF) {
+    const skip = new Set(); for (const a of actors.values()) a.root.traverse(o => skip.add(o));
+    for (const o of [tiles && tiles.mesh, tiles && tiles.cursor, tiles && tiles.marker, tiles && tiles.dots]) if (o) skip.add(o);
+    const solid = []; world.scene.traverseVisible(o => {
+      const m = o.material; if (!o.isMesh || skip.has(o) || !m || Array.isArray(m)) return;
+      if (m.blending === THREE.AdditiveBlending || (m.transparent && !m.depthWrite) || m.side === THREE.BackSide || (o.isInstancedMesh && m.alphaTest > 0)) return;
+      solid.push(o);
+    });
+    SURF = { solid, cells: new Map() };
+  }
+  const k = x + ',' + y; if (SURF.cells.has(k)) return SURF.cells.get(k);
+  const g = groundH(x + 0.5, y + 0.5); let h = g;
+  for (const [dx, dz] of [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) {
+    _down.set(new THREE.Vector3(x + dx, g + 6, y + dz), DOWN);
+    const hit = _down.intersectObjects(SURF.solid, false)[0]; if (hit) h = Math.max(h, hit.point.y);
+  }
+  SURF.cells.set(k, h); return h;
+}
 const FV = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 
 // a walk along the path: corners rounded (a quarter curve through each turn), a short speed-up and slow-down at the ends,
@@ -367,7 +420,7 @@ const FV = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 const STEP = 0.15, RAMP = 0.09;   // seconds per cell at full pace; seconds to reach it / to stop
 export async function walkActor(u, path) {
   const a = actorOf(u); if (path.length < 2) return;
-  const P = path.map(c => tileCenter(...c)), pts = [P[0]];
+  const P = path.map(c => standAt(u, ...c)), pts = [P[0]];
   for (let i = 1; i < P.length - 1; i++) {
     const A = P[i - 1], B = P[i], C = P[i + 1], turn = (B.x - A.x) * (C.z - B.z) - (B.z - A.z) * (C.x - B.x);
     if (Math.abs(turn) < 1e-6) { pts.push(B); continue; }
@@ -544,194 +597,6 @@ export function spellCtx(u, at, targets, results, cells) {
   };
   ctx.cam.camera = world.camera; return ctx;
 }
-// level up: every hero gets their own victory pose, built from their ROM frames (attack / guard / cast poses,
-// turning through the four facings) plus effects that fit them. These poses are new to the remake.
-const LV = {
-  atk: (a, f) => { a.act = { kind: 'atk', frame: f }; },
-  cast: (a, f) => { a.act = { kind: 'pose', row: 2, base: 6, fixed: f }; },
-  guard: a => { a.act = { kind: 'pose', row: 2, base: 3 }; },
-  spin: (a, t, rate) => { a.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * rate) % 4]; },
-};
-// 天女散花 for 燕蓉's level-up: the arrow bursts into a ring of coloured stars, then blossoms and petals of many colours
-// spin and flutter down round her (petal meshes, not square particles: the user's call)
-const FLOWER_COLS = [[1, 0.45, 0.7], [1, 0.18, 0.35], [1, 0.8, 0.2], [1, 0.95, 0.85], [0.7, 0.4, 1], [0.35, 0.7, 1], [1, 0.9, 0.55]];
-let PETAL_TEX = null, BLOSSOM_TEX = null;
-function petalTex() {   // a cherry petal: notched tip, white heart blushing to the edge (tinted by the material)
-  const c = document.createElement('canvas'); c.width = 64; c.height = 96; const g = c.getContext('2d');
-  const path = () => { g.beginPath(); g.moveTo(32, 92); g.bezierCurveTo(4, 70, 2, 26, 20, 8); g.lineTo(32, 18); g.lineTo(44, 8); g.bezierCurveTo(62, 26, 60, 70, 32, 92); g.closePath(); };
-  const gr = g.createRadialGradient(32, 80, 2, 32, 50, 48); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.45, '#f4f4f4'); gr.addColorStop(1, '#b8b8b8');
-  g.fillStyle = gr; path(); g.fill();
-  g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 1.5; for (const dx of [-8, 0, 8]) { g.beginPath(); g.moveTo(32, 86); g.quadraticCurveTo(32 + dx * 0.6, 50, 32 + dx, 22); g.stroke(); }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-function blossomTex() {   // a five-petalled blossom with a gold heart
-  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
-  g.translate(64, 64);
-  for (let i = 0; i < 5; i++) {
-    g.save(); g.rotate(i / 5 * Math.PI * 2);
-    const gr = g.createLinearGradient(0, 0, 0, -60); gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, '#c8c8c8'); g.fillStyle = gr;
-    g.beginPath(); g.moveTo(0, -4); g.bezierCurveTo(-30, -20, -26, -58, -8, -60); g.lineTo(0, -52); g.lineTo(8, -60); g.bezierCurveTo(26, -58, 30, -20, 0, -4); g.fill(); g.restore();
-  }
-  const h = g.createRadialGradient(0, 0, 1, 0, 0, 16); h.addColorStop(0, '#fff6b0'); h.addColorStop(0.6, '#ffc030'); h.addColorStop(1, 'rgba(255,170,40,0)');
-  g.fillStyle = h; g.beginPath(); g.arc(0, 0, 16, 0, 6.28); g.fill();
-  g.fillStyle = '#ffe070'; for (let i = 0; i < 8; i++) { const a = i / 8 * 6.28; g.beginPath(); g.arc(Math.cos(a) * 9, Math.sin(a) * 9, 2, 0, 6.28); g.fill(); }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-function flowerRain(q, P) {
-  PETAL_TEX = PETAL_TEX || petalTex(); BLOSSOM_TEX = BLOSSOM_TEX || blossomTex();
-  const pick = () => FLOWER_COLS[(Math.random() * FLOWER_COLS.length) | 0];
-  vfx.flash([1, 0.85, 0.9], 0.25); vfx.light(q, [1, 0.8, 0.85], 16, 1.2, 9);
-  // the shell: a ring of round stars in every colour, each trailing a sparkle as it falls
-  for (let i = 0; i < 90; i++) {
-    const c = pick(), a = rand(0, 6.28), e = rand(-0.9, 0.9), sp = rand(2.6, 3.8);
-    vfx.spark(q.x, q.y, q.z, { vx: Math.cos(a) * Math.cos(e) * sp, vy: Math.sin(e) * sp + 0.4, vz: Math.sin(a) * Math.cos(e) * sp, g: 1.2, drag: 1.6, life: rand(1.2, 1.8), size: rand(0.12, 0.18), r: c[0], gg: c[1], b: c[2], shape: 0, flicker: 1, ph: rand(0, 9) });
-  }
-  vfx.burst(q, { n: 30, speed: 1.2, cols: [[1, 1, 1], [1, 0.9, 0.95]], size: 0.05, life: 0.6, g: 0, shape: 0 });
-  // the flowers: petals and blossoms open out from the burst and flutter down round her, spinning as they fall
-  for (let i = 0; i < 72; i++) {
-    const bloom = i % 3 === 0, c = pick(), sz = bloom ? rand(0.2, 0.28) : rand(0.12, 0.17);   // (40% smaller than first made: the user's call)
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(bloom ? sz : sz * 0.67, sz), new THREE.MeshBasicMaterial({ map: bloom ? BLOSSOM_TEX : PETAL_TEX, color: new THREE.Color(...c), transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
-    m.renderOrder = 6;
-    const a = rand(0, 6.28), r1 = rand(0.6, 1.9), fall = rand(2.4, 3.6), slow = rand(2.6, 3.4), life = rand(1.7, 2.3), d = rand(0, 0.25),   // slow: the drift down as before; life: how soon it has faded [the user's call: fade faster, not fall faster]
-      spin = V(rand(-4, 4), rand(-3, 3), rand(-4, 4)), ph = rand(0, 6.28);
-    const end = Math.max(P.y + 0.05, groundH(q.x + Math.cos(a) * r1, q.z + Math.sin(a) * r1) + 0.05);
-    vfx.timed(m, life + d, (k, dt, t) => {
-      const f = Math.max(0, t - d), out = 1 - Math.exp(-f * 4), drop = Math.min(q.y - end, Math.max(0, f - 0.2) * fall / slow * (q.y - end + 0.4));
-      const sway = Math.sin(f * 2.6 + ph) * 0.25;
-      m.position.set(q.x + Math.cos(a) * r1 * out + Math.cos(a + 1.57) * sway, q.y + out * 0.35 - drop, q.z + Math.sin(a) * r1 * out + Math.sin(a + 1.57) * sway);
-      m.rotation.set(spin.x * f, spin.y * f + ph, spin.z * f * (bloom ? 0.3 : 1));
-      m.material.opacity = Math.min(1, f * 6) * Math.max(0, 1 - Math.max(0, f - 0.45) / (life - 0.45)) ** 1.5;   // fading from the moment they start to drop, gone before they land [the user's call]
-      if (Math.random() < dt * 4) vfx.spark(m.position.x, m.position.y, m.position.z, { vy: -0.2, life: 0.6, size: 0.06, r: c[0], gg: c[1], b: c[2], shape: 0 });
-    });
-  }
-}
-const LEVEL_POSE = {
-  // 林雲: two spins, then a sword thrust to the sky inside a sweeping ring of sword light
-  p0: async (a, P) => {
-    await anim(0.6, (k, dt) => LV.spin(a, k * 0.6, 14));
-    a.u.facing = 'down'; LV.atk(a, 2);
-    const rib = vfx.ribbon({ col: [0.5, 0.85, 1], width: 0.12, n: 30 });
-    anim(0.6, k => rib.push(V(P.x + Math.cos(k * 7) * 0.75, P.y + 0.5 + k * 0.5, P.z + Math.sin(k * 7) * 0.75))).then(() => rib.end());
-    vfx.ring(P, [0.5, 0.85, 1], 2, 0.7); vfx.burst(a.head(), { n: 30, speed: 3, col: [0.7, 0.9, 1], size: 0.05, life: 0.8, g: 2 });
-    await wait(900);
-  },
-  // 燕蓉: facing us, draws and looses an arrow into the sky that bursts into 天女散花, flowers of many colours
-  p1: async (a, P) => {
-    a.u.facing = 'down'; LV.atk(a, 0); await wait(250); LV.atk(a, 1); await wait(350); LV.atk(a, 2);   // facing the front, the arrow loosed skywards [the user's call; she turned her back before]
-    const ar = arrowMesh([1, 0.75, 0.9], 0.5), from = a.chest().add(V(0, 0.3, 0)), rib = vfx.ribbon({ col: [1, 0.8, 0.9], width: 0.04, n: 14 });
-    vfx.timed(ar, 0.45, k => { ar.position.copy(from).add(V(0, k * 3.2, 0)); rib.push(ar.position); }, () => {
-      rib.end(); ar.visible = false; flowerRain(from.clone().add(V(0, 3.2, 0)), P);
-    });
-    await wait(500); a.u.facing = 'down'; a.act = null; await wait(1200);
-  },
-  // 楊戩: the third eye opens — a golden eye of light above his brow and a sweeping beam, spirit wisps circling
-  p2: async (a, P) => {
-    a.u.facing = 'down'; LV.cast(a, 0); await wait(200); LV.cast(a, 2);
-    const h = a.head().add(V(0, 0.2, 0));
-    vfx.ring(h, [1, 0.8, 0.4], 0.7, 0.9, { vertical: true, y: h.y, yaw: cam.yaw, intensity: 0.8 });
-    vfx.pillar(P, [1, 0.8, 0.4], 0.06, 5, 1.2, { intensity: 0.45 });
-    for (let j = 0; j < 3; j++) { const r = vfx.ribbon({ col: [0.55, 0.8, 1], width: 0.05, n: 20 }); anim(1.2, k => r.push(V(P.x + Math.cos(k * 9 + j * 2.1) * 0.7, P.y + 0.3 + Math.sin(k * 5 + j) * 0.25, P.z + Math.sin(k * 9 + j * 2.1) * 0.7))).then(() => r.end()); }
-    await wait(1300);
-  },
-  // 黃飛虎: leaps and slams down; the ground cracks with a shockwave and golden war-flame rises around him
-  p3: async (a, P) => {
-    a.u.facing = 'down'; LV.guard(a);
-    await anim(0.45, k => { a.hover = Math.sin(k * Math.PI) * 0.7; });
-    a.hover = 0; vfx.shake(0.18, 0.3); vfx.ring(P, [1, 0.75, 0.3], 2.2, 0.6, { intensity: 0.6 }); vfx.decal(P, [1, 0.55, 0.15], 0.9, 1.2, { intensity: 0.35 });
-    for (let i = 0; i < 16; i++) { const t = rand(0, 6.28), sp = rand(1.5, 3); vfx.smokePuff(P.x, P.y + 0.1, P.z, { vx: Math.cos(t) * sp, vy: rand(0.2, 0.6), vz: Math.sin(t) * sp, drag: 2.5, life: 1.2, size: 0.35, size1: 0.9, tint: [0.5, 0.45, 0.38] }); }
-    LV.atk(a, 1);
-    await anim(1.0, k => { for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.35, 0.6); vfx.flame(P.x + Math.cos(t) * r, P.y, P.z + Math.sin(t) * r, { size: rand(0.25, 0.4) * (1 - k * 0.5), asp: 2, life: 0.5, vy: 0.8, tint: [1, 0.95, 0.6] }); } });
-  },
-  // 哪吒: rises on the wind-fire wheels, spinning, with fire circling his feet and his red sash streaming
-  p4: async (a, P) => {
-    const sash = vfx.ribbon({ col: [1, 0.25, 0.2], width: 0.07, n: 26 });
-    await anim(1.3, k => {
-      a.hover = Math.sin(Math.min(1, k * 1.4) * Math.PI * 0.5) * 0.7 * (k > 0.8 ? 1 - (k - 0.8) * 5 : 1); LV.spin(a, k * 1.3, 12);
-      const y = P.y + a.hover + 0.05;
-      for (const s2 of [-1, 1]) { const t = k * 40 + (s2 > 0 ? Math.PI : 0); vfx.flame(P.x + Math.cos(t) * 0.3, y, P.z + Math.sin(t) * 0.3, { size: 0.18, asp: 1.4, life: 0.3, vy: -0.3 }); }
-      sash.push(V(P.x + Math.cos(k * 25) * 0.45, y + 0.55, P.z + Math.sin(k * 25) * 0.45));
-    });
-    sash.end(); a.hover = 0; a.u.facing = 'down'; LV.atk(a, 2); vfx.ring(P, [1, 0.5, 0.2], 1.8, 0.5); await wait(500);
-  },
-  // 姬發: the prince raises his hands; a royal shaft of gold falls from the sky with drifting golden petals
-  p5: async (a, P) => {
-    a.u.facing = 'down'; LV.cast(a, 1);
-    vfx.runeCircle(P, [1, 0.8, 0.35], 1.1, 1.8, { spin: 0.4, intensity: 0.8 });
-    vfx.pillar(P, [1, 0.8, 0.4], 0.45, 5, 1.7, { taper: 1.2, intensity: 0.22, grow: 1 });
-    for (let i = 0; i < 40; i++) setTimeout(() => vfx.smoke(P.x + rand(-1, 1), P.y + rand(2.2, 3), P.z + rand(-1, 1), { vy: -rand(0.5, 0.9), life: 2.2, size: 0.1, r: 1, gg: rand(0.75, 0.9), b: 0.4, a: 1, shape: 2, spin: rand(-0.8, 0.8), wob: 1, ph: rand(0, 6) }), i * 25);   // petal-shaped
-    await wait(500); LV.cast(a, 2); await wait(1000);
-  },
-  // 雷震子: beats his wings and leaps high; lightning strikes him from the storm and he lands crackling
-  p6: async (a, P) => {
-    a.u.facing = 'down'; LV.guard(a);
-    await anim(0.4, k => { a.hover = ease(k) * 1.2; });
-    const top = a.chest();
-    vfx.bolt(top.clone().add(V(rand(-0.5, 0.5), 6, 0)), top, [0.3, 0.36, 0.55], 0.3, { width: 0.05 }); vfx.light(top, [0.7, 0.8, 1], 6, 0.3, 5);
-    LV.atk(a, 1);
-    await anim(0.45, k => { a.hover = 1.2 * (1 - k * k); if (Math.random() < 0.3) vfx.bolt(a.chest(), a.chest().add(V(rand(-0.7, 0.7), rand(-0.4, 0.5), rand(-0.5, 0.5))), [0.3, 0.36, 0.55], 0.08, { width: 0.015, jag: 0.4 }); });
-    a.hover = 0; vfx.shake(0.12, 0.25); vfx.ring(P, [0.6, 0.7, 1], 2, 0.5, { intensity: 0.9 }); vfx.burst(P.clone().setY(P.y + 0.2), { n: 24, speed: 4, cols: [[0.9, 0.95, 1], [0.6, 0.7, 1]], size: 0.05, life: 0.6, shape: 1 });
-    LV.atk(a, 2); await wait(700);
-  },
-  // 姜子牙: the sage raises his hands; the eight trigrams turn under him and rise around him on a column of gold
-  jiang: async (a, P) => {
-    a.u.facing = 'down'; LV.cast(a, 0);
-    vfx.runeCircle(P, [1, 0.85, 0.45], 1.4, 2.2, { spin: 0.7, intensity: 1.2 });
-    await wait(300); LV.cast(a, 1);
-    for (let i = 0; i < 8; i++) { const ang = i / 8 * Math.PI * 2, r = vfx.ribbon({ col: [1, 0.85, 0.5], width: 0.05, n: 16 });
-      anim(1.1, k => r.push(V(P.x + Math.cos(ang + k * 2.4) * 1.1, P.y + 0.1 + k * 2, P.z + Math.sin(ang + k * 2.4) * 1.1))).then(() => r.end()); }
-    vfx.pillar(P, [1, 0.85, 0.45], 0.4, 4, 1.4, { intensity: 0.4, grow: 1 });
-    await wait(500); LV.cast(a, 2); vfx.burst(a.head().add(V(0, 0.3, 0)), { n: 30, speed: 2.5, cols: [[1, 0.95, 0.7], [1, 0.8, 0.4]], size: 0.05, life: 0.9, g: 0.5 });
-    await wait(800);
-  },
-  // 黃天化: swings his blade overhead, and a crown of steel-blue blades whirls round him and stabs into the ground
-  '0a76a2': async (a, P) => {
-    a.u.facing = 'down';
-    for (const f of [0, 1, 2]) { LV.atk(a, f); await wait(110); }
-    const blades = [];
-    for (let i = 0; i < 6; i++) { const r = vfx.ribbon({ col: [0.55, 0.75, 1], width: 0.09, n: 18 }); blades.push(r);
-      anim(0.7, k => { const ang = i / 6 * Math.PI * 2 + k * 6; r.push(V(P.x + Math.cos(ang) * 0.9, P.y + 0.6 + Math.sin(k * Math.PI) * 0.5, P.z + Math.sin(ang) * 0.9)); }).then(() => r.end()); }
-    await wait(700);
-    vfx.shake(0.1, 0.2); vfx.ring(P, [0.55, 0.75, 1], 2.2, 0.6);
-    for (let i = 0; i < 6; i++) { const ang = i / 6 * Math.PI * 2, q = V(P.x + Math.cos(ang) * 0.9, P.y + 0.05, P.z + Math.sin(ang) * 0.9); vfx.burst(q, { n: 8, speed: 2, cols: [[1, 1, 1], [0.55, 0.75, 1]], size: 0.05, life: 0.5 }); vfx.decal(q, [0.5, 0.7, 1], 0.3, 1); }
-    LV.atk(a, 2); await wait(700);
-  },
-  // 土行孫: sinks into the earth and bursts out of it in a spray of soil and stones, fist raised
-  '0aa86c': async (a, P) => {
-    a.u.facing = 'down'; LV.guard(a);
-    await anim(0.4, k => { a.lift = -k * 0.9; a.fade = 1 - k; });
-    for (let i = 0; i < 12; i++) { const t = Math.random() * 6.28, sp = 1 + Math.random() * 1.5; vfx.smokePuff(P.x, P.y + 0.1, P.z, { vx: Math.cos(t) * sp, vy: 0.4, vz: Math.sin(t) * sp, drag: 2.5, life: 1, size: 0.3, size1: 0.8, tint: [0.5, 0.42, 0.32] }); }
-    await wait(350);
-    vfx.shake(0.15, 0.3); LV.atk(a, 2);
-    await anim(0.35, k => { a.fade = 1; a.lift = -0.9 + Math.sin(k * Math.PI * 0.75) * 1.6; });
-    vfx.burst(P.clone().setY(P.y + 0.2), { n: 40, speed: 4, cols: [[0.5, 0.42, 0.32], [0.65, 0.55, 0.4], [1, 0.8, 0.45]], size: 0.07, life: 0.9, g: 10, up: 0.8 });
-    vfx.ring(P, [1, 0.75, 0.4], 1.8, 0.5);
-    await anim(0.3, k => { a.lift = 0.6 * (1 - k * k); }); a.lift = 0;
-    vfx.burst(P.clone().setY(P.y + 0.1), { n: 16, speed: 2.5, cols: [[0.55, 0.45, 0.35]], size: 0.05, life: 0.6, g: 9 });
-    await wait(500);
-  },
-  // 小龍女: a dragon of water spirals up around her and breaks into a crown of spray and pearls
-  '0d006e': async (a, P) => {
-    a.u.facing = 'down'; LV.cast(a, 0);
-    const r = vfx.ribbon({ col: [0.4, 0.75, 1], width: 0.22, n: 36, fade: 0.5 }), c = vfx.ribbon({ col: [0.9, 0.97, 1], width: 0.06, n: 28 });
-    await anim(1.0, k => { const ang = k * 13; const q = V(P.x + Math.cos(ang) * 0.7 * (1 - k * 0.4), P.y + 0.1 + k * 2.6, P.z + Math.sin(ang) * 0.7 * (1 - k * 0.4)); r.push(q); c.push(q);
-      if (Math.random() < 0.5) vfx.spark(q.x, q.y, q.z, { vy: -0.5, g: 4, life: 0.6, size: 0.05, r: 0.7, gg: 0.9, b: 1, shape: 1 }); });
-    r.end(); c.end(); LV.cast(a, 2);
-    const top = P.clone().setY(P.y + 2.7);
-    vfx.burst(top, { n: 60, speed: 3.5, cols: [[0.9, 0.97, 1], [0.45, 0.75, 1]], size: 0.06, life: 1.2, g: 6, shape: 1 });
-    vfx.ring(P, [0.45, 0.8, 1], 2, 0.7); vfx.light(top, [0.5, 0.8, 1], 10, 0.6, 5);
-    await wait(900);
-  },
-  // 燃燈: the old lamp-lighter: lamp flames kindle one by one in a ring round him and rise, and a halo opens behind his head
-  '0d2ad2': async (a, P) => {
-    a.u.facing = 'down'; LV.cast(a, 1);
-    for (let i = 0; i < 12; i++) setTimeout(() => { const ang = i / 12 * Math.PI * 2, q = V(P.x + Math.cos(ang) * 1.0, P.y + 0.2, P.z + Math.sin(ang) * 1.0);
-      anim(1.2, k => { const y = q.y + k * 1.4, aa = ang + k * 1.2; vfx.flame(P.x + Math.cos(aa) * (1 - k * 0.3), y, P.z + Math.sin(aa) * (1 - k * 0.3), { size: 0.18, asp: 1.6, life: 0.12, tint: [1, 0.9, 0.6] }); }); }, i * 60);
-    vfx.ring(a.head().add(V(0, 0.1, 0)), [1, 0.85, 0.45], 0.8, 1.6, { vertical: true, yaw: cam.yaw, y: a.head().y + 0.1, intensity: 0.9 });
-    await wait(700); LV.cast(a, 2); vfx.light(a.head(), [1, 0.8, 0.45], 10, 1, 5);
-    await wait(1000);
-  },
-};
-const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 export async function levelUpAnim(u, ch) {
   const a = actorOf(u), P = a.pos.clone(), face = u.facing;
   cam.focus(P);
@@ -747,7 +612,9 @@ export async function levelUpAnim(u, ch) {
 }
 export async function gainExp(u, amount) {
   if (u.side !== 'player' || u.guest || amount <= 0) return;
-  u.exp += amount;   // no popup: the unit card shows experience
+  // the experience gained, in gold over the hero after each attack, spell or item (the user's call), read before a level-up
+  const a = actorOf(u); if (a && a.head) { ui.floater(a.head().add(V(0, 0.15, 0)), '經驗 +' + amount, 'dmg exp', 1.4); await wait(650); }
+  u.exp += amount;
   while (u.exp > 99 && u.lv < 99) { u.exp -= 100; await levelUpAnim(u, R.levelUp(u)); }   // [ROM] 0x1246A
 }
 
@@ -1111,9 +978,9 @@ export function governor(ms) {
 }
 export const perfState = () => ({ fps: perf.fps, gpu: perf.gpu, scale: perf.scale, ceil: perf.ceil, floor: perf.floor });
 export function frame(now) {
-  const ms = now - last; if (cam && ready) governor(ms);
-  const rdt = Math.max(0, Math.min(0.05, ms / 1000)); last = Math.max(last, now);   // a frame stamped before the last one counts as no time
-  let dt = rdt * timeScale;
+  const ms = now - last; if (cam && ready && !frozen) governor(ms);
+  const rdt = frozen ? stepDt : Math.max(0, Math.min(0.05, ms / 1000)); last = Math.max(last, now); stepDt = 0;   // a frame stamped before the last one counts as no time
+  let dt = rdt * timeScale * speed();   // (speed: the player's pick, top right, src/speed.js)
   if (vfx && vfx.hitstop > 0) { vfx.hitstop -= rdt; dt *= 0.04; }
   gameT += dt;
   for (let i = tweens.length - 1; i >= 0; i--) { const w = tweens[i]; w.t += dt; const k = Math.min(1, w.t / w.d); w.fn && w.fn(k, dt); if (k >= 1) { tweens.splice(i, 1); w.res(); } }
@@ -1134,6 +1001,7 @@ export function frame(now) {
     world.render();
     if (window.__qaFrame) window.__qaFrame();   // #qa probes read the frame just drawn (src/qa.js)
   }
+  if (stepDone) { const f = stepDone; stepDone = null; f(); }
   requestAnimationFrame(frame);
 }
 export function resize() { world.resize(window.innerWidth, window.innerHeight); }
@@ -1164,7 +1032,7 @@ export function boot() {
   window.addEventListener('resize', resize); resize();
   bank = new SpriteBank(); ui = new UI(bank); cam = new Cam(world.camera);
   setupInput();
-  window.__remake = { G, R, actors, cam, tiles, C, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, levelUpAnim, levelPose: LEVEL_POSE, bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState };
+  window.__remake = { G, R, actors, cam, tiles, C, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, yangPose, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState };
   requestAnimationFrame(frame);
 }
 // build the world for the loaded battle (R.loadBattle first) and load its sprites; again for every new battle

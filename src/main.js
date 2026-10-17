@@ -7,6 +7,7 @@ import * as R from './rules.js';
 import * as E from './battle.js';
 import * as K from './campaign.js';
 import * as Save from './save.js';
+import { mountSpeed } from './speed.js';
 import { defaultParty, autoPick } from './party.js';
 import { rulesOf, fxOf } from './battles/index.js';
 import { campScene, slotList } from './camp.js';
@@ -255,6 +256,7 @@ async function single() {
 }
 
 async function main() {
+  mountSpeed();   // the game speed, top right (src/speed.js)
   E.boot(); Audio.attach();
   if (/qa/.test(location.hash)) (await import('./qa.js')).install(E);   // QA probes for tools/qa/tour.js
   await document.fonts.ready;

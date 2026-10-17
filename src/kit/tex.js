@@ -309,6 +309,22 @@ export function rock(base = 0x7a6a58, name = 'rock', cells = 1) {
     o.c = c; o.h = 0.3 + facet * 0.3 + n * 0.3 + strata * 0.06 - crack * 0.25; o.r = 0.86 - lich * 0.05;
   }, 6);
 }
+// sea-cave rock: dark wet stone, cracked into plates, crusted in patches with barnacles (pale rings round dark mouths)
+// and slick with weed where the crust is not (海龍洞, src/remake/cave.js)
+export function seaRock(base = 0x2e3c48, name = 'seaRock') {
+  return pbr(name + base, 1024, (u, v, o) => {
+    const B = hex(base), [w0, w2] = worley(u, v, 10, 141, 0.9), n = fbm(u, v, 8, 6, 142), m = fbm(u, v, 3, 4, 143);
+    const crack = smooth(0.05, 0.0, w2 - w0) * smooth(0.4, 0.6, fbm(u, v, 4, 3, 147));
+    const [b0, , bid] = worley(u, v, 40, 144, 1), crust = smooth(0.56, 0.72, fbm(u, v, 4, 4, 145)), br = 0.12 + 0.22 * bid;   // barnacles of every size, in clumps
+    const barn = smooth(br, br * 0.7, b0) * crust * smooth(0.3, 0.45, (bid * 7.31) % 1), mouth = smooth(br * 0.4, br * 0.25, b0) * barn;
+    const weed = smooth(0.56, 0.72, fbm(u, v, 9, 4, 146)) * (1 - crust);
+    let c = mixc([B[0] * 0.5, B[1] * 0.52, B[2] * 0.56], [B[0] * 1.3, B[1] * 1.25, B[2] * 1.2], n * 0.6 + m * 0.4);
+    c = mixc(c, [B[0] * 0.3, B[1] * 0.3, B[2] * 0.32], crack * 0.6);
+    c = mixc(c, [0.12, 0.3, 0.24], weed * 0.55);
+    c = mixc(c, [0.6, 0.62, 0.58], barn * 0.7); c = mixc(c, [0.08, 0.09, 0.1], mouth * 0.9);
+    o.c = c; o.h = 0.35 + n * 0.3 - crack * 0.25 + barn * 0.35 - mouth * 0.3; o.r = 0.55 - weed * 0.25 + barn * 0.3;
+  }, 6);
+}
 // glazed roof tiles: rows of barrel tiles, blue-glazed by default; v runs eave -> ridge, `n` tile columns across
 export function roofTiles(base = 0x2a4a8a, n = 8, rows = 8) {
   return pbr('roof' + base + n + rows, 512, (u, v, o) => {

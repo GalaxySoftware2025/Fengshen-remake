@@ -10,6 +10,7 @@ import { emoteTexture, FRAMES as EMOTE_FRAMES } from './emotes.js';
 import { registerSets, setFor, dress } from './sets.js';
 import REMADE from './remake/index.js';
 import * as Audio from './audio.js';
+import { speed } from './speed.js';
 import { soften, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff } from './tracks.js';
 registerSets(REMADE);
 const { G } = R;
@@ -156,7 +157,7 @@ export async function play(E, tag, part, hooks) {
     G.units = []; E.syncActors();
     if (!cut) pose(true);
   };
-  const clock = () => new Promise(r => { const t1 = performance.now(); requestAnimationFrame(() => r(Math.min(0.1, (performance.now() - t1) / 1000) * (fast ? 4 : 1))); });
+  const clock = () => new Promise(r => { const t1 = performance.now(); requestAnimationFrame(() => r(Math.min(0.1, (performance.now() - t1) / 1000) * (fast ? 4 : 1) * speed())); });   // (speed: the player's pick, src/speed.js)
   const strike = (e, act, t, snap) => {
     const a0 = e.f + 2, n = Math.max(3, e.hit - a0), fv = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[act.u.facing] || [0, -1];
     act.act = t >= a0 && t < e.hit ? { kind: 'atk', frame: Math.min(2, Math.floor(3 * (t - a0) / n)) } : null;
@@ -343,7 +344,7 @@ export async function play(E, tag, part, hooks) {
       if (t >= tEnd || skip) break;
       if (worldReady) pose();
       const dt = await new Promise(r => { const t1 = performance.now(); requestAnimationFrame(() => r((performance.now() - t1) / 1000)); });
-      t += Math.min(0.1, dt) * 60 * (fast ? 4 : 1);
+      t += Math.min(0.1, dt) * 60 * (fast ? 4 : 1) * speed();
     }
     if (part !== 'intro' || bi < 0) await fade(1, 0.4);
     return 'end';

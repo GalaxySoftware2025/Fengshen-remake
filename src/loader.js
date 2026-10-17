@@ -3,6 +3,7 @@
 // (one for the images and data, the rest for the songs and effects), the results kept in the browser (Cache Storage)
 // and served by sw.js. Nothing is uploaded. Then the page reloads into the game.
 import { checkRom, sound, audioTable } from '../extract/index.js';
+import { EXTRACT_VERSION } from '../extract/version.js';
 
 const BASE = new URL('../', import.meta.url);
 const css = `
@@ -21,12 +22,14 @@ const css = `
 #ld .err { color: var(--red); font-weight: 700; }
 `;
 
-export function show() {
+// updated: the files made from the ROM were dropped (another version of the extractor made them, or it was cut off)
+export function show({ updated = false } = {}) {
   document.head.insertAdjacentHTML('beforeend', '<style>' + css + '</style>');
   document.body.insertAdjacentHTML('beforeend', `<div id="ld"><div class="box">
     <h1>封神英傑傳</h1>
     <p>這個重製版不附帶原作的任何內容。請選擇你自己的 Mega Drive 卡帶檔案（ROM），遊戲的圖像、地圖、劇情、音樂與文字會在你的瀏覽器裡由它製作，檔案不會被上傳。</p>
     <p class="en">This remake ships none of the original's content. Choose your own Mega Drive ROM of the game: its art, maps, scenes, music and text are made from it in your browser. Nothing is uploaded.</p>
+    ${updated ? '<p><b>遊戲已更新：需要再選擇一次 ROM，重新製作遊戲資料（存檔不受影響）。</b></p><p class="en">The game has been updated: choose your ROM once more to remake its files (your saves are kept).</p>' : ''}
     <label class="pick">選擇 ROM<input type="file" accept=".bin,.md,.gen,application/octet-stream"></label>
     <p class="msg"></p><div class="bars"></div></div></div>`);
   const box = document.querySelector('#ld .box'), msg = box.querySelector('.msg'), bars = box.querySelector('.bars');
@@ -60,4 +63,6 @@ async function extract(rom, bars) {
   })));
   const cache = await caches.open('fengshen-rom');
   await cache.put(new URL('data/audio.js', BASE).href, new Response(audioTable(tables.filter(Boolean)), { headers: { 'content-type': 'text/javascript; charset=utf-8' } }));
+  // the stamp, last of all: only a whole extraction has it (index.html compares it with extract/version.js)
+  await cache.put(new URL('data/extract-version.js', BASE).href, new Response('window.EXTRACT_VERSION = ' + EXTRACT_VERSION + ';\n', { headers: { 'content-type': 'text/javascript; charset=utf-8' } }));
 }

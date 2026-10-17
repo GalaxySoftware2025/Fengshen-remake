@@ -8,6 +8,12 @@ html, body { margin: 0; height: 100%; background: #050605; overflow: hidden; fon
 .title-xfade { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; }   /* the title flight's dissolve (main.js titlePan) */
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hidden { display: none !important; }
+#speed { position: absolute; right: 18px; top: 18px; z-index: 30; display: flex; align-items: center; gap: 8px; padding: 6px 10px; color: var(--paper); font-size: 15px;
+  background: rgba(12,10,8,.78); border: 1px solid rgba(216,178,90,.55); border-radius: 4px; user-select: none; }   /* the game speed (src/speed.js) */
+#speed span { color: var(--paper2); letter-spacing: 2px; } #speed b { min-width: 46px; text-align: center; color: var(--gold2); font-variant-numeric: tabular-nums; }
+#speed button { font: inherit; width: 28px; height: 26px; padding: 0; line-height: 1; color: var(--gold2); cursor: pointer; background: rgba(40,30,16,.9); border: 1px solid rgba(216,178,90,.6); border-radius: 3px; }
+#speed button:hover:not(:disabled) { background: rgba(90,66,28,.95); } #speed button:disabled { opacity: .35; cursor: default; }
+body:has(#title:not(.hidden)) #speed { display: none; }   /* not on the title */
 
 /* ---------- floating labels (damage numbers etc) ---------- */
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
@@ -22,6 +28,7 @@ html, body { margin: 0; height: 100%; background: #050605; overflow: hidden; fon
 .dmg.crit::before { content: "會心"; display: block; width: max-content; margin: 0 auto 4px; padding: 3px 10px 4px; font-family: var(--font); font-weight: 700; font-size: 19px; letter-spacing: 4px;
   color: #fff; background: #b0200e; border: 2px solid #ffd23a; border-radius: 4px; -webkit-text-stroke: 0; }
 .dmg.heal { color: #8cff6e; -webkit-text-stroke-color: #062408; }
+.dmg.exp { font-family: "Noto Serif TC", var(--font); font-size: 30px; letter-spacing: 2px; color: #ffe27a; -webkit-text-stroke: 6px #3a2200; }   /* experience gained (battle.js gainExp) */
 .dmg.miss, .dmg.text { font-family: "Noto Serif TC", var(--font); font-size: 34px; letter-spacing: 4px; color: #bfe4ff; -webkit-text-stroke: 6px #071a30; }
 @keyframes pop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.3); } 12% { opacity: 1; transform: translate(-50%, -115%) scale(1.25); }
   24% { transform: translate(-50%, -100%) scale(1); } 75% { opacity: 1; transform: translate(-50%, -112%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -150%) scale(.92); } }
@@ -227,13 +234,10 @@ body:not(.tools) #pg, body:not(.tools) .pg-fly, body:not(.tools) #pg-pop { displ
 .pf { color: var(--gold2); } .pf.off { color: #e08a7a; }
 i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; border: 1px solid var(--gold); color: var(--gold2); border-radius: 2px; vertical-align: 2px; }
 .ccard { color: var(--paper); } .ccard h2 { margin: 0 0 12px; font-size: 36px; letter-spacing: 14px; color: #fff1cc; } .ccard .cond b { color: var(--gold); }
-.icols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px; }
-.ilist h4 { margin: 0 0 8px; font-size: 16px; color: var(--gold); letter-spacing: 4px; font-weight: 400; }
 .it { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid rgba(216,178,90,.15); cursor: pointer; font-size: 17px; }
 .it:hover { background: rgba(90,66,28,.4); } .it span { flex: 1; } .it small { color: var(--paper2); }
 .it.no { opacity: .45; } .it.none { cursor: default; color: var(--paper2); } .it.none:hover { background: none; }
 .it button { font-size: 13px; padding: 2px 10px; }
-.idesc { margin-top: 12px; min-height: 22px; color: var(--paper2); font-size: 15px; }
 .icols2 { display: grid; grid-template-columns: 340px 1fr; gap: 28px; margin-top: 8px; align-items: start; }
 .iring { position: relative; width: 340px; height: 340px; }
 .ifig { position: absolute; left: 85px; top: 82px; width: 170px; display: grid; justify-items: center; text-align: center; }
@@ -259,7 +263,7 @@ i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; bo
 .panel .bar { display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; } .panel .bar button { font-size: 16px; padding: 7px 18px; letter-spacing: 3px; }
 @media (max-width: 760px) {
   #camp { grid-template-columns: 1fr; padding: 16px; } .c-head { grid-column: 1; } #c-menu { flex-direction: row; flex-wrap: wrap; }
-  #c-menu button { flex: 1 1 30%; font-size: 16px; } .people, .icols, .icols2 { grid-template-columns: 1fr; } .iring { margin: 0 auto; }
+  #c-menu button { flex: 1 1 30%; font-size: 16px; } .people, .icols2 { grid-template-columns: 1fr; } .iring { margin: 0 auto; }
   .sl { grid-template-columns: 70px 1fr 44px 44px; } .sl .dt { display: none; }
 }
 #title.picking .t-logo { opacity: 0; transition: opacity .3s; }

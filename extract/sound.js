@@ -11,7 +11,6 @@ import { Z80 } from './vendor/z80/index.js';
 
 const FM = 7670453, PSG = 3579545, FPS = PSG / (262 * 228), ZCYC = 262 * 228, RATE = 44100;
 const INIT = 0x1e4218, PLAY = 0x1e41d4, WORK = 0x3d04, WORK_N = 0x251, TICKS = 0x3d0e;
-export const SONGS = Array.from({ length: 0x18 }, (_, i) => i);
 
 // the writes, packed (millions in a song: arrays of arrays would not fit several workers' memory): time in frames, and
 // kind << 16 | register << 8 | value (kind 0/1 = YM port, 2 = PSG)

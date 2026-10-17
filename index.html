@@ -16,6 +16,8 @@
 <div id="stage">
   <canvas id="gl"></canvas>
   <div id="labels"></div>
+  <!-- the game speed (src/speed.js) -->
+  <div id="speed" title="遊戲速度"><span>速度</span><button data-d="-1">−</button><b>×1</b><button data-d="1">＋</button></div>
 
   <!-- battle HUD -->
   <div id="hud" class="hidden">
@@ -133,7 +135,18 @@
 <script src="data/says.js"></script>
 <script src="data/ui.js"></script>
 <script type="module">   // the game, or (the public build's first visit: no data made from the player's ROM yet) the ROM picker
-if (window.COMMON) import('./src/main.js'); else import('./src/loader.js').then(L => L.show());
+// The public build keeps what it made from the player's ROM in Cache Storage ('fengshen-rom'), stamped with the
+// extractor's version (src/loader.js): made by another version, or never finished, it is dropped and the ROM asked for
+// again. (The private build reads its files from disk: no such cache.)
+import { EXTRACT_VERSION } from './extract/version.js';
+const made = self.caches ? await caches.has('fengshen-rom').catch(() => false) : false;
+let stale = false;
+if (made) {
+  const r = await (await caches.open('fengshen-rom')).match(new URL('data/extract-version.js', location.href).href);
+  const v = r ? +(((await r.text()).match(/=\s*(\d+)/) || [])[1]) : null;
+  if (v !== EXTRACT_VERSION) { stale = true; await caches.delete('fengshen-rom'); }
+}
+if (window.COMMON && !stale) import('./src/main.js'); else import('./src/loader.js').then(L => L.show({ updated: stale }));
 </script>
 </body>
 </html>

@@ -16,9 +16,9 @@ const WATER = { uTime: { value: 0 } };
 function water(S, p) {
   const [x0, y0, x1, y1] = p.r, geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0, 8, 8); geo.rotateX(-Math.PI / 2);
   const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-    transparent: false, uniforms: { uTime: WATER.uTime, uDeep: { value: new THREE.Color(p.deep ?? 0x050a24) }, uLit: { value: new THREE.Color(p.lit ?? 0x2a4a8a) } },
+    transparent: false, uniforms: { uTime: WATER.uTime, uDeep: { value: new THREE.Color(p.deep ?? 0x050a24) }, uLit: { value: new THREE.Color(p.lit ?? 0x2a4a8a) }, uStars: { value: p.stars ?? 1 } },
     vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: `uniform float uTime; uniform vec3 uDeep, uLit; varying vec3 vW;
+    fragmentShader: `uniform float uTime, uStars; uniform vec3 uDeep, uLit; varying vec3 vW;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
       void main(){
@@ -27,7 +27,7 @@ function water(S, p) {
         vec3 col = mix(uDeep, uLit, smoothstep(0.55, 0.95, r) * 0.55);
         vec2 g = floor(p * 14.0); float s = h(g); float tw = 0.5 + 0.5 * sin(uTime * (1.5 + 3.0 * s) + s * 40.0);
         float star = step(0.965, s) * tw * smoothstep(0.35, 0.0, length(fract(p * 14.0) - 0.5));
-        col += vec3(0.6, 0.8, 1.0) * star * 1.6;
+        col += vec3(0.6, 0.8, 1.0) * star * 1.6 * uStars;
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }`,
@@ -133,6 +133,7 @@ function particles(E, kind) {
   E.world.updaters.push(dt => {
     const c = E.cam.target, r = 9; acc += dt;
     if (kind === 'dust') while (acc > 0.05) { acc -= 0.05; E.vfx.smoke(c.x + rand(-r, r), rand(0.3, 3), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(-0.05, 0.05), vy: rand(-0.03, 0.06), life: rand(4, 7), size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.6, a: 0.7, shape: 0, wob: 0.5, ph: rand(0, 6), fadeIn: 1 }); }   // soft round motes (squares read as pixels)
+    if (kind === 'sea') while (acc > 0.08) { acc -= 0.08; E.vfx.smoke(c.x + rand(-r, r), rand(0.2, 3), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(-0.04, 0.04), vy: rand(0.0, 0.05), life: rand(5, 8), size: rand(0.025, 0.04), r: 0.75, gg: 0.95, b: 1, a: 0.6, shape: 0, wob: 0.7, ph: rand(0, 6), fadeIn: 1 }); }   // the sea cave's motes: cold, pale, drifting up (海龍洞, in place of its warm dust)
     if (kind === 'fireflies') while (acc > 0.12) { acc -= 0.12; E.vfx.spark(c.x + rand(-r, r), rand(0.3, 1.6), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(-0.2, 0.2), vy: rand(-0.05, 0.12), vz: rand(-0.2, 0.2), life: rand(2.5, 4), size: rand(0.03, 0.05), r: 0.75, gg: 1, b: 0.45, shape: 0, flicker: 1, wob: 0.8, ph: rand(0, 9) }); }
     if (kind === 'sparkles') while (acc > 0.04) { acc -= 0.04; E.vfx.spark(c.x + rand(-r, r), rand(0, 2.5), c.z + rand(-r * 0.7, r * 0.7), { vy: rand(0.1, 0.35), life: rand(2, 3.5), size: rand(0.05, 0.09), r: 1, gg: rand(0.92, 0.98), b: rand(0.78, 0.9), shape: 0, flicker: 1, wob: 0.5, ph: rand(0, 9) }); }   // soft glints (not the pixel squares)
     if (kind === 'bamboo') while (acc > 0.2) { acc -= 0.2; const k = [[0.5, 0.8, 0.28], [0.36, 0.62, 0.2], [0.65, 0.85, 0.4]][(Math.random() * 3) | 0];   // bamboo leaves on the westward wind (the valley: battle 1 and scene 0, the user's call)

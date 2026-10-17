@@ -34,7 +34,7 @@ function stripShadow(sdImg, hdImg, rows) {
   og.putImageData(od, 0, 0); return out;
 }
 function upscale(img, k) { const c = canvas(img.width * k, img.height * k), g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(img, 0, 0, c.width, c.height); return c; }
-function tex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 4; return t; }
+export function tex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 4; return t; }
 
 export class SpriteBank {
   async load(names) {
@@ -171,7 +171,9 @@ export class Actor {
     this.camPitch = pitch;
     const u = this.u, vd = this.viewDir(yaw), flip = vd === 'right';
     let tx = this.texWalk, frame, mesh = this.mesh;
-    if (this.act && this.act.kind === 'atk' && this.texAtk) {
+    if (this.act && this.act.kind === 'tex') {   // a one-off frame (a level-up pose made for the remake): a 256 px canvas on the big plane, body in its middle 128
+      mesh = this.big; tx = this.act.tex; frame = 0;
+    } else if (this.act && this.act.kind === 'atk' && this.texAtk) {
       mesh = this.big; tx = this.texAtk;
       frame = ATK_DIR[vd] * 3 + this.act.frame;
     } else if (this.act && this.act.kind === 'pose' && this.texAct) {
@@ -192,7 +194,7 @@ export class Actor {
       frame = u.sprite === 'jiang_bound' ? tick % 2 : u.still != null ? u.still : FACE[flip ? 'left' : vd][step];
       if (this.u.sprite === 'jiang_bound') { tx.repeat.x = 1 / 2; }
     }
-    const nFrames = tx === this.texAtk ? 9 : (u.sprite === 'jiang_bound' && tx === this.texWalk ? 2 : 9);
+    const nFrames = this.act && this.act.kind === 'tex' ? 1 : tx === this.texAtk ? 9 : (u.sprite === 'jiang_bound' && tx === this.texWalk ? 2 : 9);
     tx.offset.x = frame / nFrames;
     const mirror = flip && !(this.act && this.act.kind === 'pose' && this.act.fixed != null);
     tx.repeat.x = (mirror ? -1 : 1) / nFrames; if (mirror) tx.offset.x = (frame + 1) / nFrames;
@@ -223,9 +225,9 @@ export class Actor {
     this.blob.material.opacity = this.centre ? 0 : (1 - this.dissolve) * (this.hover ? 0.6 : 1) * fade;
     for (const m of [this.mesh.material, this.big.material]) {
       m.userData.u.uFlash.value = this.flash; m.userData.u.uDissolve.value = this.dissolve;
-      const tr = !see || !!this.ghost; if (m.transparent !== tr) { m.transparent = tr; m.depthWrite = !tr; m.needsUpdate = true; }
+      const tr = !see || !!this.ghost || !!this.over; if (m.transparent !== tr) { m.transparent = tr; m.depthWrite = !tr; m.needsUpdate = true; }
       m.opacity = (this.ghost ? 0.62 : 1) * fade; m.alphaTest = see ? 0.5 : 0.5 * fade;
-    }
+    }   // (over: a flier, drawn in the transparent pass, which comes after every opaque thing, and by its render order 6.5 after the see-through effects and flames too, under the turn arrows and emotes: battle.js syncActors)
     if (fade < 0.5) this.caster.visible = false;
     this.root.visible = this.dissolve < 1 && !this.hidden && fade > 0.01;
   }
