@@ -19,19 +19,19 @@ const OPEN = [[15.1, 13.5, 0.5]];   // spots scene 15's cast stands on, kept cle
 let land = null, chestG = new Map(), M = null, world = null;
 
 // the wildflowers the art strews over the grass: where its little red and purple clusters are, a clump of that colour
-async function flowerSpots() {
-  const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = 'assets/maps/0ec58e.png'; });
+export async function flowerSpots(src = 'assets/maps/0ec58e.png', palette = FLOWER) {   // (also 聖靈山's meadow: src/remake/mountain.js)
+  const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
   const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
   const d = g.getImageData(0, 0, img.width, img.height).data, hits = new Map();
   for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
-    const k = (y * img.width + x) * 4, kind = FLOWER[(d[k] << 16) | (d[k + 1] << 8) | d[k + 2]]; if (!kind) continue;
+    const k = (y * img.width + x) * 4, kind = palette[(d[k] << 16) | (d[k + 1] << 8) | d[k + 2]]; if (!kind) continue;
     const key = Math.floor(x / 16) + ',' + Math.floor(y / 16), h = hits.get(key) || { kind, x: 0, y: 0, n: 0 }; h.x += x; h.y += y; h.n++; hits.set(key, h);
   }
   return [...hits.values()].filter(h => h.n >= 4).map(h => ({ kind: h.kind, x: h.x / h.n / 32, z: h.y / h.n / 32 }));
 }
 // a clump of small five-petalled flowers on short stems: three instanced meshes (stems, heads coloured per flower,
 // their gold eyes) rather than three meshes a flower (~670 draws, twice over with the shadows: frame rate [the user])
-function flowers(spots, at) {
+export function flowers(spots, at) {
   const g = new THREE.Group(), stem = new THREE.MeshStandardMaterial({ color: 0x4a6a24, roughness: 0.9 });
   const shape = new THREE.Shape(); for (let k = 0; k <= 50; k++) { const a = k / 50 * Math.PI * 2, r = 0.05 * (0.55 + 0.45 * Math.abs(Math.cos(a * 2.5))); shape[k ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); }
   const head = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2), mid = new THREE.SphereGeometry(0.014, 6, 4), stick = new THREE.CylinderGeometry(0.006, 0.008, 1, 4).translate(0, 0.5, 0);
@@ -175,8 +175,12 @@ async function build(E, FX) {
   S.add(grass(land.scatter(CL.grass, 48, clear).filter(([x, , z]) => near(x, z) || Math.random() < 0.35), { size: 0.67, cols: ['#c8a848', '#b89a3a', '#d8bc5a', '#a88c34', '#9a8a3a'] }));
   S.add(grass(land.scatter(CL.ground, 6, clear), { size: 0.4, cols: ['#b0983e', '#9a8a3a', '#c0a448'] }));
   const rockM = T.material(T.rock(0x6a5240, 'bankRock', 0.25), { color: 0xf0d0b0 }, [0.5, 0.5]);
-  S.add(stones(land.scatter(CL.rock, 7, () => true), rockM, { size: 0.32 }));
-  S.add(stones([...land.scatter(CL.rock, 2.2, () => true), ...lay.pebbles.filter(([x, z]) => clear(x, z)).map(([x, z]) => [x, land.at(x, z), z])], rockM, { size: 0.2 }));
+  // boulders and pebbles off the cells a unit can stand on (lying there they rose through the move squares: the user's
+  // report); on those cells only grit, low enough to stay under them
+  const off = (x, z) => !walk(Math.floor(x), Math.floor(z)), pebbles = lay.pebbles.filter(([x, z]) => clear(x, z)).map(([x, z]) => [x, land.at(x, z), z]);
+  S.add(stones(land.scatter(CL.rock, 7, off), rockM, { size: 0.32 }));
+  S.add(stones([...land.scatter(CL.rock, 2.2, off), ...pebbles.filter(([x, , z]) => off(x, z))], rockM, { size: 0.2 }));
+  S.add(stones(pebbles.filter(([x, , z]) => !off(x, z)), rockM, { size: 0.05 }));
   S.add(shrubs(land.scatter(CL.rock, 0.5, (x, z) => land.weight(x, z, CL.grass) > 0.05), { size: 0.36, cols: ['#6a7a2a', '#7a8a32', '#5a6a24'] }));
   S.add(flowers((await flowerSpots()).filter(p => walk(Math.floor(p.x), Math.floor(p.z)) && clear(p.x, p.z)), (x, z) => land.at(x, z)));
   E.world.updaters.push((dt, t) => { windTick(t); water.material.color.setHSL(0.63, 0.7, 0.12 + Math.sin(t * 2.1) * 0.01); water.material.userData.u.uTime.value = t; });

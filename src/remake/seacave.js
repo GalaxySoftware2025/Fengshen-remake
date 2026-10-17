@@ -17,10 +17,11 @@ const MOUTH = { x: 3.5, z: 2.0, w: 0.95, h: 1.15 };   // 哪吒 walks in at (3, 
 const OPEN = [[7.5, 5.6, 0.8]];   // 楊戩 on the pond bank's top at (7, 5), f1320-1439: the boulders give way
 let land = null;
 
-// a broadleaf tree: a stout trunk forking into two or three boughs, crowns of leaf clumps round their ends
-function trees(list, at) {
-  const g = new THREE.Group(), bark = T.material(T.bark(0x6a2a14), { color: 0xd88a6a }, [1, 2]);
-  const tex = leafTex(['#14401a', '#1e5a20', '#2e7024', '#6a9a1a', '#c8c820', '#3a6a1e']);
+// a broadleaf tree: a stout trunk forking into two or three boughs, crowns of leaf clumps round their ends (leaves: the
+// crowns' colours; also 聖靈山 and the snow of 麒麟山, src/remake/mountain.js)
+export function trees(list, at, leaves = ['#14401a', '#1e5a20', '#2e7024', '#6a9a1a', '#c8c820', '#3a6a1e'], barkCol = 0xd88a6a) {
+  const g = new THREE.Group(), bark = T.material(T.bark(0x6a2a14), { color: barkCol }, [1, 2]);
+  const tex = leafTex(leaves);
   const leaf = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
   const crown = clumpGeo(16), d = new THREE.Object3D();
   const clumps = [];
@@ -40,8 +41,8 @@ function trees(list, at) {
   g.add(m); return g;
 }
 // the cave's mouth: a black opening under a ragged arch of the boulders, a breath of cold air at its foot
-function mouth(at, rockM) {
-  const g = new THREE.Group(), { x, z, w, h } = MOUTH, y = at(x, z);
+export function mouth(at, rockM, m = MOUTH) {
+  const g = new THREE.Group(), { x, z, w, h } = m, y = at(x, z);
   const sh = new THREE.Shape(); sh.moveTo(-w / 2, 0); sh.lineTo(-w / 2, h * 0.55); sh.absarc(0, h * 0.55, w / 2, Math.PI, 0, true); sh.lineTo(w / 2, 0); sh.closePath();
   const hole = new THREE.Mesh(new THREE.ShapeGeometry(sh, 16), new THREE.MeshBasicMaterial({ color: 0x020203 }));
   hole.position.set(x, y - 0.02, z); g.add(hole);

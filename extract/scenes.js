@@ -299,6 +299,7 @@ export function exportScenes(R, rom, recs, battles, natives = {}, files = {}, sh
       else if (w === 10) events.push({ f, kind: 'battle', n });
       else if (w === 54) events.push({ f, kind: 'narrate', lines: narration(R, L4(2)) });
       else if (w === 35 || w === 42) events.push({ f, kind: 'join', cid: H(0) });
+      else if (w === 41) events.push({ f, kind: 'summon', spell: R.B(0xedd7a + H(0)) });   // a summon gained (native 0x0EDD80: its spell, from the table at 0x0EDD7A, into the first free slot of 楊戩's record, ff1050; scenes 19, 27, 30, 39, 57)
       else if (w === 38 && L4(0) === 0x44ca && DESCENT) {   // the 昌平村 descent, measured by descent.py
         const e = { f, kind: 'descent', map: 'world-95a9', label: s(R, NATIVE_CARDS[0x44ca])[0].replace(/^\/+/, '') };
         for (const k of ['sprite', 'marker', 'path', 'fadeIn', 'fadeOut', 'frames']) e[k] = DESCENT[k];

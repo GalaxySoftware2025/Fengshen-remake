@@ -46,7 +46,7 @@ function weld(geo) {   // a polyhedron's faces joined at their corners (indexed:
 }
 const R = s => { const x = Math.sin(s * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 // the original's tree: a gnarled trunk forking low, layered clumps of dark needles lit green on top, on a ring of stones
-function tree(mats, x, z, y, s, seed) {
+export function tree(mats, x, z, y, s, seed) {
   const g = new THREE.Group(), { bark, leaf, leaf2, stone } = mats;
   const limb = (a, b, r0, r1) => { const d = b.clone().sub(a), m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, d.length(), 7), bark); m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize()); g.add(m); };
   const top = V(R(seed) * 0.1 - 0.05, 0.75, 0); limb(V(0, 0, 0), V(0.04, 0.4, 0.02), 0.13, 0.1); limb(V(0.04, 0.4, 0.02), top, 0.1, 0.08);
@@ -62,13 +62,21 @@ function tree(mats, x, z, y, s, seed) {
   g.add(merged(stone, ring));
   g.scale.setScalar(s); g.position.set(x, y, z); g.rotation.y = R(seed * 7) * 6.28; return shade(g);
 }
-function rock(stone, x, z, y, s, seed) {
+// the trees' materials: bark, two leaf cards, a dark core, the shadow's cut-out, the stones of the ring
+export function treeMats() {
+  const lt = leafTex(['#1e4a1c', '#2a5e24', '#3a722c', '#163a16', '#4a8434']), lt2 = leafTex(['#2a5e24', '#3e7a2e', '#4e8e38', '#1e4a1c']);
+  const cardM = t => new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+  return { bark: T.material(T.bark(0x5a4030), {}, [1, 2]), leaf: cardM(lt), leaf2: cardM(lt2), core: new THREE.MeshStandardMaterial({ color: 0x122a10, roughness: 1 }),
+    depth: new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: lt, alphaTest: 0.5 }),
+    stone: T.material(T.rock(0x9a9a90, 'gateRock', 0.3), { color: 0xd8d8d0 }, [0.4, 0.4]) };
+}
+export function rock(stone, x, z, y, s, seed) {
   const geo = weld(new THREE.IcosahedronGeometry(0.3, 2)), p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) { const v = V(p.getX(i), p.getY(i), p.getZ(i)), n = 1 + 0.22 * Math.sin(v.x * 9 + seed) * Math.sin(v.y * 11 + seed * 2) + 0.1 * Math.sin(v.z * 21); p.setXYZ(i, v.x * n * 1.1, Math.max(-0.05, v.y * n * 1.05), v.z * n); }
   geo.computeVertexNormals(); const m = shade(new THREE.Mesh(geo, stone)); m.position.set(x, y + 0.12 * s, z); m.scale.setScalar(s); m.rotation.y = seed; return m;
 }
 // a hip roof with upturned corners: the eave runs x0..x1, z0..z1 at height y, the ridge rise above it, overhang ov
-function hipRoof(mat, rim, x0, x1, z0, z1, y, rise, ov, curl = 0.18, beasts = true) {
+export function hipRoof(mat, rim, x0, x1, z0, z1, y, rise, ov, curl = 0.18, beasts = true) {
   const g = new THREE.Group(), X0 = x0 - ov, X1 = x1 + ov, Z0 = z0 - ov, Z1 = z1 + ov, cz = (z0 + z1) / 2, half = Math.min(z1 - z0, x1 - x0) / 2;
   const rX0 = X0 + half + ov * 0.4, rX1 = X1 - half - ov * 0.4, ry = y + rise, N = 10, P = [], U = [], I = [];
   // the four faces as one grid each: eave edge (t=0) to ridge (t=1); the eave sags inward a little and lifts at the corners
@@ -97,15 +105,15 @@ function hipRoof(mat, rim, x0, x1, z0, z1, y, rise, ov, curl = 0.18, beasts = tr
   }
   return g;
 }
-function plaqueTex() {
+export function plaqueTex(text = '朝歌城') {
   const c = document.createElement('canvas'); c.width = 512; c.height = 160; const g = c.getContext('2d');
   g.fillStyle = '#1c2a4a'; g.fillRect(0, 0, 512, 160); g.strokeStyle = '#d8b25a'; g.lineWidth = 10; g.strokeRect(8, 8, 496, 144);
-  g.fillStyle = '#f0e2b0'; g.font = 'bold 104px "Noto Serif TC", "Songti TC", serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('朝歌城', 256, 84);
+  g.fillStyle = '#f0e2b0'; g.font = 'bold 104px "Noto Serif TC", "Songti TC", serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 256, 84);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
 }
 // the ground's colour over the whole map: the original's khaki earth, its grass patches (from the art, blurred and
-// broken up) and some scuffing; one texture, laid over all three levels
-function groundTex(lay) {
+// broken up) and some scuffing; one texture, laid over all the levels (MW x MH: the map's cells)
+export function groundTex(lay, MW, MH) {
   const S = 64, c = document.createElement('canvas'); c.width = MW * S; c.height = MH * S; const g = c.getContext('2d');
   g.fillStyle = '#8c8462'; g.fillRect(0, 0, c.width, c.height);
   for (let i = 0; i < 9000; i++) { const x = R(i) * c.width, y = R(i + 0.5) * c.height, r = 2 + R(i + 0.3) * 9; g.fillStyle = `rgba(${R(i + 2) < 0.5 ? '60,52,34' : '182,172,132'},${0.05 + R(i + 4) * 0.1})`; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
@@ -123,7 +131,7 @@ function groundTex(lay) {
 async function build(E, FX) {
   const S = E.world.scene; M = mats(); world = E.world; chestG = new Map();
   const lay = await readLayout('assets/maps/0ebdd4.png', MW, MH, PALETTE, { [CL.grass]: 1.6 });
-  const earth = new THREE.MeshStandardMaterial({ map: groundTex(lay), roughness: 0.95 });
+  const earth = new THREE.MeshStandardMaterial({ map: groundTex(lay, MW, MH), roughness: 0.95 });
   const stoneT = T.bricks(0x9a9a8a, 3, 'gateStone'), stoneW = T.material(stoneT, {}, [16, 16]);   // the retaining walls (the floor's UVs are map-scaled: 1/32)
   S.add(LV.mesh(earth, stoneW, -0.6, 1 / 32));
   const tread = T.material(T.bricks(0xb8b4a0, 1, 'gateTread'), {}, [1, 1]), riser = T.material(T.bricks(0x8a8878, 2, 'gateRiser'), {}, [1, 1]);
@@ -192,11 +200,7 @@ async function build(E, FX) {
   const outT = T.material(T.dirt(0x6a6a48, 'gateOutside'), { color: 0x9a9a80 }, [12, 6]);
   const out = new THREE.Mesh(new THREE.PlaneGeometry(60, 14).rotateX(-Math.PI / 2), outT); out.position.set(16, HIGH - 0.01, -5); out.receiveShadow = true; S.add(out);
   const outS = new THREE.Mesh(new THREE.PlaneGeometry(80, 60).rotateX(-Math.PI / 2), outT); outS.position.set(16, -0.42, 20); outS.receiveShadow = true; S.add(outS);
-  const lt = leafTex(['#1e4a1c', '#2a5e24', '#3a722c', '#163a16', '#4a8434']), lt2 = leafTex(['#2a5e24', '#3e7a2e', '#4e8e38', '#1e4a1c']);
-  const cardM = t => new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
-  const tm = { bark: T.material(T.bark(0x5a4030), {}, [1, 2]), leaf: cardM(lt), leaf2: cardM(lt2), core: new THREE.MeshStandardMaterial({ color: 0x122a10, roughness: 1 }),
-    depth: new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: lt, alphaTest: 0.5 }),
-    stone: T.material(T.rock(0x9a9a90, 'gateRock', 0.3), { color: 0xd8d8d0 }, [0.4, 0.4]) };
+  const tm = treeMats();
   TREES.forEach(([x, z], k) => S.add(tree(tm, x, z, LV.at(x, z), 1.05, k + 1)));
   TREES_OUT.forEach(([x, z], k) => S.add(tree(tm, x, z, HIGH, 1.15, k + 40)));
   ROCKS.forEach(([x, z, s], k) => S.add(rock(tm.stone, x, z, LV.at(x, z), s, k + 3)));

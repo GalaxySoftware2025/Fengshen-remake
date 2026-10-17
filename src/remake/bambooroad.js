@@ -26,19 +26,20 @@ function thatchTex() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 // the hut: a raised earth floor, log walls, log posts across the front, a doorway, windows, a hip roof of thick thatch
-function hut(y) {
-  const g = new THREE.Group(), { x0, x1, z0, z1 } = HUT, H = 1.35, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+// (r: its walls' rectangle; also 黃龍堡's, src/remake/huanglong.js; the front's pieces placed along it in proportion)
+export function hut(y, r = HUT) {
+  const g = new THREE.Group(), { x0, x1, z0, z1 } = r, H = 1.35, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, at = k => x0 + (k - HUT.x0) * (x1 - x0) / (HUT.x1 - HUT.x0);
   const logs = T.material(T.wood(0x7a5a2a, 'hutLogs'), { color: 0xe8d0a0 }, [1, 1]), dark = new THREE.MeshStandardMaterial({ color: 0x120a06, roughness: 1 });
   g.add(box(T.material(T.dirt(0x6a5a40, 'hutFloor'), {}), x0 - 0.1, y - 0.05, z0 - 0.1, x1 + 0.1, y + 0.08, z1 + 0.12));
   g.add(box(logs, x0, y + 0.08, z0, x1, y + H, z1 - 0.05, 1));
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.85), dark); door.position.set(27.35, y + 0.55, z1 - 0.04); door.scale.y = 1.2; g.add(door);
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.85), dark); door.position.set(at(27.35), y + 0.55, z1 - 0.04); door.scale.y = 1.2; g.add(door);
   for (const wx of [27.05, 27.65]) {   // the two small windows over the doorway's sides, blue panes in a dark frame
-    const w = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.18), new THREE.MeshStandardMaterial({ color: 0x3a7ad8, emissive: 0x0a2050, roughness: 0.3 })); w.position.set(wx + (wx < 27.3 ? -0.45 : 0.45), y + 0.85, z1 - 0.03); g.add(w);
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.18), new THREE.MeshStandardMaterial({ color: 0x3a7ad8, emissive: 0x0a2050, roughness: 0.3 })); w.position.set(at(wx + (wx < 27.3 ? -0.45 : 0.45)), y + 0.85, z1 - 0.03); g.add(w);
   }
   const post = new THREE.CylinderGeometry(0.07, 0.08, H + 0.1, 8), posts = [];
-  for (const px of [x0 + 0.05, 26.5, 26.95, 27.75, 28.4, 29.1, x1 - 0.05]) { const m = new THREE.Mesh(post, logs); m.position.set(px, y + 0.08 + (H + 0.1) / 2, z1 + 0.02); posts.push(m); }
+  for (const px of [x0 + 0.05, at(26.5), at(26.95), at(27.75), at(28.4), at(29.1), x1 - 0.05]) { const m = new THREE.Mesh(post, logs); m.position.set(px, y + 0.08 + (H + 0.1) / 2, z1 + 0.02); posts.push(m); }
   g.add(...posts);
-  for (const [bx, r, h, col] of [[26.2, 0.17, 0.2, 0xb08a40], [27.05, 0.15, 0.12, 0x8a5a30]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.8, h, 14), new THREE.MeshStandardMaterial({ color: col, roughness: 0.9 })); b.position.set(bx, y + 0.08 + h / 2, z1 + 0.25); g.add(b); }
+  for (const [bx, r, h, col] of [[26.2, 0.17, 0.2, 0xb08a40], [27.05, 0.15, 0.12, 0x8a5a30]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.8, h, 14), new THREE.MeshStandardMaterial({ color: col, roughness: 0.9 })); b.position.set(at(bx), y + 0.08 + h / 2, z1 + 0.25); g.add(b); }
   // the roof: a ridge along x, four slopes down to eaves that overhang, a thick straw rim along the eaves
   const top = y + H, ov = 0.4, rise = 1.0, ex0 = x0 - ov, ex1 = x1 + ov, ez0 = z0 - ov, ez1 = z1 + 0.12, rx0 = x0 + 0.9, rx1 = x1 - 0.9, ry = top + rise;
   const P = [], UV = [], tri = (a, b, c, uv) => { P.push(...a, ...b, ...c); UV.push(...uv); };

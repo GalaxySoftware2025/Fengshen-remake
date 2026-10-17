@@ -185,7 +185,7 @@ async function campaign() {
       orbit(false); setScreen(null); E.ui.show('hud', false); dirty = true;
       if (state.part === 'intro' && Scene.seekPast(S)) state.part = 'outro';   // #scene=N&at=F past its battle (QA shots of the outro)
       if (state.part === 'intro' && S.chapter && S.chapter !== state.chapter) { await Scene.chapterCard(E, S.chapter); state.chapter = S.chapter; }
-      const r = await Scene.play(E, tag, state.part, { join: cid => K.join(state, cid) });
+      const r = await Scene.play(E, tag, state.part, { join: cid => K.join(state, cid), summon: spell => K.summon(state, spell) });
       if (r === 'battle' && S.battle) { state.camp = true; state.battle = S.battle; continue; }   // stays dark: the camp fades in once its world is built
       K.nextScene(state); continue;
     }

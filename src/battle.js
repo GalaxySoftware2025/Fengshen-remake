@@ -76,6 +76,7 @@ let groundLum = null, LUM_DARK = 0.16;
 export const groundLight = () => ({ lum: groundLum, dark: LUM_DARK });   // (tools/qa/tiles.js)
 export function measureLight() {
   SURF = null;   // the set or the room changed: the flier surfaces are measured again
+  if (tiles) tiles.ground();   // and the ground the squares lie on
   try {
     // the map's run of light from high up; each cell the darker of that and its ground under any canopy (battle 13's bamboo
     // tops read the shaded ground under them as light: tools/qa/tiles.js)
@@ -124,14 +125,28 @@ function measureGround(under) {
 const tileY = (x, y) => { let h = -99; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) h = Math.max(h, groundH(x + 0.1 + i * 0.4, y + 0.1 + j * 0.4)); return Math.ceil((h + 0.04) / 0.1) * 0.1; };
 // a tile's height on a blocked cell (a roof, a cliff a flier can reach) sits on top of what is there
 const cellY = (x, y) => (G.terrain && G.terrain[y] && G.terrain[y][x] !== 0) ? Math.max(tileY(x, y), Math.ceil((surfaceY(x, y) + 0.04) / 0.1) * 0.1) : tileY(x, y);
+// the ground's height under the squares, DRAPE samples a cell (at the cells' corners and every 1/DRAPE between): a square
+// on open ground follows it, sloped, stepped or lumpy (a flat plate at the cell's highest point floated over a ledge's
+// slope and let the ground's lumps through: battle 10's ledges, battle 8's grass, the user's report); built again with
+// each world (measureLight)
+const DRAPE = 8;
+function drapeTexture() {
+  const W = R.MAP_W * DRAPE + 1, H = R.MAP_H * DRAPE + 1, data = new Float32Array(W * H);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) data[j * W + i] = groundH(i / DRAPE, j / DRAPE);
+  const t = new THREE.DataTexture(data, W, H, THREE.RedFormat, THREE.FloatType); t.magFilter = t.minFilter = THREE.NearestFilter; t.needsUpdate = true;
+  return t;
+}
 class Tiles {
   constructor(scene) {
-    const geo = new THREE.PlaneGeometry(1.01, 1.01); geo.rotateX(-Math.PI / 2);   // a hair over a cell: no seams between tiles
+    const geo = new THREE.PlaneGeometry(1, 1, DRAPE, DRAPE); geo.rotateX(-Math.PI / 2);   // its vertices on the height samples (a draped square: no seam with its neighbour)
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: true, depthFunc: THREE.LessDepth,   // normal blending, tone-mapped: tints the ground without lighting it or blooming; depth: the overlap is not shaded twice
-      uniforms: { uT: { value: 0 } },
-      vertexShader: `attribute float aEdge; varying vec2 vUv; varying vec3 vC; varying float vEdge; void main(){ vUv = uv; vC = instanceColor; vEdge = aEdge; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform float uT; varying vec2 vUv; varying vec3 vC; varying float vEdge;
+      uniforms: { uT: { value: 0 }, uH: { value: null }, uHSize: { value: new THREE.Vector2(1, 1) }, uMask: { value: 0 } },   // uMask: solid magenta, where the squares are seen (tools/qa/tiles.js)
+      vertexShader: `attribute float aEdge; attribute float aDrape; uniform sampler2D uH; uniform vec2 uHSize; varying vec2 vUv; varying vec3 vC; varying float vEdge;
+        void main(){ vUv = uv; vC = instanceColor; vEdge = aEdge; vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          if (aDrape > 0.5) w.y = texture2D(uH, (w.xz * ${DRAPE}.0 + 0.5) / uHSize).r + 0.05;   // on the ground, a hair above it
+          gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform float uT, uMask; varying vec2 vUv; varying vec3 vC; varying float vEdge;
         float bit(float n, float b){ return mod(floor(n / b), 2.0); }
         void main(){ vec2 c = abs(vUv - 0.5) * 2.0; float d = max(c.x, c.y);
           float edge = smoothstep(0.8, 0.9, d) * (1.0 - smoothstep(0.97, 1.0, d));
@@ -144,11 +159,23 @@ class Tiles {
           col = mix(col, vC, mv); a = mix(a, mix(0.66, 0.3, lite), mv);
           float w = fwidth(d), hair = mv * smoothstep(1.0 - 1.8 * w, 1.0 - 0.8 * w, d);   // a one-pixel black line keeps the cells apart (white squares too: on a dark floor they merged into one block)
           col = mix(col, vec3(0.0), hair); a = mix(a, 0.92, hair);
-          gl_FragColor = vec4(col, a); }`,
+          #ifdef XRAY
+          a *= 0.5; if (uMask > 0.5) discard;   // (fainter; the QA mask shows only what is seen)
+          #endif
+          gl_FragColor = uMask > 0.5 ? vec4(1.0, 0.0, 1.0, 1.0) : vec4(col, a); }`,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, 600); this.mesh.count = 0; this.mesh.renderOrder = 3; this.mesh.frustumCulled = false;
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(600 * 3), 3);
+    // the parts of the squares the scenery hides (a ledge's face, a tree's crown, a wall before them): drawn fainter over
+    // it, so the whole cell reads, as the original's flat highlight does (the user's report); in the opaque pass with its
+    // own blending, after the scenery (0) and the grass (1) and before the characters (2), who draw over it
+    const xmat = mat.clone(); xmat.uniforms = mat.uniforms; xmat.transparent = false; xmat.depthWrite = false; xmat.depthFunc = THREE.GreaterDepth;
+    xmat.blending = THREE.CustomBlending; xmat.blendSrc = THREE.SrcAlphaFactor; xmat.blendDst = THREE.OneMinusSrcAlphaFactor;
+    xmat.defines = { XRAY: 1 };
+    this.xray = new THREE.InstancedMesh(geo, xmat, 600); this.xray.count = 0; this.xray.renderOrder = 1.5; this.xray.frustumCulled = false;
+    this.xray.instanceMatrix = this.mesh.instanceMatrix; this.xray.instanceColor = this.mesh.instanceColor; this.mesh.add(this.xray);   // (a child: hidden with the squares)
     this.edge = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aEdge', this.edge);   // move tiles: sides on the range's outline
+    this.drape = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aDrape', this.drape);   // 1: laid over the ground; 0: flat at its matrix's height (a roof's, a cliff top's: a flier's square)
     scene.add(this.mesh); this.mat = mat;
     // cursor: four gold corners + a hovering marker
     const cc = document.createElement('canvas'); cc.width = cc.height = 64; const g = cc.getContext('2d'); g.fillStyle = '#ffe9a8';
@@ -164,12 +191,15 @@ class Tiles {
     this.last = list;   // (tools/qa/tiles.js reads the cells shown)
     const m = new THREE.Matrix4(), c = new THREE.Color();
     list.slice(0, 600).forEach((t, i) => {
-      const p = tileCenter(t.x, t.y), move = t.c === C.move; m.makeTranslation(p.x, cellY(t.x, t.y) + (t.lift || 0), p.z); this.mesh.setMatrixAt(i, m);
+      const p = tileCenter(t.x, t.y), move = t.c === C.move, y = cellY(t.x, t.y); m.makeTranslation(p.x, y + (t.lift || 0), p.z); this.mesh.setMatrixAt(i, m);
+      this.drape.array[i] = !t.lift && y <= tileY(t.x, t.y) + 0.001 && this.mat.uniforms.uH.value ? 1 : 0;   // (on top of what stands on a blocked cell: flat)
       c.setRGB(...(move && groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);
       this.edge.array[i] = move ? 1 : 0;
     });
-    this.mesh.count = Math.min(600, list.length); this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; this.edge.needsUpdate = true;
+    this.mesh.count = this.xray.count = Math.min(600, list.length); this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; this.edge.needsUpdate = true; this.drape.needsUpdate = true;
   }
+  // the ground's heights for draped squares (a new world, a new room)
+  ground() { const u = this.mat.uniforms; if (u.uH.value) u.uH.value.dispose(); u.uH.value = drapeTexture(); u.uHSize.value.set(u.uH.value.image.width, u.uH.value.image.height); }
   setCursor(x, y, quiet) { this.cur = x == null ? null : [x, y]; this.quiet = !!quiet; this.cursor.visible = this.marker.visible = x != null && !quiet; }   // quiet: keep the focus, hide the visuals (the target mark draws instead)
   setPath(path) {
     const m = new THREE.Matrix4(), pts = [];
@@ -353,7 +383,7 @@ export function syncActors() {
 // turn order is already set
 async function joinHeroes(list) {
   syncActors();
-  for (const v of list) { const a = actorOf(v); placeActor(a); a.fade = 0; }   // the whole wave hidden until each comes in (else the rest showed, vanished and faded in: the user's report)
+  for (const v of list) { const a = actorOf(v); placeActor(a); a.fade = 0; a.dissolve = 0; }   // (dissolve: one who fell and comes back, battle 14's revival)   // the whole wave hidden until each comes in (else the rest showed, vanished and faded in: the user's report)
   for (const v of list) {
     const a = actorOf(v);
     cam.release(); cam.focus(a.pos); await wait(450);
@@ -613,7 +643,7 @@ export async function levelUpAnim(u, ch) {
 export async function gainExp(u, amount) {
   if (u.side !== 'player' || u.guest || amount <= 0) return;
   // the experience gained, in gold over the hero after each attack, spell or item (the user's call), read before a level-up
-  const a = actorOf(u); if (a && a.head) { ui.floater(a.head().add(V(0, 0.15, 0)), '經驗 +' + amount, 'dmg exp', 1.4); await wait(650); }
+  const a = actorOf(u); if (a && a.head) { await wait(300); ui.floater(a.head().add(V(0, 0.15, 0)), '經驗 +' + amount, 'dmg exp', 1.4); await wait(650); }   // (a beat after the blow lands: the user's call)
   u.exp += amount;
   while (u.exp > 99 && u.lv < 99) { u.exp -= 100; await levelUpAnim(u, R.levelUp(u)); }   // [ROM] 0x1246A
 }
@@ -898,8 +928,19 @@ export async function pickTarget(u, cells, range, area, color, prefer, attack) {
   tiles.set([]); tiles.setCursor(null); targetMark.set(null); ui.forecast(null); ui.hint(''); return null;
   function done(c) { tiles.set([]); tiles.setCursor(null); targetMark.set(null); ui.forecast(null); ui.hint(''); return c; }
 }
+// a phantom (AI 0x83) calling: it flickers in on the cell it shows itself on, its callers come in, and it fades away
+async function phantomCall(u, at) {
+  const a = actorOf(u); a.pos.copy(standAt(u, at[0], at[1])); a.off.set(0, 0); a.fade = 0; u.away = false;
+  cam.release(); cam.focus(a.pos); await wait(300);
+  for (let k = 1; k <= 24; k++) { a.fade = (k / 24) * (k % 4 < 2 ? 1 : 0.45); await wait(25); }   // flickering in, as the original's (0x0EFF96)
+  a.fade = 1; await wait(250);
+  if (G.joined && G.joined.length) await joinHeroes(G.joined.splice(0));
+  cam.focus(a.pos); for (let k = 23; k >= 0; k--) { a.fade = (k / 24) * (k % 4 < 2 ? 1 : 0.45); await wait(25); }   // and out (0x0F018C)
+  a.fade = 1; u.away = true;
+}
 export async function aiTurn(u) {
   if (!R.wakes(u)) return;
+  if (u.away) { const plan = R.planAction(u, opts); if (plan.appear) await phantomCall(u, plan.appear); return; }   // a phantom: never on the map but to call
   const a = actorOf(u); cam.release(); cam.focus(a.pos); ui.card(u);
   await wait(opts.arena ? 120 : 350);
   const plan = R.planAction(u, opts);
@@ -925,7 +966,7 @@ export async function runBattle() {
         if (!G.units.includes(u) || (PG.endPhase && u.side === 'player') || (!PG.enemiesAct && u.side === 'enemy')) { u.done = true; continue; }
       }
       if (!u.alive || G.over) continue;
-      ui.order(order.slice(oi).filter(v => v.alive), u);
+      ui.order(order.slice(oi).filter(v => v.alive && !v.away), u);   // (away: a phantom, AI 0x83)
       if (u.status.poison) { u.hp = Math.max(1, u.hp - 3); u.status.poison--; }
       if (u.status.sleep) { u.status.sleep--; u.done = true; if (u.side === 'player') { cam.focus(actorOf(u).pos); await ui.toast(u.name + ' 正在睡眠', 800); } continue; }
       if (u.status.seal) u.status.seal--;
@@ -935,6 +976,7 @@ export async function runBattle() {
       const lines = R.beforeTurn(u);   // the battle's turn hook: scripted lines (and wake-ups) before this unit moves
       if (G.joined && G.joined.length) await joinHeroes(G.joined.splice(0));   // units the hook brought in (battle 4's 楊戩, battle 7's reinforcements)
       if (lines) { for (const l of lines) { cam.release(); if (l.unit) cam.focus(actorOf(l.unit).pos); await ui.say(l.text, l.who || null); } if (!u.alive || G.over) { G.active = null; continue; } }
+      if (R.skipsTurn(u)) { G.active = null; u.done = true; continue; }   // the hook ended the heroes' round (battle 14's lair)
       if (u.side === 'player' && !opts.auto && !u.guest) await playerTurn(u); else await aiTurn(u);   // a guest (文王) moves by his AI
       G.active = null; u.done = true; ui.card(null);
       const res = after();
@@ -1045,7 +1087,7 @@ export async function loadWorld(fx, progress) {
   await world.build(p => progress && progress(p * 0.8));
   resize();
   vfx = new VFX(world); tiles = new Tiles(world.scene); activeMark = new ActiveMark(world.scene); targetMark = new TargetMark(world.scene);
-  const names = new Set([...D.party, ...D.enemies, ...(D.rooms || []).flatMap(r => r.enemies.flatMap(e => e.summon ? [e, e.summon] : [e]))].map(u => u.sprite).concat(FX.sprites || [])
+  const names = new Set([...D.party, ...[D.enemies, ...(D.rooms || []).map(r => r.enemies)].flat().flatMap(e => e.summon ? [e, e.summon] : [e])].map(u => u.sprite).concat(FX.sprites || [])
     .concat(opts.test ? globalThis.COMMON.heroes.map(h => spriteKey(h.gfx)) : []));   // the test tools can bring in any hero
   await bank.load([...names]);
   progress && progress(1);

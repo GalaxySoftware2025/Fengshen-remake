@@ -139,7 +139,15 @@ export function loadBattle(B, party, hooks, tweak) {
   const AT = ((globalThis.ACTIONS || {}).battles || {})[B.n] || [];   // each unit's attack type (data/actions.js: its template's +0x2B)
   D.enemies = B.enemies.map((e, i) => Object.assign({}, e, { slot: 10 + i, sprite: spriteKey(e.gfx), atkType: AT[i] }));   // slots 10.. as in the ROM's unit table
   const withSummon = e => e.summon ? { summon: Object.assign({}, e.summon, { sprite: spriteKey(e.summon.gfx) }) } : {};
-  if (B.rooms) { D.rooms = B.rooms.map(r => Object.assign({}, r, { enemies: r.enemies.map((e, i) => Object.assign({}, e, { slot: 10 + i, sprite: spriteKey(e.gfx) }, withSummon(e))) })); D.chests = D.rooms[0].chests; G.room = 0; G.chests = null; }
+  if (B.rooms) {
+    D.rooms = B.rooms.map(r => Object.assign({}, r, { enemies: r.enemies.map((e, i) => Object.assign({}, e, { slot: 10 + i, sprite: spriteKey(e.gfx) }, withSummon(e))) }));
+    // the battle starts on its own map with its own enemies (the header's: the ROM loads a room record only when a hero
+    // takes an exit); where the room table's first record is the next room's again (battles 14 and 15: both entries point
+    // at the lair, and no way leads back), the first room is that map, not the lair
+    const same = (a, b) => b && a.w === b.w && a.h === b.h && JSON.stringify(a.terrain) === JSON.stringify(b.terrain);
+    if (same(D.rooms[0], D.rooms[1]) && (D.rooms[0].w !== B.mapW || D.rooms[0].h !== B.mapH)) D.rooms[0] = Object.assign({}, D.rooms[0], { w: B.mapW, h: B.mapH, terrain: B.terrain, chests: B.chests || [], enemies: [] });
+    D.chests = D.rooms[0].chests; G.room = 0; G.chests = null;
+  }
   SHAPES[1] = D.shapes.s1;
   H = hooks || {};
   if (H.load) H.load(D);              // a battle can add the units its hook spawns, or adjust the map
@@ -209,7 +217,11 @@ function spawn(e) {
   // the spawn loader [ROM 0x13354, a room's 0x1D7B0]: an AI 10 unit's zone is centred on the cell it starts on, whatever
   // its record says
   if (u.ai === 10) { setAiP(u, 0x34, u.x); setAiP(u, 0x35, u.y); }
-  if (e.summon) { u.summon = e.summon; u.wake = e.wake; }   // a summoner's call (AI 0x82)
+  // ... a phantom (AI 0x83) and a unit of move type 6 or 7 keep their starting cell as their post (+0x3A, +0x3B: where a
+  // phantom shows itself, where the fallen come back, revive); a phantom starts away, off the map
+  if (u.ai === 0x83 || u.moveType === 6 || u.moveType === 7) { setAiP(u, 0x3a, u.x); setAiP(u, 0x3b, u.y); }
+  if (u.ai === 0x83) { u.x = u.y = -1; u.away = true; }
+  if (e.summon) { u.summon = e.summon; u.wake = e.wake; if (e.calls) u.calls = e.calls.slice(); }   // a summoner's or a phantom's call (AI 0x82, 0x83)
   G.units.push(u);
   return u;
 }
@@ -284,6 +296,27 @@ export function wakes(u) {
 // the battle's turn hook [ROM header +34, called before every unit's turn at 0x1E7C0]: scripted lines and wake-ups;
 // returns the lines to play ([{ who, text, unit }]) or null
 export function beforeTurn(u) { return H.beforeTurn ? H.beforeTurn(G, u) : null; }
+// a hook can end the heroes' round: their acted mark set (record byte +1 = 8; battle 14's lair, 0x0F2222) for this round
+export const endHeroesRound = () => { for (const u of G.units) if (u.side === 'player') u.skipRound = G.round; };
+export const skipsTurn = u => u.skipRound === G.round;
+
+// ---------------------------------------------------------------- revival [ROM 0x1DAFC]
+// the 13 cells tried round a spot, in the ROM's order [table 0x1D922]
+export const AROUND = [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0], [0, -2], [0, 2], [-2, 0], [2, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+// 0x1DAFC(type): every fallen enemy (slots 10-29) of that move type comes back at its post (record +0x3A, +0x3B: its AI
+// bytes 6-7) or the first of the 13 cells round it free and open to it, healed (HP and MP to their maxima); returns those
+// who came back (battle 14's fire spirits, every third round)
+export function revive(type) {
+  const back = [];
+  for (const u of G.units) {
+    if (u.side !== 'enemy' || u.alive || u.moveType !== type || u.slot == null || u.slot < 10) continue;
+    const px = aiP(u, 0x3a), py = aiP(u, 0x3b);
+    const at = AROUND.map(([dx, dy]) => [px + dx, py + dy]).find(([x, y]) => inMap(x, y) && cost(u, x, y) < 127 && !unitAt(x, y));
+    if (!at) continue;
+    [u.x, u.y] = at; u.hp = u.mhp; u.mp = u.mmp; u.alive = true; u.status = { sleep: 0, seal: 0, poison: 0 }; u.buf = {}; back.push(u);
+  }
+  return back;
+}
 
 // ---------------------------------------------------------------- chests [ROM 0x1BA78, 0x1BAF2; table 0x168E]
 // A hero opens a chest by picking its cell as the move target: it walks to a reachable cell next to it, faces it and
@@ -368,6 +401,36 @@ function guestPlan(u, r) {
 // cells round it (table 0x11268) that record may enter and no one holds, in the first free enemy slot (10-29), unless
 // 19 enemies stand already (ff0a2b); it never moves or strikes. The newcomer acts from the next round (G.joined).
 const RING = [[0, -1], [0, 1], [1, 0], [-1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, -2], [0, 2], [-2, 0], [2, 0]];
+// AI 0x83 [ROM 0x1EBDE, its call 0x0EFEF0 in the scene's own code]: a phantom (battle 12's 幻士). It is never on the map:
+// asleep until a hero comes within its record's +32 of its post (then that is cleared and its calls count, +1C, set to 0);
+// awake, its count (+35) rises every turn and when it passes +34 it starts over, and while its calls made are fewer than
+// allowed (+1C < +1B, two more each time) it shows itself on the first free cell round its post (0x11266: the post, then
+// the twelve of 0x11268), calls up two of the record at +36 (u.summon, battle 12's 雷角獸) on the first free cells round
+// itself that record may enter, in the first free enemy slots (10-29; a fallen unit of move type 6 or 7 keeps its slot),
+// and is gone again; nothing while 19 enemies stand (ff0a2b). The plan's `appear` is the cell it showed itself on.
+const APPEAR = [[0, 0], [0, -1], [0, 1], [1, 0], [-1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, -2], [0, 2], [-2, 0], [2, 0]];
+function phantom(u, r) {
+  const stay = { cell: r.get(key(u.x, u.y)), kind: 'wait', r }, px = aiP(u, 0x3a), py = aiP(u, 0x3b);
+  if (u.wake) { if (players().some(p => p.slot < 10 && Math.abs(p.x - px) + Math.abs(p.y - py) <= u.wake)) { u.wake = 0; u.calls[0] = 0; } else return stay; }
+  if (G.units.filter(v => v.alive && v.side === 'enemy').length >= 19) return stay;
+  const n = aiP(u, 0x35) + 1; setAiP(u, 0x35, n); if (aiP(u, 0x34) >= n) return stay;
+  setAiP(u, 0x35, 0);
+  if (u.calls[0] >= u.calls[1]) return stay;
+  u.calls[0] += 2;
+  const at = APPEAR.map(([dx, dy]) => [px + dx, py + dy]).find(([x, y]) => inMap(x, y) && !unitAt(x, y) && D.costs[u.moveType][G.terrain[y][x]] < 127);
+  if (!at) return stay;
+  const sm = u.summon, c = D.costs[sm.moveType]; let made = 0;
+  for (const [dx, dy] of APPEAR.slice(1)) {
+    if (made >= 2) break;
+    const x = at[0] + dx, y = at[1] + dy; if (!inMap(x, y) || unitAt(x, y) || c[G.terrain[y][x]] >= 127) continue;
+    let s = 10; while (s < 30 && G.units.some(v => v.slot === s && (v.alive || v.moveType === 6 || v.moveType === 7))) s++;
+    if (s >= 30) break;
+    for (const v of G.units) if (!v.alive && v.slot === s) v.slot = null;
+    const v = makeUnit(Object.assign({ exp: 0, items: [] }, sm), 'enemy', { slot: s }); v.x = x; v.y = y; v.facing = 'down';
+    G.units.push(v); (G.joined || (G.joined = [])).push(v); made++;
+  }
+  return Object.assign(stay, { appear: at });
+}
 function summoner(u, r) {
   const stay = { cell: r.get(key(u.x, u.y)), kind: 'wait', r };
   if (u.wake) { if (players().some(p => manhattan(p, u) <= u.wake)) u.wake = 0; else return stay; }
@@ -403,6 +466,7 @@ function aiScript(u, r) {
     }
   }
   if (u.ai === 0x82 && u.summon) return summoner(u, r);
+  if (u.ai === 0x83 && u.summon) return phantom(u, r);
   if (u.ai >= 0x80 && !u.spells.some(i => D.spells[i] && D.spells[i].mp <= u.mp)) u.ai = aiP(u, 0x34);
   if (u.ai === 9) {
     const gx = aiP(u, 0x34), gy = aiP(u, 0x35), cell = toward(u, r, gx, gy);

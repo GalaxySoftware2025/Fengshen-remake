@@ -8,7 +8,7 @@
 // ff32c5 bit 0): 雷開's men come (0x1D956, record by record: the first of 13 cells round each spot, the first free slot from
 // 10) and 雷開 (the first of them) and 林雲 have words                                               [0x0EC60C]
 // Win [0x01ADDC]: every enemy down. Lose [0x01AD2C]: no hero left.
-import { G, D, players, makeUnit } from '../rules.js';
+import { G, D, players, makeUnit, AROUND } from '../rules.js';
 import { spriteKey } from '../sprites.js';
 import { sayList } from '../says.js';
 
@@ -24,7 +24,6 @@ export const WAVE = [[21, 19, 'soldier', 4], [23, 17, 'archer'], [21, 8, 'archer
 export const WAVE_SPRITES = [...new Set(Object.values(REC).map(r => spriteKey(r.gfx)))];
 // the say-list (0x0EC5FE): 雷開 (speaker 49, his chapter counter's line 0) on the wave's first man (actor 0x11: slot 16), then 林雲
 export const LINES = sayList(0x0EC5FE).map((l, i) => i === 0 ? { who: l.who, text: l.text, first: true } : l);   // (雷開: the wave's first man)
-const AROUND = [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0], [0, -2], [0, 2], [-2, 0], [2, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]];   // 0x1D922
 
 export default {
   n: 8,

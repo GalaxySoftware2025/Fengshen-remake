@@ -34,6 +34,12 @@ export function testGame(party, n) {
 export function join(state, cid) {
   if (!heroRec(state, cid)) { state.roster.push(record(hero(C(), cid, C().heroes[cid].lv))); state.roster.sort((a, b) => a.cid - b.cid); }
 }
+// a summon gained in a scene [native 0x0EDD80]: the spell into 楊戩's record (ff1050, the roster's third: cid 2), its
+// first free slot of eight, once
+export function summon(state, spell) {
+  const r = heroRec(state, 2); if (!r || r.spells.includes(spell) || r.spells.length >= 8) return false;
+  r.spells.push(spell); return true;
+}
 // after a scene: the next one (65 scenes, then the ending)
 export function nextScene(state) {
   state.scene = state.scene === 'prologue' ? 'prologue2' : state.scene === 'prologue2' ? 0 : state.scene >= 64 ? 'end' : state.scene + 1;

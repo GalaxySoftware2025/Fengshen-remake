@@ -31,9 +31,9 @@ const ROOM_KEYS = ['0ee250', 'room1', 'room2', '0ee27c'];
 let bub = null, spl = null, wetCells = [], land = null, chestG = new Map(), M = null, world = null, cur = null;
 
 // the void's side of an exit cell (where its tunnel opens): the first neighbour that is void
-const voidSide = (tc, x, y) => [[0, -1], [1, 0], [-1, 0], [0, 1]].find(([dx, dy]) => tc(x + dx, y + dy) === 1) || [0, -1];
+export const voidSide = (tc, x, y) => [[0, -1], [1, 0], [-1, 0], [0, 1]].find(([dx, dy]) => tc(x + dx, y + dy) === 1) || [0, -1];
 // a spire: three or four barnacled rock cones leaning together
-function spire(mat, x, z, y, s) {
+export function spire(mat, x, z, y, s) {   // (also 火巖窟's boulders, src/remake/firecave.js)
   const g = new THREE.Group();
   for (let k = 0; k < 4; k++) {
     const h = s * (0.9 - k * 0.18), r = s * (0.24 - k * 0.03), c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 9, 3), mat);
@@ -45,7 +45,7 @@ function spire(mat, x, z, y, s) {
   return shade(g);
 }
 // a tunnel on: a black arch in the wall over the exit cell, ragged rock round it
-function tunnel(rockM, x, z, y, side) {
+export function tunnel(rockM, x, z, y, side) {
   const g = new THREE.Group(), w = 0.9, h = 1.3;
   const sh = new THREE.Shape(); sh.moveTo(-w / 2, 0); sh.lineTo(-w / 2, h * 0.55); sh.absarc(0, h * 0.55, w / 2, Math.PI, 0, true); sh.lineTo(w / 2, 0); sh.closePath();
   const hole = new THREE.Mesh(new THREE.ShapeGeometry(sh, 16), new THREE.MeshBasicMaterial({ color: 0x010203 }));

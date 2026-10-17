@@ -35,7 +35,27 @@ export function at(tr, f) {
 // 700 frames), and this wider view would show it. out.offstage lists those stretches [from, to, fadeIn, fadeOut]
 // (src/scene.js fades the unit out over them): it walked out of the original's screen, or stood off it from the start,
 // and it walks back in, or never comes back. One the camera left standing (it did not move) stays shown.
+// the stall: now and then the original stops drawing a walker's steps for a moment (8-24 frames: its sprite stands while
+// the unit walks on) and then shows it where it has got to, a cell on (scene 32's 張桂芳, f150-166 and f230-246). Played
+// as the walk it is: the stalled point is dropped, so the walk runs straight from where it stood to where it shows up
+export function unstall(tr) {
+  const out = tr.slice(), at = p => p && p.length > 2;
+  for (let i = 1; i + 1 < out.length; i++) {
+    const a = out[i - 1], b = out[i], c = out[i + 1];
+    if (!at(a) || !at(b) || !at(c) || a[1] !== b[1] || a[2] !== b[2] || c[0] !== b[0] + 1 || a[3] !== b[3] || b[3] !== c[3]) continue;
+    const hold = b[0] - a[0], d = Math.hypot(c[1] - b[1], c[2] - b[2]);
+    if (hold < 8 || hold > 24 || d < 16 || d > 40) continue;
+    let j = i - 1; while (j > 0 && at(out[j - 1]) && out[j - 1][3] === a[3] && a[0] - out[j][0] < 8) j--;   // its walk over the 8 frames before
+    const z = out[j], span = a[0] - z[0]; if (span < 6) continue;
+    const v0 = Math.hypot(a[1] - z[1], a[2] - z[2]) / span, v = d / (hold + 1);
+    const ahead = Math.sign(a[1] - z[1]) === Math.sign(c[1] - b[1]) && Math.sign(a[2] - z[2]) === Math.sign(c[2] - b[2]);
+    if (!ahead || v0 < 0.5 || Math.abs(v - v0) > v0 * 0.5) continue;
+    out.splice(i, 1); i--;
+  }
+  return out;
+}
 export function soften(tr, far, w, cam, loads = []) {   // loads: the frames of map loads (a new map shows no one left from the old)
+  tr = unstall(tr);
   if (tr.length < 2) return tr;
   const f0 = tr[0][0], f1 = tr[tr.length - 1][0], raw = [], gone = [];   // per frame: the point shown, and where (as pose() has it)
   const off = (x, y, c) => { const sx = x - c[0] * 8, sy = y - c[1] * 8; return sx <= -16 || sx >= 240 || sy <= -16 || sy >= 208; };

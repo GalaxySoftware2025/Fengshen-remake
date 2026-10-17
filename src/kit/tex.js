@@ -155,8 +155,10 @@ export function mansionCarpet(per = 2) {
 }
 // auspicious-cloud (祥雲) scrolls in gilt relief on a red lacquer ground (金漆浮雕), `per` motifs across: each a pair
 // of spiral curls joined by a sweeping band
-export function cloudRelief(per = 2) {
-  return pbr('cloudRelief' + per, 1024, (u, v, o) => {
+// pal: the ground and the carving, each from dark to light ({ ground: [lo, hi], line: [lo, hi], name }); default red and gold
+export function cloudRelief(per = 2, pal = null) {
+  const P = pal || { ground: [[0.42, 0.06, 0.04], [0.55, 0.1, 0.06]], line: [[0.7, 0.48, 0.16], [0.95, 0.75, 0.32]], name: '' };
+  return pbr('cloudRelief' + per + P.name, 1024, (u, v, o) => {
     const x = u * per, y = v * per, fx = x - Math.floor(x), fy = y - Math.floor(y), row = Math.floor(y) % 2;
     const n = fbm(u, v, 24, 3, 301);
     let ln = 0;
@@ -166,8 +168,8 @@ export function cloudRelief(per = 2) {
     }
     const band = smooth(0.035, 0.012, Math.abs(fy - (0.5 + 0.17 * Math.sin((fx + row * 0.5) * Math.PI * 2))));   // the sweep joining the curls
     const rel = Math.max(ln, band * 0.9);
-    const c = mixc(mixc([0.42, 0.06, 0.04], [0.55, 0.1, 0.06], n), mixc([0.7, 0.48, 0.16], [0.95, 0.75, 0.32], n), rel);
-    o.c = c; o.h = 0.35 + rel * 0.55 + n * 0.03; o.m = rel; o.r = 0.35 + (1 - rel) * 0.25;
+    const c = mixc(mixc(P.ground[0], P.ground[1], n), mixc(P.line[0], P.line[1], n), rel);
+    o.c = c; o.h = 0.35 + rel * 0.55 + n * 0.03; o.m = pal ? 0 : rel; o.r = 0.35 + (1 - rel) * 0.25;
   }, 5);
 }
 // lacquered wood: deep red, a faint long grain and wear toward lighter red

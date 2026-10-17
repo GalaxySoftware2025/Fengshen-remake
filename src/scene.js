@@ -284,6 +284,7 @@ export async function play(E, tag, part, hooks) {
           else if (e.kind === 'cell' && worldReady && setFor(mapKeyOf(S, e.f))) setFor(mapKeyOf(S, e.f)).cell?.(E, e.x, e.y, e.block);
           else if (e.kind === 'cell' && worldReady && S.atlas[mapKeyOf(S, e.f)]) await E.world.paintCell(e.x, e.y, 'assets/maps/' + mapKeyOf(S, e.f) + '-blocks.png', S.atlas[mapKeyOf(S, e.f)].indexOf(e.block));
           else if (e.kind === 'join' && hooks && hooks.join) hooks.join(e.cid);
+          else if (e.kind === 'summon' && hooks && hooks.summon) hooks.summon(e.spell);
           else if (e.kind === 'native' && worldReady) setFor(mapKeyOf(S, e.f))?.native?.(E, e, () => t);   // the set shows the state at the seek frame
           else if (e.kind === 'battle') { ei--; seek = null; }   // past the first part: the battle comes as usual
           continue;
@@ -331,6 +332,7 @@ export async function play(E, tag, part, hooks) {
         else if (e.kind === 'cell' && worldReady && setFor(mapKeyOf(S, e.f))) { const st = setFor(mapKeyOf(S, e.f)); if (st.cell) st.cell(E, e.x, e.y, e.block); }   // a remade set acts the change out (a door opens)
         else if (e.kind === 'cell' && worldReady && S.atlas[mapKeyOf(S, e.f)]) await E.world.paintCell(e.x, e.y, 'assets/maps/' + mapKeyOf(S, e.f) + '-blocks.png', S.atlas[mapKeyOf(S, e.f)].indexOf(e.block));
         else if (e.kind === 'join' && hooks && hooks.join) hooks.join(e.cid);
+        else if (e.kind === 'summon') { if (hooks && hooks.summon) hooks.summon(e.spell); if (!skip) await E.ui.say('楊戩 得到了召喚獸「' + globalThis.COMMON.spells[e.spell].name + '」！', null, 2400); }   // [0x0EDD80 shows the beast and waits for a button]
         else if (e.kind === 'native' && worldReady) setFor(mapKeyOf(S, e.f))?.native?.(E, e, () => t);   // a native cut a remade set acts out (scene 6's bridge): it reads the scene clock
         else if (e.kind === 'appear' && worldReady && !skip && !((units.get(e.slot) || {}).tr || { gone: [] }).gone.some(g => Math.abs(g - e.f) <= 12)) appearing.set(e.slot, { t0: e.f, dur: Math.max(20, e.dur || 30), burst: true });
         else if (e.kind === 'battle') { await fade(1, 0.4); return 'battle'; }   // dark while the battle's world is built

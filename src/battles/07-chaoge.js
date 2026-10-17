@@ -18,7 +18,7 @@
 // to AI 6; each takes the first free unit slot from 10 (a fallen man's slot is free again: 0x1D97A).
 // Win [0x01AF62]: 林雲, 燕蓉, 楊戩 or 文王 on (15, 4) or (16, 4), before the gate's doors; or every enemy down.
 // Lose [0x01AD7C]: 文王 down, or no one left on the heroes' side.
-import { G, D, setAiP, players, makeUnit } from '../rules.js';
+import { G, D, setAiP, players, makeUnit, AROUND } from '../rules.js';
 import { spriteKey } from '../sprites.js';
 import { sayList } from '../says.js';
 import { WEN } from './06-feizhong2.js';
@@ -32,8 +32,6 @@ export const RECRUIT = { cid: 14, name: '綠盔士', lv: 7, atk: 15, df: 8, spd:
 export const WAVES = [[[8, 7], [10, 9], [4, 13], [7, 15]], [[25, 7], [21, 14], [27, 15], [29, 12]]];
 // the say-lists (0x0EBBC8, 0x0EBBE2): 6-byte records, the actor a 1-based slot (0x0F: the 大力士 in slot 14)
 export const LINES = [sayList(0x0EBBC8), sayList(0x0EBBE2)];
-// the 13 cells tried round a spot, in the ROM's order (table 0x1D922), for the first free one a man on foot may stand on
-const AROUND = [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0], [0, -2], [0, 2], [-2, 0], [2, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]];
 function spawn(G, wave) {
   for (const [sx, sy] of wave) {
     const at = AROUND.map(([dx, dy]) => [sx + dx, sy + dy]).find(([x, y]) => x >= 0 && y >= 0 && x < D.mapW && y < D.mapH && D.costs[0][G.terrain[y][x]] < 127 && !G.units.some(u => u.alive && u.x === x && u.y === y));

@@ -147,7 +147,7 @@ export class UI {
     }
     for (const a of actors) {
       const u = a.u, bar = this.hpbar(u), p = project(a.head());
-      const vis = showBars && u.alive && a.dissolve === 0 && !a.hidden && p.z < 1, fade = a.fade ?? 1;   // (a unit still to come in, faded out, shows no bar)
+      const vis = showBars && u.alive && !u.away && a.dissolve === 0 && !a.hidden && p.z < 1, fade = a.fade ?? 1;   // (a unit still to come in, faded out, shows no bar)
       bar.style.opacity = vis ? (u.hp < u.mhp ? 1 : 0.55) * fade : 0; bar.style.left = p.x + 'px'; bar.style.top = (p.y - 10) + 'px';
       const w = (u.hp / u.mhp * 100) + '%'; bar.children[1].style.width = w; bar.children[0].style.width = w;
       const st = u.status.sleep ? 'Zz 睡眠' : u.status.seal ? '封法' : u.status.poison ? '中毒' : '';

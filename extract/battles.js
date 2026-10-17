@@ -172,12 +172,13 @@ const chestsOf = (R, t) => { const out = []; for (let k = 0; k < 8; k++) { const
 // chest tiles' own block); one sharing none is hidden, found only by striking its cell (as battles 1-8's, by hand)
 const drawnChest = (R, m, c) => { const tiles = k => Array.from({ length: 16 }, (_, i) => R.W(m.addr.blocks + k * 32 + 2 * i)), icon = tiles(m.grid[m.h - 1][0]);
   return !!m.grid[c.y] && m.grid[c.y][c.x] != null && tiles(m.grid[c.y][c.x]).some(v => icon.includes(v)); };   // (a cell off the room's map: hidden)
-const enemiesOut = (list, NAMES, sheets, R = null) => list.map(e => {   // R: with the attack type (+0x2B; a room's, data/actions.js has the battle's own)
+const enemiesOut = (list, NAMES, sheets, R = null, RS = R) => list.map(e => {   // R: with the attack type (+0x2B; a room's, data/actions.js has the battle's own); RS: with a summoner's call
   const u = {}; for (const k of UNIT_KEYS) u[k] = e[k];
   if (R) u.atkType = R.B(e.template + 0x2b);
-  if (R && e.ai === 0x82) {   // a summoner (AI 0x82, 0x0EFD06): its waking range (+32) and the record it calls up (+36)
-    const t = R.L(e.template + 0x36), sm = rec(R.bytes(t, 64)), v = {}; for (const k of UNIT_KEYS) v[k] = sm[k];
-    u.wake = R.B(e.template + 0x32); u.summon = Object.assign(v, { name: NAMES[sm.cid], sprite: sm.gfx.toString(16).padStart(6, '0'), atkType: R.B(t + 0x2b), aip: Array.from(R.bytes(t + 0x34, 8)), template: t });
+  if (RS && (e.ai === 0x82 || e.ai === 0x83)) {   // a summoner (AI 0x82, 0x0EFD06) or a phantom (AI 0x83, 0x1EBDE): its waking range (+32) and the record it calls up (+36)
+    const t = RS.L(e.template + 0x36), sm = rec(RS.bytes(t, 64)), v = {}; for (const k of UNIT_KEYS) v[k] = sm[k];
+    if (e.ai === 0x83) u.calls = [RS.B(e.template + 0x1c), RS.B(e.template + 0x1b)];   // a phantom's calls: made and allowed, two units each (+1C, +1B)
+    u.wake = RS.B(e.template + 0x32); u.summon = Object.assign(v, { name: NAMES[sm.cid], sprite: sm.gfx.toString(16).padStart(6, '0'), atkType: RS.B(t + 0x2b), aip: Array.from(RS.bytes(t + 0x34, 8)), template: t });
     sheets.add(sm.gfx);
   }
   Object.assign(u, { x: e.x, y: e.y, name: NAMES[e.cid], sprite: e.gfx.toString(16).padStart(6, '0') });
@@ -186,7 +187,7 @@ const enemiesOut = (list, NAMES, sheets, R = null) => list.map(e => {   // R: wi
   sheets.add(e.gfx); return u;
 });
 export function exportBattle(R, b, walk, sheets) {
-  const NAMES = names(R), enemies = enemiesOut(b.enemies, NAMES, sheets), chests = chestsOf(R, b.partyTable);
+  const NAMES = names(R), enemies = enemiesOut(b.enemies, NAMES, sheets, null, R), chests = chestsOf(R, b.partyTable);
   const ops = b.scene_ops, cut = ops.findIndex(o => o.op === 10), f = b.party.flags;
   const party = { deployMax: b.party.deployMax, forced: [...Array(12).keys()].filter(c => f[c] === 2), unavailable: [...Array(12).keys()].filter(c => f[c] === 1),
     joins: walkUpto(walk, b.scene).flat().map(j => ({ cid: j, lv: R.B(R.L(0x1d8e + 4 * j) + 0x22) })) };

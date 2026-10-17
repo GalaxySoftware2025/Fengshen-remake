@@ -229,7 +229,7 @@ export class Actor {
       m.opacity = (this.ghost ? 0.62 : 1) * fade; m.alphaTest = see ? 0.5 : 0.5 * fade;
     }   // (over: a flier, drawn in the transparent pass, which comes after every opaque thing, and by its render order 6.5 after the see-through effects and flames too, under the turn arrows and emotes: battle.js syncActors)
     if (fade < 0.5) this.caster.visible = false;
-    this.root.visible = this.dissolve < 1 && !this.hidden && fade > 0.01;
+    this.root.visible = this.dissolve < 1 && !this.hidden && !this.u.away && fade > 0.01;   // (away: a phantom off the map, AI 0x83)
   }
   head() { return new THREE.Vector3(this.pos.x + this.off.x, this.pos.y + 1.05 + this.hover + (this.lift || 0), this.pos.z + this.off.y); }
   chest() { return new THREE.Vector3(this.pos.x + this.off.x, this.pos.y + 0.5 + this.hover + (this.lift || 0), this.pos.z + this.off.y); }

@@ -21,14 +21,14 @@ body:has(#title:not(.hidden)) #speed { display: none; }   /* not on the title */
 .dmg { position: absolute; transform: translate(-50%, -100%); font-family: "Noto Sans TC", "PingFang TC", sans-serif; font-weight: 900; font-size: 50px; line-height: 1;
   letter-spacing: -1px; color: #fff; -webkit-text-stroke: 7px #1a0a03; paint-order: stroke fill; filter: drop-shadow(0 4px 0 rgba(0,0,0,.55)) drop-shadow(0 0 10px rgba(0,0,0,.35));
   animation: pop 1.35s cubic-bezier(.2,1.5,.4,1) both; white-space: nowrap; }
-.dmg.ally { color: #ff6a4a; -webkit-text-stroke-color: #2a0602; }                 /* our side took damage */
+.dmg.ally { color: #fff; -webkit-text-stroke-color: #1a0a03; }                 /* our side took damage: white (the user's call) */
 .dmg.magic { color: #e2b6ff; -webkit-text-stroke-color: #21082f; }
-.dmg.magic.ally { color: #ff7ab8; }
+.dmg.magic.ally { color: #fff; -webkit-text-stroke-color: #1a0a03; }
 .dmg.crit { font-size: 70px; color: #ffd23a; -webkit-text-stroke: 8px #3a1200; filter: drop-shadow(0 5px 0 rgba(0,0,0,.6)) drop-shadow(0 0 16px rgba(255,120,20,.55)); }
 .dmg.crit::before { content: "會心"; display: block; width: max-content; margin: 0 auto 4px; padding: 3px 10px 4px; font-family: var(--font); font-weight: 700; font-size: 19px; letter-spacing: 4px;
   color: #fff; background: #b0200e; border: 2px solid #ffd23a; border-radius: 4px; -webkit-text-stroke: 0; }
-.dmg.heal { color: #8cff6e; -webkit-text-stroke-color: #062408; }
-.dmg.exp { font-family: "Noto Serif TC", var(--font); font-size: 30px; letter-spacing: 2px; color: #ffe27a; -webkit-text-stroke: 6px #3a2200; }   /* experience gained (battle.js gainExp) */
+.dmg.heal { color: #fff; -webkit-text-stroke-color: #1a0a03; }   /* white (the user's call) */
+.dmg.exp { font-family: "Noto Serif TC", var(--font); font-size: 30px; letter-spacing: 2px; color: #fff; -webkit-text-stroke: 6px #1a0a03; }   /* experience gained (battle.js gainExp): white, the user's call */
 .dmg.miss, .dmg.text { font-family: "Noto Serif TC", var(--font); font-size: 34px; letter-spacing: 4px; color: #bfe4ff; -webkit-text-stroke: 6px #071a30; }
 @keyframes pop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.3); } 12% { opacity: 1; transform: translate(-50%, -115%) scale(1.25); }
   24% { transform: translate(-50%, -100%) scale(1); } 75% { opacity: 1; transform: translate(-50%, -112%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -150%) scale(.92); } }
@@ -296,7 +296,7 @@ i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; bo
 .linfo { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; min-height: 58px; padding: 10px 14px; border: 1px solid rgba(216,178,90,.55); border-radius: 3px; background: rgba(0,0,0,.3); font-size: 17px; }
 .linfo b { color: #9fd0ff; font-size: 20px; } .linfo i { font-style: normal; color: var(--gold2); } .linfo em { font-style: normal; color: var(--gold); } .linfo em.off { color: #e08a7a; }
 .lask { display: flex; align-items: center; gap: 14px; margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(216,178,90,.7); border-radius: 3px; background: rgba(20,12,4,.6); font-size: 22px; }
-.lask span { flex: 1; color: #c8b8ff; letter-spacing: 2px; }
+.lask span { flex: 1; color: #fff; letter-spacing: 2px; }
 .sl.pick { outline: 2px solid var(--gold2); outline-offset: -2px; background: rgba(216,178,90,.14); }
 .lask button { font-size: 22px; padding: 6px 22px; } .lask button.on { border-color: var(--gold2); box-shadow: 0 0 12px rgba(255,200,100,.35); }
 
