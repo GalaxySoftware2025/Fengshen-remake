@@ -19,7 +19,6 @@ export const LINES = sayList(0x0ED98C);
 
 export default {
   n: 10,
-  load(D) { for (const e of D.rooms[LAST].enemies) e.facing = 'down'; },   // 海龍王's hall: its guard faces down, toward the heroes coming in (the user's call; enemies face left by default)
   setup(G) { G.beats = 0; },
   beforeTurn(G) {
     if (G.room !== LAST) return null;

@@ -192,7 +192,7 @@ export async function play(E, tag, part, hooks) {
       }
       let x = p[1], y = p[2], moving = false;
       if (q && q.length > 1 && q[3] === p[3] && q[0] > p[0]) { const k = (t - p[0]) / (q[0] - p[0]); x += (q[1] - p[1]) * k; y += (q[2] - p[2]) * k; moving = q[1] !== p[1] || q[2] !== p[2]; }
-      if (stand && stand[p[3]]) { act.hidden = true; a.standGfx = p[3]; stand[p[3]](E, x / 32 + 0.5, y / 32 + 0.5, moving, { tag, t }); continue; }   // a remade set plays this sprite with a model (valley: the cart)
+      if (stand && stand[p[3]] && stand[p[3]](E, x / 32 + 0.5, y / 32 + 0.5, moving, { tag, t }) !== false) { act.hidden = true; act.root.visible = false; a.standGfx = p[3]; continue; }   // a remade set plays this sprite with a model (valley: the cart), or hides it; false: the sprite as it is
       a.u.still = p[5];   // a sheet the original never walk-cycles (export_scenes.py stills): the frame it shows
       a.u.gfx = p[3]; a.u.facing = p[4] || 'down'; a.u.x = Math.round(x / 32); a.u.y = Math.round(y / 32);
       const wasWalking = act.walking; act.hidden = false; act.walking = moving;

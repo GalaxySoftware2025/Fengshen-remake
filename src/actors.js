@@ -95,12 +95,13 @@ export class SpriteBank {
     g.drawImage(e.walk, 0, 0, 32 * HD, 32 * HD, 0, 0, 32 * scale, 32 * scale); return c;
   }
   // the same, marking time facing down as on the map (the walk cycle's down frames, 165 ms each); stops when the canvas
-  // leaves the page
-  walker(n, scale) {
+  // leaves the page. still: standing, not marking time (a hero not chosen on the 選擇人物 page)
+  walker(n, scale, still) {
     const e = this.sheets[n], c = canvas(32 * scale, 32 * scale), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
     let k = 0, started = false;
     const draw = () => { g.clearRect(0, 0, c.width, c.height); g.drawImage(e.walk, FACE.down[k % 4] * 32 * HD, 0, 32 * HD, 32 * HD, 0, 0, 32 * scale, 32 * scale); };
-    draw(); const id = setInterval(() => { if (!c.isConnected) { if (started) clearInterval(id); return; } started = true; k++; draw(); }, 165);
+    draw(); if (still) return c;
+    const id = setInterval(() => { if (!c.isConnected) { if (started) clearInterval(id); return; } started = true; k++; draw(); }, 165);
     return c;
   }
 }

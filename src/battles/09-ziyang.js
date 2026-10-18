@@ -44,6 +44,6 @@ export default {
     if (!(G.beats & 4) && ai(22) === 0) { set([11], 6); set([24, 25, 18], 0); G.beats |= 4; }
     return out;
   },
-  victory(G) { const p = slot(10); return !!p && !p.alive; },
+  victory(G) { const p = slot(10); return !!p && !p.alive ? { rout: true } : false; },   // (and the rest fall, 0x1DA7C: battle.js winBeats)
   defeat(G) { return players().length ? null : '我方全滅'; },
 };

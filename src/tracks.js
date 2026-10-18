@@ -45,11 +45,14 @@ export function unstall(tr) {
     if (!at(a) || !at(b) || !at(c) || a[1] !== b[1] || a[2] !== b[2] || c[0] !== b[0] + 1 || a[3] !== b[3] || b[3] !== c[3]) continue;
     const hold = b[0] - a[0], d = Math.hypot(c[1] - b[1], c[2] - b[2]);
     if (hold < 8 || hold > 24 || d < 16 || d > 40) continue;
-    let j = i - 1; while (j > 0 && at(out[j - 1]) && out[j - 1][3] === a[3] && a[0] - out[j][0] < 8) j--;   // its walk over the 8 frames before
-    const z = out[j], span = a[0] - z[0]; if (span < 6) continue;
-    const v0 = Math.hypot(a[1] - z[1], a[2] - z[2]) / span, v = d / (hold + 1);
-    const ahead = Math.sign(a[1] - z[1]) === Math.sign(c[1] - b[1]) && Math.sign(a[2] - z[2]) === Math.sign(c[2] - b[2]);
-    if (!ahead || v0 < 0.5 || Math.abs(v - v0) > v0 * 0.5) continue;
+    // its walk over the 8 frames before the stall, or after it (a walk that starts with one: scene 38's 崇侯虎, f321-337)
+    const v = d / (hold + 1), walked = (p0, p1) => { const span = p1[0] - p0[0]; return span >= 6 ? Math.hypot(p1[1] - p0[1], p1[2] - p0[2]) / span : 0; };
+    const same = (p0, p1) => Math.sign(p1[1] - p0[1]) === Math.sign(c[1] - b[1]) && Math.sign(p1[2] - p0[2]) === Math.sign(c[2] - b[2]);
+    let j = i - 1; while (j > 0 && at(out[j - 1]) && out[j - 1][3] === a[3] && a[0] - out[j][0] < 8) j--;
+    let m = i + 1; while (m + 1 < out.length && at(out[m + 1]) && out[m + 1][3] === c[3] && out[m][0] - c[0] < 8) m++;
+    const v0 = walked(out[j], a), v1 = walked(c, out[m]);
+    const fits = (vv, ok) => ok && vv >= 0.5 && Math.abs(v - vv) <= vv * 0.5;
+    if (!fits(v0, same(out[j], a)) && !fits(v1, same(c, out[m]))) continue;   // (the pace on either side: scene 40's first step, f459-463, then the stall)
     out.splice(i, 1); i--;
   }
   return out;

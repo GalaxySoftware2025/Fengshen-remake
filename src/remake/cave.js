@@ -44,6 +44,69 @@ export function spire(mat, x, z, y, s) {   // (also 火巖窟's boulders, src/re
   }
   return shade(g);
 }
+// 海龍洞's spires [the user's call: the leaning cones read as triangles]: two or three craggy columns of barnacled rock
+// leaning together, each a many-sided column pushed in and out by noise round it and up it (ledges, hollows, a broken
+// top) and bent a little, fallen stones at its foot
+function seaSpire(mat, x, z, y, s, seed) {
+  const g = new THREE.Group();
+  for (const [dx, dz, k, a] of [[0, 0, 1, 0], [0.21, 0.13, 0.62, 2.3], [-0.19, 0.11, 0.47, 4.4]]) {
+    const h = s * (1.05 * k + 0.1), r = s * 0.25 * (0.65 + 0.35 * k), sd = seed * 7 + a * 13;
+    const geo = new THREE.CylinderGeometry(1, 1, 1, 24, 16), p = geo.attributes.position, cols = [];
+    const lean = [Math.cos(a + seed) * 0.12 * h, Math.sin(a + seed) * 0.12 * h], cut = 0.12 + 0.1 * T.fbm(0.3, seed * 0.13 % 1, 3, 2, sd);
+    for (let i = 0; i < p.count; i++) {
+      const px = p.getX(i), pz = p.getZ(i), v = p.getY(i) + 0.5, rad = Math.hypot(px, pz), u = (Math.atan2(pz, px) / (Math.PI * 2) + 1) % 1;
+      const n = T.fbm(u, v * 0.6, 5, 4, sd), m = T.fbm(u, v * 0.3, 2, 2, sd + 5);
+      const ledge = Math.sin(v * 26 + n * 6) * 0.06;   // bands of ledges and hollows, uneven
+      const rr = r * (1 - 0.62 * Math.pow(v, 1.4)) * (0.72 + 0.5 * n + 0.18 * m + ledge);
+      let yy = v * h; if (v > 0.99) yy -= h * cut * (0.4 + T.fbm(u, 0.5, 3, 3, sd + 9)) * (1 - rad);   // the broken top: a jagged hollow
+      const bend = Math.sin(v * Math.PI * 0.5);
+      p.setXYZ(i, px * rr + lean[0] * bend, yy, pz * rr + lean[1] * bend);
+      cols.push(v, n);
+    }
+    geo.computeVertexNormals();
+    // its colour: darker in the hollows, a pale crust of barnacles on what faces up, teal-green weed round the foot
+    const nr = geo.attributes.normal, C = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) {
+      const v = cols[i * 2], n = cols[i * 2 + 1], up = Math.max(0, nr.getY(i)), dark = 0.6 + 0.6 * n, crust = Math.min(1, up * 1.6) * (0.5 + 0.5 * T.fbm(i * 0.013 % 1, v, 9, 2, seed)), weed = 1 - Math.min(1, v * 3.2);
+      let r = 1.15 * dark, gg = 1.3 * dark, b = 1.4 * dark;   // (over 1: the sea rock's map is dark)
+      r += (2.1 - r) * crust * 0.8; gg += (2.1 - gg) * crust * 0.8; b += (1.95 - b) * crust * 0.8;
+      r += (0.5 - r) * weed * 0.8; gg += (1.6 - gg) * weed * 0.8; b += (1.15 - b) * weed * 0.8;
+      C.set([r, gg, b], i * 3);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(C, 3)); cols.length = 0;
+    const c = new THREE.Mesh(geo, mat); c.position.set(x + dx * s, y - 0.06, z + dz * s); c.rotation.y = a + seed; g.add(c);
+  }
+  const rub = new THREE.IcosahedronGeometry(1, 1), q = rub.attributes.position;   // the fallen stones
+  for (let i = 0; i < q.count; i++) { const v = new THREE.Vector3().fromBufferAttribute(q, i), k = 0.7 + 0.6 * T.fbm((v.x + 1) / 2, (v.z + 1) / 2, 3, 2, seed); q.setXYZ(i, v.x * k, v.y * k * 0.55, v.z * k); }
+  rub.computeVertexNormals(); rub.setAttribute('color', new THREE.BufferAttribute(new Float32Array(q.count * 3).fill(1.3), 3));
+  for (let k = 0; k < 4; k++) { const a = seed * 1.7 + k * 1.9, d = s * (0.32 + 0.08 * (k % 2)), sz = s * (0.05 + 0.03 * ((k * 7 + seed) % 3)), b = new THREE.Mesh(rub, mat);
+    b.position.set(x + Math.cos(a) * d, y + sz * 0.15, z + Math.sin(a) * d * 0.8); b.scale.set(sz, sz, sz * 1.2); b.rotation.set(k, a, k * 0.5); g.add(b); }
+  return shade(g);
+}
+// kelp's blade, painted once: a long frond with ruffled edges, a pale midrib and fine veins, dark olive at its foot
+// through brown-green to a yellow-green tip, cut out (alpha) round its outline
+let KELP_TEX = null;
+function kelpTex() {
+  if (KELP_TEX) return KELP_TEX;
+  const W = 64, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), im = g.createImageData(W, H), d = im.data;
+  const mix = (a, b, t) => a + (b - a) * t, cols = [[34, 46, 18], [74, 90, 30], [128, 140, 52], [170, 170, 70]];
+  for (let yy = 0; yy < H; yy++) {
+    const k = 1 - yy / H;   // (the canvas's top is the blade's tip)
+    const hw = 0.5 * (0.22 + 0.78 * Math.sin(Math.PI * Math.min(1, k * 1.05 + 0.04))) * (1 - 0.55 * k * k * k) + 0.035 * Math.sin(k * 95) * Math.min(1, k * 4) - 0.02 * Math.max(0, Math.sin(k * 23));
+    const t = Math.min(2.999, k * 3), i0 = Math.floor(t), f = t - i0, base = [0, 1, 2].map(j => mix(cols[i0][j], cols[i0 + 1][j], f));
+    for (let xx = 0; xx < W; xx++) {
+      const u = (xx + 0.5) / W - 0.5, e = Math.abs(u) / Math.max(0.01, hw), o = (yy * W + xx) * 4;
+      if (e > 1) { d[o + 3] = 0; continue; }
+      let l = 1 - 0.35 * e * e;   // darker to the edges
+      l *= 1 + 0.35 * Math.max(0, 1 - Math.abs(u) * 40);   // the midrib
+      l *= 1 - 0.12 * Math.max(0, Math.sin((Math.abs(u) * 3 + k * 1.2) * 80));   // veins running out from it
+      l *= 0.92 + 0.16 * Math.sin(k * 210 + u * 30) * Math.sin(k * 37);
+      d[o] = Math.min(255, base[0] * l); d[o + 1] = Math.min(255, base[1] * l); d[o + 2] = Math.min(255, base[2] * l); d[o + 3] = 255;
+    }
+  }
+  g.putImageData(im, 0, 0);
+  KELP_TEX = new THREE.CanvasTexture(c); KELP_TEX.colorSpace = THREE.SRGBColorSpace; KELP_TEX.anisotropy = 4; return KELP_TEX;
+}
 // a tunnel on: a black arch in the wall over the exit cell, ragged rock round it
 export function tunnel(rockM, x, z, y, side) {
   const g = new THREE.Group(), w = 0.9, h = 1.3;
@@ -70,22 +133,26 @@ function caustics(mesh) {
   };
 }
 // kelp: two or three dark ribbons from one foot, waving slowly as in a current (more the higher up)
+// (a clump: six blades of the painted frond, each twisting as it rises and bowing out from the foot, of mixed heights)
 function kelp(pts) {
-  const geo = new THREE.BufferGeometry(), pos = [], uv = [], idx = [], N = 7;
-  for (let r = 0; r < 3; r++) {
-    const a = r * 2.1, ca = Math.cos(a), sa = Math.sin(a), o = pos.length / 3;
-    for (let i = 0; i <= N; i++) { const k = i / N, w = 0.1 * Math.sin(Math.PI * Math.min(1, k * 1.15 + 0.12)), lean = k * k * 0.18, h = k * (1 - r * 0.18);
-      pos.push(ca * lean - sa * w, h, sa * lean + ca * w, ca * lean + sa * w, h, sa * lean - ca * w); uv.push(0, k, 1, k);
-      if (i) { const b = o + (i - 1) * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); } }
+  const geo = new THREE.BufferGeometry(), pos = [], uv = [], idx = [], N = 12;
+  for (let r = 0; r < 6; r++) {
+    const a = r * 2.4 + 0.3, h0 = 1.15 - (r % 3) * 0.22 - r * 0.03, W = 0.15 + (r % 2) * 0.04, tw = (r % 2 ? 1 : -1) * (1.2 + r * 0.25), o = pos.length / 3;
+    for (let i = 0; i <= N; i++) {
+      const k = i / N, out = 0.05 + k * 0.16 + k * k * 0.12, th = a + tw * k, hh = k * h0;   // (bowing out, turning round its own length)
+      const cx = Math.cos(a) * out, cz = Math.sin(a) * out, wx = Math.cos(th + 1.57) * W / 2, wz = Math.sin(th + 1.57) * W / 2;
+      pos.push(cx - wx, hh, cz - wz, cx + wx, hh, cz + wz); uv.push(0, k, 1, k);
+      if (i) { const b = o + (i - 1) * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+    }
   }
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x4a8a44, roughness: 0.5, side: THREE.DoubleSide });
+  const mat = new THREE.MeshStandardMaterial({ map: kelpTex(), alphaTest: 0.45, roughness: 0.45, side: THREE.DoubleSide, emissive: 0x0a1406 });
   mat.onBeforeCompile = sh => {
     sh.uniforms.uSeaT = SEA.uTime;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uSeaT; varying float vK;').replace('#include <begin_vertex>', `#include <begin_vertex>
       float ph = instanceMatrix[3].x * 1.9 + instanceMatrix[3].z * 2.7; float hh = position.y; vK = uv.y;
       transformed.x += sin(uSeaT * 0.9 + ph - hh * 2.4) * 0.16 * hh * hh; transformed.z += cos(uSeaT * 0.7 + ph - hh * 2.0) * 0.08 * hh * hh;`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vK;').replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb *= mix(0.35, 1.15, vK);')   // darker at the foot
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vK;').replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb *= mix(0.55, 1.2, vK);')   // darker at the foot
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal *= faceDirection;');   // both faces lit alike
   };
   mat.customProgramCacheKey = () => 'caveKelp';
@@ -232,10 +299,10 @@ function setFor(fixedKey) {
       for (const [a, b] of [...seen].map(k => k.split(',').map(Number)).filter(([a, b]) => pool(a, b) && a >= x0 && a <= x1 && b >= y0 && b <= y1 && Math.random() < 0.35)) vents.push([a + 0.5, lv - 0.22, b + 0.5, 0.25]);   // bubbles out of the pool
     }
     const rockM = T.material(T.seaRock(0x3a4852, 'caveStone'), { color: 0xe4eef2 }, [0.5, 0.5]);
-    const spireM = T.material(T.seaRock(0x46545c, 'caveSpire'), { color: 0xeef4f4 }, [0.6, 0.6]);
+    const spireM = T.material(T.seaRock(0x46545c, 'caveSpire'), { color: 0xffffff, vertexColors: true }, [0.6, 0.6]);   // (seaSpire colours each spire)
     const pebM = T.material(T.rock(0x5a6468, 'cavePebble', 0.2), { color: 0xe8eef0, roughness: 0.5 }, [0.5, 0.5]);
     loneCells = [];
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (lone(x, y)) { S.add(spire(spireM, x + 0.5, y + 0.55, land.at(x + 0.5, y + 0.5), 0.9)); loneCells.push([x, y]); }
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (lone(x, y)) { S.add(seaSpire(spireM, x + 0.5, y + 0.55, land.at(x + 0.5, y + 0.5), 0.9, x * 3 + y * 5)); loneCells.push([x, y]); }
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (tc(x, y) === 3 || tc(x, y) === 4) S.add(tunnel(rockM, x + 0.5, y + 0.5, land.at(x + 0.5, y + 0.5), voidSide(tc, x, y)));
     // the art's steps where a ledge is drawn and not climbed: flat stone slabs set in the floor
     const slab = T.material(T.bricks(0x2a6a66, 2, 'caveSlab'), {}, [1, 1]);
@@ -264,7 +331,7 @@ function setFor(fixedKey) {
     S.add(stones(land.scatter(CL.rock, 1.4, (x, z) => land.weight(x, z, CL.ground) > 0.1), rockM, { size: 0.2 }));
     const foot = land.scatter(CL.rock, 1.6, (x, z) => land.weight(x, z, CL.ground) > 0.3 && land.at(x, z) < t.level(Math.min(MW - 1, Math.max(0, Math.floor(x))), Math.min(MH - 1, Math.max(0, Math.floor(z)))) + 0.5)
       .concat(land.scatter(CL.grass, 0.8, (x, z) => land.weight(x, z, CL.water) < 0.4));
-    S.add(kelp(foot.map(([x, y, z]) => [x, y, z, 0.6 + Math.random() * 0.7])));
+    S.add(kelp(foot.map(([x, y, z]) => [x, y, z, 0.55 + Math.random() * 0.6])));
     // the vents: a crack every ten floor cells or so, and the pools' (above)
     for (const [x, y, z] of land.scatter(CL.ground, 0.1, onFloor)) vents.push([x, y, z, 0.03]);
     // splashes on every floor cell (the whole cave floor is wet: the user), off the shallows' film where there is one

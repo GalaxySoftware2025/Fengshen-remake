@@ -52,6 +52,23 @@ const V = {
       sun: 0xf8fbff, sunI: 2.6, sunDir: [-0.4, 0.8, 0.45], sat: 0.95, exposure: 0.95, bloom: 0.32, aoR: 0.8,
       env: { top: 0xe0ecff, mid: 0xb8c8dc, low: 0x6a7a90, lights: [[-6, 7, 3, 0xffffff, 2.6]] } },
   },
+  '0f488a': {   // 桃花林 (scene 36, battle 18's forest): a meadow of peach trees in blossom, the cliff of the temple's cave in the
+    // north-east (rows 0-2), its mouth at (18, 1) between two stone pillars (17.5 and 19.5, row 4), two boulders. Spring.
+    w: 24, h: 35, art: 'assets/maps/0f488a.png', snow: false, start: [13, 32],   // (battle 18's deploy)
+    palette: { [CL.grass]: [0x002400, 0x249000, 0x90b400], [CL.rock]: [0x242400, 0x000000, 0x484824, 0x909090] },
+    rocky: [0x242400, 0x000000, 0x484824, 0x909090], crown: [0xd82400, 0xfc6c48],
+    mouth: { x: 18.5, z: 1.7, w: 0.95, h: 1.15 },
+    boulder: 0x6a6a5c,   // (the cliff's grey, not the holy mountain's brown)
+    stones: [[17.5, 4.6, 1.15], [19.5, 4.6, 1.15]], bare: [[17, 3], [19, 3]],   // (the pillars: their upper cells plain ground behind them)
+    flowers: { 0xb46cfc: 'purple', 0x6c00b4: 'purple', 0xfc6c00: 'red' },
+    leaves: ['#f8c4d4', '#f29ab4', '#e8708e', '#fde4ec', '#d45474', '#fff4f8'],
+    tex: () => ({ dirt: T.dirt(0x5a6a2a, 'peachDirt'), turf: T.turf(0x3e7e24), rock: T.rock(0x5a5a4a, 'peachRock', 0.6), rockTop: T.rock(0x5a5a48, 'peachTop', 0.5) }),
+    tint: { dirt: 0xe0e8c8, turf: 0xd8f0c0, rock: 0xe8e8e0 },
+    grassCols: ['#2e6a1e', '#4a8a24', '#1e5a18', '#5a9a2a', '#3a7a20'],
+    mood: { bg: 0xe8dce8, voidCol: false, fog: 0xeadce4, fogD: 0.01, sky: 0xf4e8f0, under: 0x2a4a20, hemi: 1.05,
+      sun: 0xfff2e8, sunI: 2.8, sunDir: [-0.45, 0.78, 0.4], sat: 1.06, exposure: 1.0, bloom: 0.35, aoR: 0.8,
+      env: { top: 0xf0e4f0, mid: 0xa8b090, low: 0x2a4a20, lights: [[-6, 7, 3, 0xfff4ec, 3]] } },
+  },
 };
 
 // a standing stone: a pale weathered menhir, rounder at its head, leaning a little
@@ -83,7 +100,7 @@ function setFor(key) {
     const share = (x, y, set) => { if (x < 0 || y < 0 || x >= MW || y >= MH) return 1; let n = 0; for (let j = 0; j < 32; j += 2) for (let i = 0; i < 32; i += 2) { const k = ((y * 32 + j) * img.width + x * 32 + i) * 4; if (set.has((px[k] << 16) | (px[k + 1] << 8) | px[k + 2])) n++; } return n / 256; };
     const crown = new Set(v.crown), treeArt = (x, y) => share(x, y, crown) > 0.22;   // a tree where the art draws one
     const rockShare = (x, y) => { let n = 0; for (let j = 0; j < 32; j += 2) for (let i = 0; i < 32; i += 2) { const k = ((y * 32 + j) * img.width + x * 32 + i) * 4; if (rocky.has((px[k] << 16) | (px[k + 1] << 8) | px[k + 2])) n++; } return n / 256; };
-    const stoneCell = (x, y) => v.stones.some(([sx, sz]) => Math.floor(sx) === x && Math.floor(sz) === y) || (v.flat || []).some(([fx, fy]) => fx === x && fy === y);
+    const stoneCell = (x, y) => v.stones.some(([sx, sz]) => Math.floor(sx) === x && Math.floor(sz) === y) || (v.flat || []).some(([fx, fy]) => fx === x && fy === y) || (v.bare || []).some(([fx, fy]) => fx === x && fy === y);
     const rockCell = (x, y) => !walk(x, y) && !stoneCell(x, y) && rockShare(x, y) > 0.22;
     const W = MW * 4;
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
@@ -94,7 +111,7 @@ function setFor(key) {
     land = new Land({ w: MW, h: MH, layout: lay, ext: 12, outside, carve: [{ r: [mo.x - 0.48, mo.z - 0.9, mo.x + 0.48, mo.z + 0.6], h: 0.02 }, ...(v.flat || []).map(([fx, fy]) => ({ r: [fx + 0.05, fy + 0.05, fx + 0.95, fy + 0.95], h: 0.25 })), ...(v.perch || []).map(r => ({ r, h: 1.6 }))],   // (the cast's spots: a low drift, blocked in battle but stood on in the scene) rockH: 1.6, rise: 1.1, lumpH: 0.04,
       cap: () => 99, tex: v.tex(), tint: v.tint });
     S.add(land.mesh({ dirtK: 0.2, rockK: 0.45, topGreen: v.snow ? 0 : 0.12, snow: v.snow ? 1.25 : 99, bed: 0x203040 }));
-    const rockM = v.snow ? T.material(T.rock(0x404e58, 'snowBoulder', 0.5), { color: 0xd8e2ec }, [0.5, 0.5]) : T.material(T.rock(0x6a4a2a, 'holyRock', 0.6), { color: 0xf0d8b8 }, [0.5, 0.5]);
+    const rockM = v.snow ? T.material(T.rock(0x404e58, 'snowBoulder', 0.5), { color: 0xd8e2ec }, [0.5, 0.5]) : v.boulder ? T.material(T.rock(v.boulder, 'boulder' + key, 0.6), { color: 0xe8e8e0 }, [0.5, 0.5]) : T.material(T.rock(0x6a4a2a, 'holyRock', 0.6), { color: 0xf0d8b8 }, [0.5, 0.5]);
     S.add(mouth(land.at.bind(land), rockM, mo));
     // the forest: a tree on each cell no one stands on that is not ridge (two on a few), kept off the stones and the mouth
     treeCells = []; const list = [], bush = [], hash = (x, y, k) => { const h = Math.sin(x * 127.1 + y * 311.7 + k * 74.7) * 43758.5453; return h - Math.floor(h); };
@@ -123,7 +140,8 @@ function setFor(key) {
     const p = g ? g.position : new THREE.Vector3(x + 0.5, land.at(x + 0.5, y + 0.5), y + 0.5); if (g) S.remove(g);
     const o = chest(M, p.x, p.z, p.y, true, 0, 1.4); S.add(o); chestG.set(x + ',' + y, o);
   }
-  return { build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, mood: v.mood, get props() { return v.stones.map(([x, z]) => [Math.floor(x), Math.floor(z)]).concat(treeCells); } };   // (the stones' and the trees' cells: a model blocks them, tools/qa/sets.js)
+  return { build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, mood: v.mood, get props() { return v.stones.map(([x, z]) => [Math.floor(x), Math.floor(z)]).concat(v.bare || [], treeCells); } };   // (the stones' and the trees' cells: a model blocks them, tools/qa/sets.js)
 }
 export const holyMount = setFor('0f0fdc');
 export const qilinMount = setFor('0f2d64');
+export const peachForest = setFor('0f488a');

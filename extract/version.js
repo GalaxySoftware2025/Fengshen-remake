@@ -4,5 +4,5 @@
 // for again. So whenever what the extractor makes changes, EXTRACT_VERSION goes up by one: tools/qa/extractver.mjs fails
 // when it changed without (FINGERPRINT is what this version makes: the data part's files, and the sound part's code,
 // comments aside, as ripping all 200 sounds takes over an hour). Hashes only: nothing of the cartridge.
-export const EXTRACT_VERSION = 3;   // 3: the summons gained in scenes (op 41: 楊戩's 龍王, 龍鬚虎, 麒麟獸, 四不像). 2: a phantom's (AI 0x83) and the main map's summoners' calls exported (battles 12, 14, 17, 19)
-export const FINGERPRINT = { data: '01018cae28bff04d1bf727f6ff08133e078f4e8d88c4f2ae86d74858805cb05e', sound: 'f28571b9efca398861b621866de983467b3fce6a7ffc1f513cbd15ca3580e4bc' };
+export const EXTRACT_VERSION = 5;   // 5: battle 18's rooms (a hook with one handler for all), battle 17's room 0 art, the say-list battle 17 builds in RAM (its note). 4: every enemy's starting facing (its record's +1). 3: the summons gained in scenes (op 41: 楊戩's 龍王, 龍鬚虎, 麒麟獸, 四不像). 2: a phantom's (AI 0x83) and the main map's summoners' calls exported (battles 12, 14, 17, 19)
+export const FINGERPRINT = { data: 'bab3502a4ba3edbfa1e06c51d02605a44dbe823f555a89cf1877b94c87de59d1', sound: 'f28571b9efca398861b621866de983467b3fce6a7ffc1f513cbd15ca3580e4bc' };

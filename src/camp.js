@@ -169,7 +169,7 @@ function lineup(E, box, state, ask) {
           + (forced(p) ? '<em>此戰必須出陣</em>' : away(p) ? '<em class="off">此戰無法出陣</em>' : ''); };
       for (const p of roster) {
         const c = h('div', 'lh' + (on(p) ? ' on' : '') + (forced(p) ? ' must' : '') + (away(p) ? ' off' : '') + (ask ? ' ro' : ''));
-        c.appendChild(E.bank.walker(p.sprite, 3)); c.insertAdjacentHTML('beforeend', `<span>${p.name}</span>`);
+        c.appendChild(E.bank.walker(p.sprite, 3, !on(p))); c.insertAdjacentHTML('beforeend', `<span>${p.name}</span>`);
         c.onmouseenter = () => say(p);
         if (!ask) c.onclick = () => {
           if (forced(p)) return E.ui.toast(p.name + '必須出陣', 800);
@@ -193,11 +193,11 @@ export async function campScene(E, state, onChange) {
   $('c-place').textContent = D.name;
   E.ui.show('camp', true);
   const refreshParty = onChange;
-  // who goes: kept from an earlier visit to this camp if still allowed, else the forced heroes and then the roster in
-  // order up to the cap [design: the original starts from 林雲 alone, and 出擊 would take him alone]
+  // who goes: kept from an earlier visit to this camp if still allowed, else only the heroes this battle must take (the
+  // rest grey and standing until chosen) [the user's call; the original too starts from 林雲 alone]
   const P = D.partyRules, okCid = c => D.party.some(p => p.cid === c) && !P.unavailable.includes(c);
   if (!Array.isArray(state.pick) || !state.pick.every(okCid) || state.pick.length > P.deployMax || !P.forced.every(c => !okCid(c) || state.pick.includes(c)))
-    state.pick = autoPick(D.party, P).map(p => p.cid);
+    state.pick = autoPick(D.party, P).filter(p => P.forced.includes(p.cid)).map(p => p.cid);
   const menu = $('c-menu'); menu.innerHTML = '';
   let pick = null;
   const open = id => {

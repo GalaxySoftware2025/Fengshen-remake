@@ -52,7 +52,7 @@ export function makeUnit(src, side, extra) {
     rangeShape: src.rangeShape || 0, atkType: src.atkType ?? (side === 'player' ? ((globalThis.ACTIONS || {}).heroes || {})[src.cid] : undefined),   // 0 / 1 a weapon swung with its piece, 2 a bow
     items: (src.items || []).slice(), spells: (src.spells || []).slice(),
     ai: src.ai, aggro: src.aggro, aip: src.aip ? src.aip.slice() : null, growth: src.growth, cls: src.cls, elem: src.elem,
-    x: 0, y: 0, facing: side === 'player' ? 'right' : 'left', alive: true,
+    x: 0, y: 0, facing: 'down', alive: true,   // (a fresh record's +1: 0, down; the battle opens with the heroes so [ROM: the deploy copies their records, 0x6B4A])
     status: { sleep: 0, seal: 0, poison: 0 }, buf: {},
   }, extra || {});
 }
@@ -84,6 +84,9 @@ export function reach(u) {
 export function pathTo(r, x, y) { const p = []; let k = key(x, y); while (k) { const n = r.get(k); p.unshift([n.x, n.y]); k = n.prev; } return p; }
 export const cellsInShape = (cx, cy, shape) => (SHAPES[shape] || SHAPES[0]).map(([dx, dy]) => [cx + dx, cy + dy]).filter(([x, y]) => inMap(x, y));
 export const areaCells = (tx, ty, area) => area ? diamond(area, true).map(([dx, dy]) => [tx + dx, ty + dy]).filter(([x, y]) => inMap(x, y)) : [[tx, ty]];
+// where a spell or item may be cast in a regular game: on someone it is for, a foe for harm, the caster's side for help
+// (never an empty cell, nor a phantom off the map) [the user's call; the test toolbar keeps every cell in range]
+export const castCells = (u, cells, harm) => cells.filter(([x, y]) => { const t = unitAt(x, y); return t && !t.away && (harm ? foes(u).includes(t) : t.side === u.side); });
 export function faceTo(u, x, y) {
   const dx = x - u.x, dy = y - u.y;
   if (Math.abs(dx) >= Math.abs(dy) && dx) u.facing = dx > 0 ? 'right' : 'left';
@@ -146,7 +149,7 @@ export function loadBattle(B, party, hooks, tweak) {
     // at the lair, and no way leads back), the first room is that map, not the lair
     const same = (a, b) => b && a.w === b.w && a.h === b.h && JSON.stringify(a.terrain) === JSON.stringify(b.terrain);
     if (same(D.rooms[0], D.rooms[1]) && (D.rooms[0].w !== B.mapW || D.rooms[0].h !== B.mapH)) D.rooms[0] = Object.assign({}, D.rooms[0], { w: B.mapW, h: B.mapH, terrain: B.terrain, chests: B.chests || [], enemies: [] });
-    D.chests = D.rooms[0].chests; G.room = 0; G.chests = null;
+    G.room = (hooks && hooks.startRoom) || 0; D.chests = D.rooms[G.room].chests; G.chests = null;   // (battle 17 opens in room 2, its own map)
   }
   SHAPES[1] = D.shapes.s1;
   H = hooks || {};
@@ -190,7 +193,8 @@ export function checkDefeat() {
 export function afterAction() {
   const trig = checkTrigger();
   if (checkDefeat()) return { over: true, trig };
-  if (checkVictory()) { G.over = { win: true }; return { over: true, trig }; }
+  const v = checkVictory();   // (a battle's own win may bring lines and a rout: { lines, rout }, battle.js winBeats)
+  if (v) { G.over = Object.assign({ win: true }, typeof v === 'object' ? v : {}); return { over: true, trig }; }
   return { over: false, trig };
 }
 // a new round: the battle's round hook runs first (磻溪's fire spreads), then the defeat check; returns what the hook did
@@ -201,19 +205,20 @@ export function startRound() {
   return ev;
 }
 export function setupBattle(chosen) {
-  if (D.rooms) { const r = D.rooms[0]; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; MAP_W = r.w; MAP_H = r.h; }   // (a battle in rooms starts in the first)
+  const k0 = H.startRoom || 0;   // (a battle in rooms starts in the first; battle 17's hook puts it in room 2 before anyone moves, 0x0F3C50)
+  if (D.rooms) { const r = D.rooms[k0]; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; MAP_W = r.w; MAP_H = r.h; }
   G.units = []; G.round = 0; G.terrain = D.terrain.map(r => r.slice()); G.over = null; G.triggerFired = false;
   G.chests = (D.chests || []).map(c => ({ x: c.x, y: c.y, item: c.item, hidden: !!c.hidden, open: false })); G.found = [];
   const at = p => { const k = (D.party || []).findIndex(q => q.cid === p.cid); return k < 0 ? 99 : k; };
   [...chosen].sort((a, b) => at(a) - at(b))   // in roster order, whoever was picked first or forced (battle 8: 黃飛虎 on the north bank, (15, 13), where scene 15 leaves him; 楊戩 at (7, 21): the user's report)
     .forEach((p, i) => { const u = makeUnit(p, 'player', { slot: i }); [u.x, u.y] = D.deploy[i]; G.units.push(u); });   // slots 0.. in deploy order, as the ROM's
   for (const e of D.enemies) spawn(e);
-  if (D.rooms) { G.room = 0; G.roomChests = {}; }
+  if (D.rooms) { G.room = k0; G.roomChests = {}; }
   if (H.setup) H.setup(G);
 }
 function spawn(e) {
   const side = e.side || 'enemy', u = makeUnit(e, side, { slot: e.slot, guest: e.guest, follow: e.follow });
-  u.x = e.x; u.y = e.y; u.facing = e.facing || (side === 'npc' ? 'down' : side === 'player' ? 'right' : 'left');
+  u.x = e.x; u.y = e.y; u.facing = e.facing || 'down';   // an enemy's from its record's +1 (data/battles: battle 1's escort left, the rest down)
   // the spawn loader [ROM 0x13354, a room's 0x1D7B0]: an AI 10 unit's zone is centred on the cell it starts on, whatever
   // its record says
   if (u.ai === 10) { setAiP(u, 0x34, u.x); setAiP(u, 0x35, u.y); }

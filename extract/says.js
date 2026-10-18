@@ -12,10 +12,20 @@ export function sayLists(R, walk, battles) {
   const out = {};
   for (let i = 0; i + 10 < rom.length; i += 2) {
     if (!(rom[i] === 0x23 && rom[i + 1] === 0xfc && rom[i + 6] === 0x00 && rom[i + 7] === 0xff && rom[i + 8] === 0x32 && rom[i + 9] === 0xc6)) continue;
-    const list = R.L(i + 2); if (list >= rom.length) continue;   // (built in RAM at run time)
+    const list = R.L(i + 2);
     let owner = null; for (const [a, n] of hooks) if (a <= i) owner = n;
     if (owner === null) continue;
     const b = battles[owner], chapter = b.chapter - 1, op = walk[b.scene].ops.find(o => o.op === 10), counters = { ...(op.counters || {}) };
+    if (list >= rom.length) {   // built in RAM just before (battle 17's note, 0x0F3D68): one record, its speaker and line set by immediates
+      let spk = null, idx = null;   // move.b #spk, $2(a0) (11 7C 00 ss 00 02); move.w #idx, $4(a0) (31 7C ii ii 00 04)
+      for (let j = i - 64; j < i; j += 2) { if (R.W(j) === 0x117c && R.W(j + 4) === 2) spk = R.B(j + 3); if (R.W(j) === 0x317c && R.W(j + 4) === 4) idx = R.W(j + 2); }
+      if (spk === null || idx === null) continue;
+      const line = idx & 0x8000 ? idx & 0x7fff : counters[spk] || 0;
+      let text; try { text = message(R, chapter, spk, line); } catch (e) { text = '?'; }
+      try { const next = message(R, chapter, spk, line + 1); if (next && text.endsWith(next) && text.length > next.length + 1) text = text.slice(0, text.length - next.length - 1) + '\n' + next; } catch (e) { /* the last line */ }   // a line that runs on into the next (no FF between): the next one's header byte read as a glyph, a break here
+      out[i.toString(16).padStart(6, '0')] = { battle: owner, built: true, lines: [{ who: '', text, actor: 255, speaker: spk }] };
+      continue;
+    }
     const lines = []; let a = list;
     while (R.W(a) !== 0xffff && lines.length < 40) {
       const spk = R.B(a + 2), actor = R.B(a + 3), idx = R.W(a + 4);

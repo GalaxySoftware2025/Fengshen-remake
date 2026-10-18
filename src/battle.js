@@ -75,8 +75,8 @@ export class Cam {
 let groundLum = null, LUM_DARK = 0.16;
 export const groundLight = () => ({ lum: groundLum, dark: LUM_DARK });   // (tools/qa/tiles.js)
 export function measureLight() {
-  SURF = null;   // the set or the room changed: the flier surfaces are measured again
-  if (tiles) tiles.ground();   // and the ground the squares lie on
+  SURF = null; RANGE_CELLS.clear(); RANGE_VOID.clear();   // the set or the room changed: the flier surfaces and the cells' scenery are measured again
+  if (tiles) { tiles.ground(); tintScenery(); }   // and the ground the squares lie on; the scenery takes the range
   try {
     // the map's run of light from high up; each cell the darker of that and its ground under any canopy (battle 13's bamboo
     // tops read the shaded ground under them as light: tools/qa/tiles.js)
@@ -136,19 +136,102 @@ function drapeTexture() {
   const t = new THREE.DataTexture(data, W, H, THREE.RedFormat, THREE.FloatType); t.magFilter = t.minFilter = THREE.NearestFilter; t.needsUpdate = true;
   return t;
 }
+// The range drawn on the scenery itself [the user's call: a square laid flat over a rock with pearls on it floated as a
+// dark pane over the rock, and the faces between two levels stayed bare]: every opaque material of the set is patched
+// (tintScenery) to take the square's fill and its black cell lines wherever its surface stands in a cell of the range,
+// between the cell's foot and the top of what stands on it (cellInfo). Ground, steps, a cliff's face, a rock, a chest
+// all take it; the lines only on what lies flat. A cell with nothing of the set's own under its square (a flier's cell
+// over the void, water drawn by its own shader) keeps the square as before.
+const RU = { uRangeCell: { value: null }, uRangeBand: { value: null }, uRangeSize: { value: new THREE.Vector2(1, 1) }, uRangeOn: { value: 0 }, uRangeAlpha: { value: 1 }, uRangeT: { value: 0 }, uRangeMask: { value: 0 } };   // (one set for every world: a material patched once keeps them)
+const RANGE_CELLS = new Map(), RANGE_VOID = new Set(); let RANGE_SOLID = [];
+// how light the world beyond the set is (a flier's square over the void is seen against it)
+const backdropLum = () => { const S = world.scene, c = S.background && S.background.isColor ? S.background : S.fog ? S.fog.color : null; return c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0; };
+const RANGE_GLSL = `
+    if (uRangeOn > 0.5) {
+      vec3 rgN = normalize(cross(dFdx(vRangeW), dFdy(vRangeW))); if (dot(rgN, cameraPosition - vRangeW) < 0.0) rgN = -rgN;
+      vec2 rgP = vRangeW.xz - rgN.xz * 0.02, rgPx = fwidth(vRangeW.xz), rgC = floor(rgP);   // (a face belongs to the cell behind it)
+      if (rgC.x >= 0.0 && rgC.y >= 0.0 && rgC.x < uRangeSize.x && rgC.y < uRangeSize.y) {
+        vec2 rgT = (rgC + 0.5) / uRangeSize; vec4 rgD = texture2D(uRangeCell, rgT); vec4 rgB = texture2D(uRangeBand, rgT);
+        if (rgD.a > 0.5 && vRangeW.y >= rgB.r && vRangeW.y <= rgB.g) {
+          float rgF = max(smoothstep(0.5, 0.8, abs(rgN.y)), 1.0 - smoothstep(rgB.b + 0.3, rgB.b + 0.6, vRangeW.y)), d = max(abs(rgP.x - rgC.x - 0.5), abs(rgP.y - rgC.y - 0.5)) * 2.0 * rgF;   // (the outline and lines on what lies flat, and on all that is low: the ground's grass and pebbles; not up a wall)
+          vec3 vC = rgD.rgb; float mv = step(1.5, rgD.a);
+          float edge = smoothstep(0.8, 0.9, d) * (1.0 - smoothstep(0.97, 1.0, d)) * (1.0 - mv);
+          float red = smoothstep(0.3, 0.6, vC.r - max(vC.g, vC.b));
+          float a = mix(0.11 + 0.02 * sin(uRangeT * 2.5), 0.32, red) + edge * 0.5;
+          vec3 col = vC * (0.55 + edge * 0.35);
+          col = mix(col, vC, mv); a = mix(a, mix(0.66, 0.3, step(0.5, vC.r)), mv);
+          float w = 2.0 * max(rgPx.x, rgPx.y), hair = mv * rgF * smoothstep(1.0 - 1.8 * w, 1.0 - 0.8 * w, d);
+          col = mix(col, vec3(0.0), hair); a = mix(a, 0.92, hair);
+          a *= mix(0.5, 1.0, rgF);   // (half on what stands up: a rock or a wall keeps its form under the fill)
+          gl_FragColor = uRangeMask > 0.5 ? vec4(1.0, 0.0, 1.0, 1.0) : vec4(mix(gl_FragColor.rgb, col, a * uRangeAlpha), gl_FragColor.a);
+        }
+      }
+    }
+`;
+function rangeMaterial(m) {
+  if (!m || m.userData.rangeTint || m.transparent || m.blending !== THREE.NormalBlending || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial)) return;
+  const prev = m.onBeforeCompile, key = m.customProgramCacheKey.bind(m);
+  m.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
+    for (const k of Object.keys(RU)) sh.uniforms[k] = RU[k];
+    const end = (src, code) => { const i = src.lastIndexOf('}'); return src.slice(0, i) + code + src.slice(i); };
+    sh.vertexShader = 'varying vec3 vRangeW;\n' + end(sh.vertexShader, '\n  vec4 rgW = vec4(transformed, 1.0);\n  #ifdef USE_INSTANCING\n  rgW = instanceMatrix * rgW;\n  #endif\n  vRangeW = (modelMatrix * rgW).xyz;\n');
+    sh.fragmentShader = 'varying vec3 vRangeW;\nuniform sampler2D uRangeCell, uRangeBand;\nuniform vec2 uRangeSize;\nuniform float uRangeOn, uRangeAlpha, uRangeT, uRangeMask;\n' + end(sh.fragmentShader, RANGE_GLSL);
+  };
+  m.customProgramCacheKey = () => key() + '|range';
+  m.userData.rangeTint = true; m.needsUpdate = true;
+}
+// every opaque material of the set (not the units, the squares, the cursor or the marks)
+function tintScenery() {
+  const skip = new Set(); for (const a of actors.values()) a.root.traverse(o => skip.add(o));
+  for (const o of [tiles && tiles.mesh, tiles && tiles.cursor, tiles && tiles.marker, tiles && tiles.dots, activeMark && activeMark.group, targetMark && targetMark.group]) if (o) o.traverse(q => skip.add(q));
+  world.scene.traverse(o => { if (o.isMesh && !skip.has(o) && !o.userData.noRange) for (const m of [].concat(o.material)) rangeMaterial(m); });
+  // what a square can lie on, for cellInfo: every opaque mesh seen (water in its own shader too: it is not tinted)
+  RANGE_SOLID = []; world.scene.traverseVisible(o => { if (o.isMesh && !skip.has(o) && [].concat(o.material).some(m => m && !m.transparent && m.blending === THREE.NormalBlending && m.colorWrite !== false && m.side !== THREE.BackSide)) RANGE_SOLID.push(o); });
+}
+// what a cell of the range tints: from its foot (the lowest ground round it, so the face of a step down from it is
+// coloured) to the top of what stands on it (on open ground no higher than 1.2 over it: not a canopy); null when what
+// lies under the square is not the set's own (nothing, the void below a flier's cell, water in its own shader)
+function cellInfo(x, y) {
+  const k = x + ',' + y; if (RANGE_CELLS.has(k)) return RANGE_CELLS.get(k);
+  const g = tileY(x, y), walk = !G.terrain || !G.terrain[y] || G.terrain[y][x] === 0;
+  let foot = g; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) foot = Math.min(foot, groundH(x + 0.1 + i * 0.4, y + 0.1 + j * 0.4));
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (R.inMap(x + dx, y + dy)) foot = Math.min(foot, groundH(x + dx + 0.5, y + dy + 0.5));
+  foot = Math.max(foot, g - 2.5) - 0.05;
+  let top = -99, good = 0, info = { lo: foot, hi: 0 };
+  for (const [dx, dz] of [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]]) {   // the middle and at least two of the corners
+    _down.set(new THREE.Vector3(x + dx, g + 6, y + dz), DOWN);
+    const hit = _down.intersectObjects(RANGE_SOLID, false).find(h => !walk || h.point.y <= g + 1.2), hm = hit && (Array.isArray(hit.object.material) ? hit.object.material[hit.face.materialIndex] : hit.object.material);
+    if (hit && hit.point.y >= foot && hm && hm.userData.rangeTint) { good++; top = Math.max(top, hit.point.y); } else if (dx === 0.5) { if (!hit || hit.point.y < foot) RANGE_VOID.add(k); good = -9; break; }
+  }
+  if (good < 3) info = null; else { info.hi = (walk ? Math.max(g + 0.3, top) : Math.max(g, top)) + 0.05; info.g = g; }
+  RANGE_CELLS.set(k, info); return info;
+}
 class Tiles {
   constructor(scene) {
     const geo = new THREE.PlaneGeometry(1, 1, DRAPE, DRAPE); geo.rotateX(-Math.PI / 2);   // its vertices on the height samples (a draped square: no seam with its neighbour)
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: true, depthFunc: THREE.LessDepth,   // normal blending, tone-mapped: tints the ground without lighting it or blooming; depth: the overlap is not shaded twice
-      uniforms: { uT: { value: 0 }, uH: { value: null }, uHSize: { value: new THREE.Vector2(1, 1) }, uMask: { value: 0 } },   // uMask: solid magenta, where the squares are seen (tools/qa/tiles.js)
-      vertexShader: `attribute float aEdge; attribute float aDrape; uniform sampler2D uH; uniform vec2 uHSize; varying vec2 vUv; varying vec3 vC; varying float vEdge;
-        void main(){ vUv = uv; vC = instanceColor; vEdge = aEdge; vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
+      uniforms: { uT: RU.uRangeT, uH: { value: null }, uHSize: { value: new THREE.Vector2(1, 1) }, uMask: RU.uRangeMask },   // uMask: solid magenta, where the squares are seen (tools/qa/tiles.js); both shared with the tinted scenery
+      vertexShader: `attribute float aEdge; attribute float aDrape; attribute float aDecal; attribute float aHi; uniform sampler2D uH; uniform vec2 uHSize; varying vec2 vUv; varying vec3 vC; varying float vEdge;
+        varying vec3 vW; varying vec2 vCell; varying float vDecal, vHi;
+        void main(){ vUv = uv; vC = instanceColor; vEdge = aEdge; vDecal = aDecal; vHi = aHi; vCell = floor(instanceMatrix[3].xz); vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
           if (aDrape > 0.5) w.y = texture2D(uH, (w.xz * ${DRAPE}.0 + 0.5) / uHSize).r + 0.05;   // on the ground, a hair above it
-          gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float uT, uMask; varying vec2 vUv; varying vec3 vC; varying float vEdge;
-        float bit(float n, float b){ return mod(floor(n / b), 2.0); }
-        void main(){ vec2 c = abs(vUv - 0.5) * 2.0; float d = max(c.x, c.y);
+          vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform float uT, uMask; uniform mat4 projectionMatrix; varying vec2 vUv; varying vec3 vC; varying float vEdge; varying vec3 vW; varying vec2 vCell; varying float vDecal, vHi;
+        void main(){
+          #ifdef XRAY
+          // a cell the scenery takes the range on: drawn over what hides it only where that stands outside the cell (its
+          // depth moved to where the line of sight leaves the cell's column), not over the rock or the step in the cell
+          vec3 dir = normalize(cameraPosition - vW); float t = 1e3;
+          if (dir.x > 0.0) t = min(t, (vCell.x + 1.0 - vW.x) / dir.x); else if (dir.x < 0.0) t = min(t, (vCell.x - vW.x) / dir.x);
+          if (dir.z > 0.0) t = min(t, (vCell.y + 1.0 - vW.z) / dir.z); else if (dir.z < 0.0) t = min(t, (vCell.y - vW.z) / dir.z);
+          if (dir.y > 0.0) t = min(t, (vHi - vW.y) / dir.y);
+          vec4 cp = projectionMatrix * viewMatrix * vec4(vW + dir * max(t, 0.0), 1.0); gl_FragDepthEXT = cp.z / cp.w * 0.5 + 0.5;
+          #else
+          if (vDecal > 0.5) discard;   // (the scenery draws it)
+          #endif
+          vec2 c = abs(vUv - 0.5) * 2.0; float d = max(c.x, c.y);
           float edge = smoothstep(0.8, 0.9, d) * (1.0 - smoothstep(0.97, 1.0, d));
           float mv = step(0.5, vEdge);   // a move tile: a flat fill, no outline (white on dark ground, dark grey on light)
           float red = smoothstep(0.3, 0.6, vC.r - max(vC.g, vC.b));
@@ -171,12 +254,16 @@ class Tiles {
     // own blending, after the scenery (0) and the grass (1) and before the characters (2), who draw over it
     const xmat = mat.clone(); xmat.uniforms = mat.uniforms; xmat.transparent = false; xmat.depthWrite = false; xmat.depthFunc = THREE.GreaterDepth;
     xmat.blending = THREE.CustomBlending; xmat.blendSrc = THREE.SrcAlphaFactor; xmat.blendDst = THREE.OneMinusSrcAlphaFactor;
-    xmat.defines = { XRAY: 1 };
+    xmat.defines = { XRAY: 1 }; xmat.extensions = { fragDepth: true };
     this.xray = new THREE.InstancedMesh(geo, xmat, 600); this.xray.count = 0; this.xray.renderOrder = 1.5; this.xray.frustumCulled = false;
     this.xray.instanceMatrix = this.mesh.instanceMatrix; this.xray.instanceColor = this.mesh.instanceColor; this.mesh.add(this.xray);   // (a child: hidden with the squares)
     this.edge = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aEdge', this.edge);   // move tiles: sides on the range's outline
     this.drape = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aDrape', this.drape);   // 1: laid over the ground; 0: flat at its matrix's height (a roof's, a cliff top's: a flier's square)
-    scene.add(this.mesh); this.mat = mat;
+    this.decal = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aDecal', this.decal);   // 1: the scenery draws it (cellInfo); the square only shows through what hides it
+    this.hi = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aHi', this.hi);   // the top of the cell's column (cellInfo)
+    scene.add(this.mesh); this.mat = mat; this.rangeU = RU;
+    let shown = true; delete this.mesh.visible;   // the scenery's range shows and hides with the squares (tools/qa/tiles.js hides them)
+    Object.defineProperty(this.mesh, 'visible', { configurable: true, get: () => shown, set: v => { shown = v; this.syncOn(); } });
     // cursor: four gold corners + a hovering marker
     const cc = document.createElement('canvas'); cc.width = cc.height = 64; const g = cc.getContext('2d'); g.fillStyle = '#ffe9a8';
     for (const [x, y] of [[0, 0], [52, 0], [0, 52], [52, 52]]) { g.fillRect(x, y + (y ? 8 : 0), 12, 4); g.fillRect(x + (x ? 8 : 0), y, 4, 12); }
@@ -189,14 +276,28 @@ class Tiles {
   }
   set(list) {
     this.last = list;   // (tools/qa/tiles.js reads the cells shown)
-    const m = new THREE.Matrix4(), c = new THREE.Color();
+    const m = new THREE.Matrix4(), c = new THREE.Color(), W = R.MAP_W, [cd, bd] = this.rangeTex(W, R.MAP_H);
     list.slice(0, 600).forEach((t, i) => {
       const p = tileCenter(t.x, t.y), move = t.c === C.move, y = cellY(t.x, t.y); m.makeTranslation(p.x, y + (t.lift || 0), p.z); this.mesh.setMatrixAt(i, m);
       this.drape.array[i] = !t.lift && y <= tileY(t.x, t.y) + 0.001 && this.mat.uniforms.uH.value ? 1 : 0;   // (on top of what stands on a blocked cell: flat)
-      c.setRGB(...(move && groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);
+      const info = this.mat.uniforms.uH.value ? cellInfo(t.x, t.y) : null, over = !info && RANGE_VOID.has(t.x + ',' + t.y);
+      c.setRGB(...(move && (over ? backdropLum() < 0.4 : groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK) ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);   // (over the void: the fill against what is seen beyond, a cloud sea or the dark)
       this.edge.array[i] = move ? 1 : 0;
+      this.decal.array[i] = info ? 1 : 0; this.hi.array[i] = info ? info.hi : -1e3;
+      if (info) { const o = (t.y * W + t.x) * 4; cd[o] = c.r; cd[o + 1] = c.g; cd[o + 2] = c.b; cd[o + 3] = move ? 2 : 1; bd[o] = info.lo; bd[o + 1] = info.hi; bd[o + 2] = info.g; }
     });
     this.mesh.count = this.xray.count = Math.min(600, list.length); this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; this.edge.needsUpdate = true; this.drape.needsUpdate = true;
+    this.decal.needsUpdate = true; this.hi.needsUpdate = true; RU.uRangeCell.value.needsUpdate = true; RU.uRangeBand.value.needsUpdate = true; this.syncOn();
+  }
+  syncOn() { RU.uRangeOn.value = this.mesh.visible && this.mesh.count > 0 ? 1 : 0; }
+  // the cells' colours and columns for the tinted scenery (RANGE_GLSL), one texel a cell
+  rangeTex(W, H) {
+    const make = () => { const t = new THREE.DataTexture(new Float32Array(W * H * 4), W, H, THREE.RGBAFormat, THREE.FloatType); t.magFilter = t.minFilter = THREE.NearestFilter; return t; };
+    if (!RU.uRangeCell.value || RU.uRangeCell.value.image.width !== W || RU.uRangeCell.value.image.height !== H) {
+      for (const k of ['uRangeCell', 'uRangeBand']) { if (RU[k].value) RU[k].value.dispose(); RU[k].value = make(); }
+      RU.uRangeSize.value.set(W, H);
+    }
+    RU.uRangeCell.value.image.data.fill(0); return [RU.uRangeCell.value.image.data, RU.uRangeBand.value.image.data];
   }
   // the ground's heights for draped squares (a new world, a new room)
   ground() { const u = this.mat.uniforms; if (u.uH.value) u.uH.value.dispose(); u.uH.value = drapeTexture(); u.uHSize.value.set(u.uH.value.image.width, u.uH.value.image.height); }
@@ -525,7 +626,11 @@ export async function deathSpin(u, cry = true) {
   const a = actorOf(u); a.act = null; a.off.set(0, 0); if (cry) sfx(SND.cry);   // the death cry as the spin begins [ROM 0x1040E: only for a unit past slot 9, an enemy]
   for (const f of ['down', 'right', 'up', 'left', 'down']) { u.facing = f; await wait(1000 * 5 / 60); }
 }
+// a fall starts DEATH_GAP seconds after the blow that caused it, whatever dealt it [the user's call: a bow's kill fell
+// 0.3 s after the arrow, a sword's 1.3 s, a spell's 0.8-1.4 s; all now wait as the slowest, 1.4 s]
+const DEATH_GAP = 1.4;
 export async function killAnim(u) {
+  if (u.hitT != null) { const left = DEATH_GAP - (gameT - u.hitT); u.hitT = null; if (left > 0) await wait(left * 1000); }
   if (u.side === 'player') return allyDeath(u);
   const a = actorOf(u), P = a.pos.clone();
   await deathSpin(u);
@@ -611,7 +716,7 @@ export async function attackAnim(au, du, r, onHit) {
 // a spell's or item's result reaches its target's numbers as it lands (ctx.hit), not as it is cast: damage comes off,
 // and a remedy's HP / MP (worked out by eff.apply, then held back until now) go on [the user's call]
 function landResult(t, r) {
-  if (r.dmg !== undefined) t.hp = Math.max(0, t.hp - r.dmg);
+  if (r.dmg !== undefined) { t.hp = Math.max(0, t.hp - r.dmg); t.hitT = gameT; }
   else if (r.restore) { t.hp = r.restore.hp; t.mp = r.restore.mp; }
   r.applied = true;
 }
@@ -652,7 +757,7 @@ export async function gainExp(u, amount) {
 export async function doAttack(au, du) {
   R.faceTo(au, du.x, du.y);
   const r = R.physicalAttack(au, du);
-  await attackAnim(au, du, r, () => { if (!r.miss) du.hp = Math.max(0, du.hp - r.dmg); });   // the HP bar drops on the blow itself
+  await attackAnim(au, du, r, () => { if (!r.miss) { du.hp = Math.max(0, du.hp - r.dmg); du.hitT = gameT; } });   // the HP bar drops on the blow itself
   if (r.miss) return;
   if (du.hp <= 0) { du.alive = false; await killAnim(du); }
   if (au.side === 'player') await gainExp(au, R.expFor(au, du, !du.alive));
@@ -869,8 +974,9 @@ export async function commandMenu(u) {
       const k = await pickRing(a, rows); if (k == null) continue;
       const sp = D.spells[u.spells[k]];
       if (sp.mp > u.mp) { ui.toast('法力不足', 800); continue; }
-      const range = R.cellsInShape(u.x, u.y, sp.range);
-      const at = await pickTarget(u, range, range, sp.area, sp.kind === 13 ? C.harm : C.help, sp.kind === 13 ? 'foe' : 'ally');
+      const range = R.cellsInShape(u.x, u.y, sp.range), cells = opts.test ? range : R.castCells(u, range, sp.kind === 13);
+      if (!cells.length) { ui.toast(sp.kind === 13 ? '範圍內沒有敵人' : '範圍內沒有同伴', 800); continue; }
+      const at = await pickTarget(u, cells, range, sp.area, sp.kind === 13 ? C.harm : C.help, sp.kind === 13 ? 'foe' : 'ally');
       if (!at) continue;
       await castSpell(u, sp, at); return true;
     }
@@ -879,8 +985,9 @@ export async function commandMenu(u) {
       const k = await pickRing(a, rows); if (k == null) continue;
       const it = D.items[u.items[k]], eff = R.itemEffect(u, it);
       if (!eff || it.equip) { ui.toast('無法使用', 800); continue; }
-      const range = R.cellsInShape(u.x, u.y, it.range);
-      const at = await pickTarget(u, range, range, it.area, eff.kind === 13 ? C.harm : C.help, eff.kind === 13 ? 'foe' : 'ally');
+      const range = R.cellsInShape(u.x, u.y, it.range), cells = opts.test ? range : R.castCells(u, range, eff.kind === 13);
+      if (!cells.length) { ui.toast(eff.kind === 13 ? '範圍內沒有敵人' : '範圍內沒有同伴', 800); continue; }
+      const at = await pickTarget(u, cells, range, it.area, eff.kind === 13 ? C.harm : C.help, eff.kind === 13 ? 'foe' : 'ally');
       if (!at) continue;
       await useItem(u, k, at); return true;
     }
@@ -985,7 +1092,16 @@ export async function runBattle() {
     }
     if (G.round > 40) G.over = { win: false, why: '時間耗盡' };
   }
+  if (G.over && G.over.win && (G.over.lines || G.over.rout)) await winBeats(G.over);
   return G.over;
+}
+// a win the battle's hook declares with its own end: its lines, then the rout [ROM 0x1DA7C: every enemy still standing
+// (not move type 9, not a phantom) falls in turn, the camera on each (0xB134), its death (0x103E8)]
+async function winBeats(o) {
+  for (const l of o.lines || []) { cam.release(); const a = l.unit && actorOf(l.unit); if (a) cam.focus(a.pos); else if (l.at) cam.focus(tileCenter(...l.at)); await ui.say(l.text, l.who || null); }
+  if (o.rout) for (const u of G.units.filter(v => v.side === 'enemy' && v.alive && !v.away && v.moveType !== 9)) {
+    const a = actorOf(u); if (!a) continue; cam.release(); cam.focus(a.pos); await wait(300); u.alive = false; await killAnim(u);
+  }
 }
 
 // ---------------------------------------------------------------- loop
@@ -1074,7 +1190,7 @@ export function boot() {
   window.addEventListener('resize', resize); resize();
   bank = new SpriteBank(); ui = new UI(bank); cam = new Cam(world.camera);
   setupInput();
-  window.__remake = { G, R, actors, cam, tiles, C, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, yangPose, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState };
+  window.__remake = { G, R, actors, cam, tiles, C, cellInfo, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, yangPose, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState };
   requestAnimationFrame(frame);
 }
 // build the world for the loaded battle (R.loadBattle first) and load its sprites; again for every new battle
