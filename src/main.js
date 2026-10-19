@@ -1,6 +1,6 @@
 // 封神英傑傳 — next-gen remake. Boot and flow.
 //   campaign (no hash): title → camp (選擇人物, 出擊) → battle → result → camp …, with saves (campaign.js, camp.js, save.js)
-//   direct (#battle=N, #auto, #sandbox, #arena): one battle with its default party, as in Phase 1 (battle/index.html
+//   direct (#battle=N, #auto, #sandbox, #arena): one battle with its default party, as in Phase 1 (test/index.html
 //   adds &test: the test toolbar, src/testkit.js)
 // The engine is battle.js, the rules rules.js, each battle's own parts src/battles/NN-*.js. Phase 3 adds story scenes.
 import * as R from './rules.js';
@@ -92,7 +92,7 @@ async function fight(chosen) {
   E.cam.release(tileCenter(...D.deploy[0])); E.cam.snap();
   if (!direct) Scene.clearFade();
   if (!opts.auto && !opts.go) await intro();
-  if (opts.test) pgSetup();   // battle/index.html: the test toolbar over the real battle
+  if (opts.test) pgSetup();   // test/index.html: the test toolbar over the real battle
   E.hudRound();
   const res = await E.runBattle();
   dirty = true;
@@ -191,6 +191,7 @@ async function campaign() {
     }
     // the battle's camp
     K.enterCamp(state, await battleData(state.battle));
+    G.chestFlags = JSON.parse(JSON.stringify(state.chestFlags || {}));   // the chests opened before, by table (rules.js loadChests)
     if (loaded !== state.battle || dirty) await openBattle(state.battle, K.partyOf(state));
     else D.party = K.partyOf(state);
     await Scene.clearFade(); if (D.music != null) Audio.music(D.music, 0.6, true);   // the preparation plays the coming battle's song, from the top (not carried on from the scene before) [the user's calls]
@@ -201,8 +202,8 @@ async function campaign() {
     const before = JSON.parse(JSON.stringify(state));
     Save.write(Save.AUTO, before);                     // auto-save before every battle
     const res = await fight(r.battle);
-    if (res.win) K.afterBattle(state, G.units, true, G.found);  // then the scene's outro
-    else { state = K.afterBattle(before, G.units, false, G.found); Save.write(Save.AUTO, state); }   // a loss: back to the camp as it was before the battle, but the heroes keep what they gained in it (levels, experience, items) [the user's call]
+    if (res.win) K.afterBattle(state, G.units, true, G.found, G.chestFlags);  // then the scene's outro
+    else { state = K.afterBattle(before, G.units, false, G.found, G.chestFlags); Save.write(Save.AUTO, state); }   // a loss: back to the camp as it was before the battle, but the heroes keep what they gained in it (levels, experience, items) [the user's call]
   }
 }
 // development starts: #from=N opens the camp before battle N with its roster snapshot (磻溪), #scene=S plays scene S
@@ -246,7 +247,7 @@ async function single() {
       Scene.clearFade(); if (D.music != null) Audio.music(D.music, 0.6, true);   // the preparation: the battle's song from the top
       E.stage(autoPick(D.party, D.partyRules)); setScreen('camp'); orbit(true, 20);
       const r = await campScene(E, test, () => { D.party = K.partyOf(test); });
-      if (r === 'title' || r.load) { location.href = 'battle/index.html'; return; }
+      if (r === 'title' || r.load) { location.href = 'test/index.html'; return; }
       chosen = r.battle;
     }
     const res = await fight(chosen);

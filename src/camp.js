@@ -111,9 +111,9 @@ function items(E, box, state, refreshParty) {
   let cur = state.roster[0].cid, hover = null;
   const draw = () => {
     box.innerHTML = '<h3>裝備物品</h3>';
-    const tabs = h('div', 'htabs');
+    const tabs = h('div', 'htabs'), out = cid => !(state.pick || []).includes(cid);   // not chosen for the next battle: greyed, as on 選擇人物 [the user's call]
     for (const r of state.roster) {
-      const p = D.party.find(u => u.cid === r.cid), t = h('div', 'pt' + (r.cid === cur ? ' on' : ''));
+      const p = D.party.find(u => u.cid === r.cid), t = h('div', 'pt' + (r.cid === cur ? ' on' : '') + (out(r.cid) ? ' out' : ''));
       t.appendChild(E.bank.portrait(p.sprite, 2)); t.insertAdjacentHTML('beforeend', `<span>${C().heroes[r.cid].name}</span>`);
       t.onclick = () => { cur = r.cid; draw(); }; tabs.appendChild(t);
     }
@@ -121,7 +121,7 @@ function items(E, box, state, refreshParty) {
     const say = id => { hover = id; desc.classList.toggle('off', id == null);   // the effect only while the cursor is on an item [the user's call]
       desc.innerHTML = id == null ? '' : `${ICON(id)}<div><b>${C().items[id].name}</b>${C().items[id].equip ? '<i class="eq">裝</i>' : ''}<br>${C().itemDesc[id] || ''}</div>`; };
     // the hero in a ring of eight slots (the original's: three either side, one above, one below)
-    const ring = h('div', 'iring'), fig = h('div', 'ifig'); fig.appendChild(E.bank.walker(p.sprite, 4));   // marking time [the user's call]
+    const ring = h('div', 'iring'), fig = h('div', 'ifig' + (out(cur) ? ' out' : '')); fig.appendChild(E.bank.walker(p.sprite, 4, out(cur)));   // marking time [the user's call]; grey and standing if not going
     fig.insertAdjacentHTML('beforeend', `<b>${C().heroes[cur].name}</b><small>${r.items.length} / ${K.MAX_HELD}</small>`); ring.appendChild(fig);
     for (let slot = 0; slot < K.MAX_HELD; slot++) {
       const id = r.items[slot], c = h('div', 'islot s' + slot + (id == null ? ' empty' : ''), id == null ? '' : ICON(id));
@@ -213,7 +213,7 @@ export async function campScene(E, state, onChange) {
     pick = res;
     for (const [id, label0] of MENU) {
       if (state.test && (id === 'save' || id === 'load')) continue;   // the test page's camp: no saves (its state is not the story's)
-      const label = state.test && id === 'title' ? '戰役選擇' : label0;
+      const label = state.test && id === 'title' ? '回到測試' : label0;   // (the test page, test/index.html)
       const b = h('button', '', label); b.dataset.id = id; menu.appendChild(b);
       b.onclick = async () => {
         if (id === 'go') {

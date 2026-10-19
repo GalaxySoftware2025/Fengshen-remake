@@ -21,7 +21,6 @@ const say = beat => LINES[beat].map(l => ({ who: '', text: l.text, unit: slot(l.
 
 export default {
   n: 1,
-  load(D) { D.chests = D.chests.map(c => c.x === 30 && c.y === 6 ? Object.assign({}, c, { hidden: true }) : c); },   // the map art draws no chest at (30, 6)
   setup(G) { G.beats = 0; },
   beforeTurn(G) {
     const out = [], fire = (b, ok, then) => { if (G.beats & (1 << b) || !ok) return; G.beats |= 1 << b; out.push(...say(b)); then(); };

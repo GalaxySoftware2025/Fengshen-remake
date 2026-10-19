@@ -168,9 +168,12 @@ function walkUpto(walk, scene) {   // hero joins (ops 35 / 42) since the previou
   if (prev >= 0) { const ops = walk[prev].ops, k = ops.findIndex(o => o.op === 10); out.unshift(ops.slice(k + 1).filter(o => 'join' in o).map(o => o.join)); }
   return out;
 }
-const chestsOf = (R, t) => { const out = []; for (let k = 0; k < 8; k++) { const c = R.bytes(0x168e + 32 * t + 4 * k, 4); if (c[0] !== 0xff) out.push({ x: c[0], y: c[1], item: c[2], opened: c[3] }); } return out; };
+// a chest table's chests [table 0x168E: 8 slots of x, y, item, again]: `again` is what the chest holds once it has been
+// opened before (its bit, 7 - slot, in the table's flag byte ff3252: the loader 0x1AFF6 takes byte 3 then, 0x1BB58 sets it)
+const chestsOf = (R, t) => { const out = []; for (let k = 0; k < 8; k++) { const c = R.bytes(0x168e + 32 * t + 4 * k, 4); if (c[0] !== 0xff) out.push({ x: c[0], y: c[1], item: c[2], again: c[3], slot: k }); } return out; };
 // a chest the map's art draws: its cell's block shares tiles with the chest the art keeps at its bottom-left corner (the
-// chest tiles' own block); one sharing none is hidden, found only by striking its cell (as battles 1-8's, by hand)
+// chest tiles' own block); one sharing none is hidden, found only by striking its cell (every battle's chests, its own
+// map's and its rooms')
 const drawnChest = (R, m, c) => { const tiles = k => Array.from({ length: 16 }, (_, i) => R.W(m.addr.blocks + k * 32 + 2 * i)), icon = tiles(m.grid[m.h - 1][0]);
   return !!m.grid[c.y] && m.grid[c.y][c.x] != null && tiles(m.grid[c.y][c.x]).some(v => icon.includes(v)); };   // (a cell off the room's map: hidden)
 const FACING = { 0: 'down', 8: 'up', 0x10: 'left', 0x18: 'right' };   // a unit record's +1 (table 0x1DE72)
@@ -190,15 +193,16 @@ const enemiesOut = (list, NAMES, sheets, R = null, RS = R) => list.map(e => {   
   sheets.add(e.gfx); return u;
 });
 export function exportBattle(R, b, walk, sheets) {
-  const NAMES = names(R), enemies = enemiesOut(b.enemies, NAMES, sheets, null, R), chests = chestsOf(R, b.partyTable);
+  const hide = m => c => drawnChest(R, m, c) ? c : Object.assign(c, { hidden: true });   // (the battle's own map as its rooms')
+  const NAMES = names(R), enemies = enemiesOut(b.enemies, NAMES, sheets, null, R), chests = chestsOf(R, b.partyTable).map(hide(b.map));
   const ops = b.scene_ops, cut = ops.findIndex(o => o.op === 10), f = b.party.flags;
   const party = { deployMax: b.party.deployMax, forced: [...Array(12).keys()].filter(c => f[c] === 2), unavailable: [...Array(12).keys()].filter(c => f[c] === 1),
     joins: walkUpto(walk, b.scene).flat().map(j => ({ cid: j, lv: R.B(R.L(0x1d8e + 4 * j) + 0x22) })) };
   const say = part => part.filter(o => o.op === 4 || o.op === 55).map(line);
   const rooms = b.rooms && b.rooms.map(r => ({ w: r.map.w, h: r.map.h, terrain: r.map.terrain, fwd: r.fwd, back: r.back, chestTable: r.chestTable,
-    chests: chestsOf(R, r.chestTable).map(c => drawnChest(R, r.map, c) ? c : Object.assign(c, { hidden: true })), enemies: enemiesOut(r.enemies, NAMES, sheets, R), rom: r.addr.toString(16).padStart(6, '0') }));
+    chests: chestsOf(R, r.chestTable).map(hide(r.map)), enemies: enemiesOut(r.enemies, NAMES, sheets, R), rom: r.addr.toString(16).padStart(6, '0') }));
   return { n: b.n, name: b.name, chapter: b.chapter, scene: b.scene, win: b.win, lose: b.lose, mapW: b.map.w, mapH: b.map.h, terrain: b.map.terrain,
-    deploy: b.deploy, camera: b.camera, music: b.music, party, enemies, chests, intro: say(ops.slice(0, cut)), outro: say(ops.slice(cut + 1)),
+    deploy: b.deploy, camera: b.camera, music: b.music, party, enemies, chests, chestTable: b.partyTable, intro: say(ops.slice(0, cut)), outro: say(ops.slice(cut + 1)),
     rom: { header: b.header.toString(16).padStart(6, '0'), hooks: Object.fromEntries(Object.entries(b.hooks).map(([k, v]) => [k, v.toString(16).padStart(6, '0')])) },
     ...(rooms ? { rooms } : {}) };
 }

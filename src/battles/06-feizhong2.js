@@ -30,8 +30,6 @@ export const LINES = sayList(0x0EB78E);
 export default {
   n: 6,
   load(D) {
-    // the map art draws only the chest at (4, 10): (21, 3) and (18, 14) are found by striking their cells
-    D.chests = D.chests.map(c => (c.x === 21 && c.y === 3) || (c.x === 18 && c.y === 14) ? Object.assign({}, c, { hidden: true }) : c);
     D.enemies = D.enemies.concat([Object.assign({}, WEN)]);   // in place from the start: the hook copies him in before anyone moves
   },
   setup(G) { G.beats = 0; },

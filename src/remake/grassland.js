@@ -49,6 +49,7 @@ export function flowers(spots, at) {
     d.position.set(x, y + h + 0.01, z); d.rotation.set(0, 0, 0); d.updateMatrix(); eyes.setMatrixAt(i, d.matrix);
   }
   for (const m of [stems, heads, eyes]) { m.computeBoundingSphere(); m.castShadow = true; g.add(m); }
+  for (const m of [stems, heads, eyes]) m.userData.soft = true;   // (a unit stands among them: tools/qa/sets.js)
   return g;
 }
 
@@ -177,9 +178,9 @@ async function build(E, FX) {
   const rockM = T.material(T.rock(0x6a5240, 'bankRock', 0.25), { color: 0xf0d0b0 }, [0.5, 0.5]);
   // boulders and pebbles off the cells a unit can stand on (lying there they rose through the move squares: the user's
   // report); on those cells only grit, low enough to stay under them
-  const off = (x, z) => !walk(Math.floor(x), Math.floor(z)), pebbles = lay.pebbles.filter(([x, z]) => clear(x, z)).map(([x, z]) => [x, land.at(x, z), z]);
-  S.add(stones(land.scatter(CL.rock, 7, off), rockM, { size: 0.32 }));
-  S.add(stones([...land.scatter(CL.rock, 2.2, off), ...pebbles.filter(([x, , z]) => off(x, z))], rockM, { size: 0.2 }));
+  const off = (x, z, m = 0) => [[-m, -m], [m, -m], [-m, m], [m, m]].every(([a, b]) => !walk(Math.floor(x + a), Math.floor(z + b))), pebbles = lay.pebbles.filter(([x, z]) => clear(x, z)).map(([x, z]) => [x, land.at(x, z), z]);
+  S.add(stones(land.scatter(CL.rock, 7, (x, z) => off(x, z, 0.35)), rockM, { size: 0.32 }));   // (kept clear of a reachable cell by their size: lying over its edge they stood in it)
+  S.add(stones([...land.scatter(CL.rock, 2.2, (x, z) => off(x, z, 0.22)), ...pebbles.filter(([x, , z]) => off(x, z))], rockM, { size: 0.2 }));
   S.add(stones(pebbles.filter(([x, , z]) => !off(x, z)), rockM, { size: 0.05 }));
   S.add(shrubs(land.scatter(CL.rock, 0.5, (x, z) => land.weight(x, z, CL.grass) > 0.05), { size: 0.36, cols: ['#6a7a2a', '#7a8a32', '#5a6a24'] }));
   S.add(flowers((await flowerSpots()).filter(p => walk(Math.floor(p.x), Math.floor(p.z)) && clear(p.x, p.z)), (x, z) => land.at(x, z)));

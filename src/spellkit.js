@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { rand, groundH } from './world.js';
 import { NOISE } from './vfx.js';
+import { castOf } from './casts.js';
 
 export const V = (x, y, z) => new THREE.Vector3(x, y, z);
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -34,7 +35,7 @@ export function bezier(a, b, c, t) { return a.clone().multiplyScalar((1 - t) * (
 export function trail(vfx, p, col, n, size) { for (let i = 0; i < (n || 2); i++) vfx.spark(p.x + rand(-0.04, 0.04), p.y + rand(-0.04, 0.04), p.z + rand(-0.04, 0.04), { life: rand(0.25, 0.5), size: size || 0.12, size1: 0.01, r: col[0], gg: col[1], b: col[2], shape: 0 }); }
 export function gather(ctx, col, dur) {
   const c = ctx.caster.chest(), v = ctx.vfx;
-  v.runeCircle(ctx.caster.pos, col, 1.25, dur / 1000 + 0.6, { spin: 1.2 });
+  v.runeCircle(ctx.caster.pos, col, 1.25, dur / 1000 + 0.6, { spin: 1.2 });   // (a caster with no cast of its own: src/casts.js; test/casts.mjs keeps that to none)
   v.light(c.clone().add(V(0, 0.8, 0)), col, 3.5, dur / 1000 + 0.3, 4);
   const n = Math.round(dur / 18);
   for (let i = 0; i < n; i++) {
@@ -46,10 +47,11 @@ export function gather(ctx, col, dur) {
 export async function intro(ctx, col, o) {
   o = o || {};
   ctx.vfx.screen.barsTarget = 1;
-  ctx.cam.shot(ctx.caster.pos, { dist: 7.5, pitch: 0.42, yaw: 0.35 });
+  const own = castOf(ctx.caster.u);   // the caster's own way of casting (src/casts.js), else the shared gathering
+  ctx.cam.shot(ctx.caster.pos, { dist: 7.5, pitch: 0.42, yaw: 0.35, speed: own ? 6 : 0 });
+  if (own) { const a = ctx.caster, keep = { facing: a.u.facing, hover: a.hover, lift: a.lift }; a.u.facing = 'down'; await ctx.wait(180); await own(a, a.pos.clone(), col, ctx); a.u.facing = keep.facing; a.hover = keep.hover; a.lift = keep.lift; }
+  else { ctx.pose('cast'); gather(ctx, col, o.dur || 900); await ctx.wait(o.dur || 900); }
   ctx.pose('cast');
-  gather(ctx, col, o.dur || 900);
-  await ctx.wait(o.dur || 900);
   ctx.cam.shot(ctx.at, { dist: o.dist || 9, pitch: o.pitch || 0.5, yaw: o.yaw == null ? -0.25 : o.yaw });
 }
 export function outro(ctx) { ctx.vfx.screen.barsTarget = 0; ctx.vfx.screen.darkTarget = 0; ctx.pose(null); }

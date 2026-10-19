@@ -1,7 +1,8 @@
 // The campaign state between battles: where the story is, the roster, the shared bag. Renderer-free (the tests run it).
 // A save (save.js) is this object as JSON:
 //   { scene: 'prologue' | 'prologue2' | 0..64 | 'end', part: 'intro' | 'outro', camp: true when at a battle's camp, battle: its n,
-//     chapter: the last chapter card shown, place, roster: [hero records], bag: { itemId: count }, flags: {}, saves, wins }
+//     chapter: the last chapter card shown, place, roster: [hero records], bag: { itemId: count }, flags: {}, saves, wins,
+//     chestFlags: { table: bits } (the chests opened before, ROM ff3252) }
 // Rules from the ROM: after a battle every hero (cid ≤ 12) is written back to the roster fully healed, without the
 // battle's temporary boosts [0x1BCCE]; held equipment is in effect while a hero holds it, its bonus added into the
 // hero's stats when it moves from the bag and taken off when it goes back [0x169B0]; a hero holds up to 8 items, and
@@ -24,7 +25,7 @@ export function snapshotGame(n) {
   const roster = snap.map(r => record(hero(C0, r.cid, r.lv, { exp: r.exp, items: r.items, spells: r.spells })));
   return { scene: null, part: 'intro', camp: true, battle: n, chapter: 0, place: '', roster, bag: Object.assign({}, globalThis.BAGS[n]), flags: {}, saves: 0, wins: 0 };
 }
-// for the battle test page (battle/index.html): a camp before battle n with the given party and 10 of every item in
+// for the battle test page (test/index.html): a camp before battle n with the given party and 10 of every item in
 // the bag [the user's call], so equipment can be tried out
 export function testGame(party, n) {
   const bag = {}; C().items.forEach((it, id) => { bag[id] = 10; });
@@ -60,8 +61,9 @@ export function enterCamp(state, B) {
   return state;
 }
 // after the battle [ROM 0x1BCCE]: everyone who fought goes back to the roster, healed, buffs gone; a win moves on
-export function afterBattle(state, units, won, found) {   // found: chest items no hero could hold (into the bag)
+export function afterBattle(state, units, won, found, chestFlags) {   // found: chest items no hero could hold (into the bag)
   for (const id of found || []) state.bag[id] = Math.min(MAX_BAG, (state.bag[id] || 0) + 1);
+  if (chestFlags) state.chestFlags = JSON.parse(JSON.stringify(chestFlags));   // the chests opened, by table (ROM ff3252): kept, won or lost (rules.js loadChests)
   for (const u of units) {
     if (u.side !== 'player' || u.guest || u.cid > 12) continue;
     if (u.joinedHere && won) join(state, u.cid);   // joined during the battle (battle 4's 楊戩, ROM flag ff0eaf bit 1): on the roster from now on

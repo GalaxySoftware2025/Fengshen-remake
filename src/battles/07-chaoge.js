@@ -46,8 +46,6 @@ function spawn(G, wave) {
 export default {
   n: 7,
   load(D) {
-    // the map art draws the chests at (2, 15) and (29, 11): (2, 4) and (29, 4) are found by striking their cells
-    D.chests = D.chests.map(c => (c.x === 2 && c.y === 4) || (c.x === 29 && c.y === 4) ? Object.assign({}, c, { hidden: true }) : c);
     D.enemies = D.enemies.concat([Object.assign({}, GUEST)]);   // in place from the start: the hook copies him in before anyone moves
   },
   setup(G) { G.beats = 0; G.joined = []; for (const u of G.units) if (u.side === 'player') u.facing = 'up'; },

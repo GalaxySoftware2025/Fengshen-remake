@@ -27,9 +27,6 @@ export const LINES = sayList(0x0EC5FE).map((l, i) => i === 0 ? { who: l.who, tex
 
 export default {
   n: 8,
-  load(D) {   // the map art draws the chests at (12, 13) and (18, 2): (0, 0) and (0, 23) are found by striking their cells
-    D.chests = D.chests.map(c => (c.x === 0 && c.y === 0) || (c.x === 0 && c.y === 23) ? Object.assign({}, c, { hidden: true }) : c);
-  },
   setup(G) { G.beats = 0; G.joined = []; },
   beforeTurn(G) {
     if (G.beats & 1 || G.round !== 3) return null;

@@ -30,7 +30,7 @@ export class UI {
     const o = $('order'); o.innerHTML = '';
     for (const u of list.slice(0, 12)) {
       const d = el('div', 'o ' + (u.side === 'player' ? 'player' : 'enemy') + (u === now ? ' now' : ''));
-      d.appendChild(this.bank.portrait(u.sprite, 2)); d.title = u.name; o.appendChild(d);
+      d.appendChild(this.bank.portrait(u.sprite, 2)); o.appendChild(d);   // (no tooltip: the bar lets the pointer through to the cells under it)
     }
   }
   card(u) {

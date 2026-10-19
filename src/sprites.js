@@ -7,3 +7,14 @@ export const LEGACY = {
 };
 export const spriteKey = gfx => LEGACY[gfx] || gfx.toString(16).padStart(6, '0');
 export const isLegacy = key => Object.values(LEGACY).includes(key);
+// Sheets that hold one pose of their own, frame 0: the rest of the 9-frame block, and the action blobs after it, are other
+// sprites' tiles. 火鳳凰 (battle 27): her record's march table (+0x0A, ROM 0x388DA) is sixteen zeros, so the original's
+// marching (0x1491C: the frame copied each tick is graphic + table[step] * 32) always shows frame 0. 幻士 (battles 12, 18,
+// 19): a phantom, seen only for the moment it shows itself, facing down, which both of the map's draws (0x22300,
+// 0x224E8: down 0, up 0x600, left 0xC00) show as frame 0; its frames 1-8 are skull wisps. Such a unit stands on frame 0
+// in every facing and pose (src/actors.js); tools/rom/sheetcheck.py checks the list against the ROM and the pictures.
+export const ONE_POSE = new Set(['08dc92', '0e5960']);
+// The flying enemies' sheets (their records' move type crosses terrain 2: 鬼靈, 守護靈, 異鳥, 夜蝠, 飛兵): in a story scene,
+// where actors have no records, these are drawn over the scenery as battle fliers are (scene 26's 鬼靈 among the bamboo,
+// the user's report); not the flying heroes 哪吒 and 雷震子, who walk through towns. test/battles.mjs keeps it to the records.
+export const FLYING_FOES = new Set(['0b62ba', '09039c', '0ca8fe', '0a4f50', '08b5be']);

@@ -90,7 +90,10 @@ export class Land {
       y = this.serrate ? H * q * (0.25 + 0.95 * r * r) + up * H * 0.05 + (1 - up) * lump * (this.lumpH ?? 0.08)
         : H * q * (0.55 + 0.6 * r) + up * H * 0.08 + (1 - up) * lump * (this.lumpH ?? 0.08);
     } else y = up * (H + lump * H * 0.9 + crag * H * 0.35 + Math.min(1, dd / 12) * H * 0.4) + (1 - up) * lump * (this.lumpH ?? 0.08);
-    if (this.waterDepth) y -= this.weight(x, z, CL.water) * this.waterDepth;
+    if (this.waterDepth && !(this.dry && this.dry(x, z))) {   // (o.waterJitter: the shore wanders, so it does not follow the layout's quarter-cell steps; o.dry(x, z): ground it may not dip, a walkable cell)
+      const j = this.waterJitter || 0, jx = j ? (T.fbm(wu, wv, 18, 3, 12) - 0.5) * j : 0, jz = j ? (T.fbm(wu, wv, 18, 3, 13) - 0.5) * j : 0;
+      y -= this.weight(x + jx, z + jz, CL.water) * this.waterDepth;
+    }
     return y;
   }
   // the share of a class around a world point (bilinear over the layout samples)
@@ -277,13 +280,17 @@ export function grass(pts, o = {}) {
   }
   out.userData.noAO = true; return out;
 }
-// stones: lumpy displaced icosahedra in rock material
+// stones: lumpy displaced icosahedra in rock material. None stands taller than o.maxH over the ground it lies on (0.18:
+// ankle-high, stood among; a random turn could stand the largest on end, into a body's height: tools/qa/sets.js)
 export function stones(pts, mat, o = {}) {
   const geo = new THREE.IcosahedronGeometry(1, 1), p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) { const v = new THREE.Vector3().fromBufferAttribute(p, i), k = 0.75 + 0.5 * T.fbm((v.x + 1) / 2, (v.z + 1) / 2, 3, 2, 7); p.setXYZ(i, v.x * k, v.y * k * 0.6, v.z * k); }
   geo.computeVertexNormals();
-  const m = new THREE.InstancedMesh(geo, mat, pts.length), d = new THREE.Object3D();
-  pts.forEach(([x, y, z], i) => { const s = (o.size ?? 0.12) * (0.5 + Math.random()); d.position.set(x, y + s * 0.15, z); d.rotation.set(Math.random(), Math.random() * 6, Math.random()); d.scale.set(s, s, s * (0.7 + Math.random() * 0.6)); d.updateMatrix(); m.setMatrixAt(i, d.matrix); });
+  const m = new THREE.InstancedMesh(geo, mat, pts.length), d = new THREE.Object3D(), v = new THREE.Vector3(), maxH = o.maxH ?? 0.18;
+  const top = () => { d.updateMatrix(); let t = -Infinity; for (let j = 0; j < p.count; j++) t = Math.max(t, v.fromBufferAttribute(p, j).applyMatrix4(d.matrix).y); return t; };
+  pts.forEach(([x, y, z], i) => { const s = (o.size ?? 0.12) * (0.5 + Math.random()); d.position.set(x, y + s * 0.15, z); d.rotation.set(Math.random(), Math.random() * 6, Math.random()); d.scale.set(s, s, s * (0.7 + Math.random() * 0.6));
+    const h = top() - y; if (h > maxH) { const f = maxH / h; d.scale.multiplyScalar(f); d.position.y = y + (d.position.y - y) * f; }
+    d.updateMatrix(); m.setMatrixAt(i, d.matrix); });
   return shade(m);
 }
 // leaf texture: clusters of small leaves (alpha), for shrubs and tree crowns
@@ -308,7 +315,7 @@ export function clumpGeo(n = 12) {
   return mergeSimple(parts, true);
 }
 export function shrubs(pts, o = {}) {
-  const tex = leafTex(o.cols || ['#2f4a1e', '#3e5e26', '#4f7230', '#26401a']);
+  const tex = o.tex || leafTex(o.cols || ['#2f4a1e', '#3e5e26', '#4f7230', '#26401a']);   // (o.tex: a set's own leaves)
   const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85, color: o.color ?? 0xffffff });
   sway(mat, 0.3);
   const m = new THREE.InstancedMesh(clumpGeo(14), mat, pts.length), d = new THREE.Object3D(), c = new THREE.Color();

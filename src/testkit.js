@@ -1,7 +1,7 @@
-// Test tools (battle/index.html): a toolbar and a popup over any battle, and the 演武場 arena.
+// Test tools (test/index.html): a toolbar and a popup over any battle, and the 演武場 arena.
 //  - #battle=N&test: the real battle, its rules and turn order, with the toolbar: bring in any hero of the roster (or
 //    back from the dead), add any of the battle's enemies, raise every hero to Lv 99, end our turns for the round,
-//    switch the enemies' turns off, put the enemies back as they started, heal everyone; the hero whose turn it is gets
+//    switch the enemies' turns on (off by default), put the enemies back as they started, heal everyone; the hero whose turn it is gets
 //    a popup beside it (kill, 1 HP, a level, Lv 99, remove).
 //  - #arena: 演武場, a small open arena with a fixed camera for trying out heroes, enemies and spells: click any hero to
 //    select it, move and act; heroes may hit empty tiles. When every hero has acted (or 結束回合), the demons close in
@@ -32,7 +32,7 @@ export function arena(D) {
 Object.assign(PG, {
   spawn: [[1, 3], [1, 4], [2, 2], [2, 5], [1, 2], [1, 5], [2, 3], [2, 4], [0, 3], [0, 4], [1, 1], [1, 6]],
   wave: [['fox', 6, 3], ['fox', 6, 5], ['ghost', 7, 2], ['archer', 8, 4], ['archer', 8, 6]],
-  foeAt: [7, 4], enemiesAct: true, sel: null, key: '',
+  foeAt: [7, 4], enemiesAct: false, sel: null, key: '',   // (enemies stand still until switched on: the user's call)
 });
 const ARENA_FOES = { fox: '妖獸', archer: '鐵弓手', ghost: '鬼靈' };
 // the enemies the picker offers: the arena's three, or one of each kind in this battle (the first of its sprite)

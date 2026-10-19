@@ -105,8 +105,9 @@ export function stairs(r, tread, riser, k = 1) {
     else if (r.from === 'n') { z0 = r.z0 + (r.z1 - r.z0) * f0; }
     else if (r.from === 'e') { x0 = r.x0; x1 = r.x1 - (r.x1 - r.x0) * f0; }
     else { x0 = r.x0 + (r.x1 - r.x0) * f0; }
-    const b = new THREE.Mesh(boxGeo(x1 - x0, y - r.y0 + 0.02, z1 - z0, k), [riser, riser, tread, tread, riser, riser]);
-    b.position.set((x0 + x1) / 2, (y + r.y0 - 0.02) / 2, (z0 + z1) / 2); g.add(b);
+    const yb = i ? r.y0 + (r.y1 - r.y0) * i / n : r.y0 - 0.02;   // (each block stacked on the one below, not reaching down to the foot: overlapping blocks shared their side faces and flickered)
+    const b = new THREE.Mesh(boxGeo(x1 - x0, y - yb, z1 - z0, k), [riser, riser, tread, tread, riser, riser]);
+    b.position.set((x0 + x1) / 2, (y + yb) / 2, (z0 + z1) / 2); g.add(b);
     void f1; void alongZ;
   }
   return shade(g);

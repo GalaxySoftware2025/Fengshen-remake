@@ -14,10 +14,6 @@ const slot = n => G.units.find(u => u.slot === n);
 
 export default {
   n: 18,
-  load(D) {   // the art draws the forest's chests at (13, 3), (22, 15), (19, 19) and (22, 21): (0, 0) and (23, 33) are found by striking
-    D.chests = D.chests.map(c => (c.x === 0 && c.y === 0) || (c.x === 23 && c.y === 33) ? Object.assign({}, c, { hidden: true }) : c);
-    if (D.rooms) D.rooms[0] = Object.assign({}, D.rooms[0], { chests: D.chests });
-  },
   setup(G) { G.beats = 0; G.joined = []; },
   beforeTurn(G) {
     if (G.round % 3 === 0) { const back = revive(6); if (back.length) G.joined.push(...back); }

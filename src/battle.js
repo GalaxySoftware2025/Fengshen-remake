@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { World, groundH, rand, setLook, U as WU } from './world.js';
 import { SpriteBank, Actor } from './actors.js';
-import { LEVEL_POSE, yangPose } from './levelup.js';
+import { LEVEL_POSE } from './levelup.js';
 import { speed } from './speed.js';
 import { VFX } from './vfx.js';
 import { playSpell, playItem, arrowMesh, scripted } from './spells.js';
@@ -25,7 +25,7 @@ export let world, vfx, bank, ui, cam, FX = {};
 export const actors = new Map();
 export const actorOf = u => actors.get(u) || u.stand;   // stand: the arena's empty-tile target
 // arena: 演武場 (src/testkit.js); test: the test toolbar over a battle; free: a hero can be put on any empty cell (both from
-// battle/index.html, never set by the campaign)
+// test/index.html, never set by the campaign)
 export const opts = { auto: /auto/.test(location.hash), rescue: /rescue/.test(location.hash), arena: /[#&]arena\b/.test(location.hash),
   free: /[#&]free\b/.test(location.hash) && /battle=\d+/.test(location.hash) };
 opts.go = /[#&]go\b/.test(location.hash);   // a test start straight into round 1 (src/main.js single)
@@ -75,7 +75,7 @@ export class Cam {
 let groundLum = null, LUM_DARK = 0.16;
 export const groundLight = () => ({ lum: groundLum, dark: LUM_DARK });   // (tools/qa/tiles.js)
 export function measureLight() {
-  SURF = null; RANGE_CELLS.clear(); RANGE_VOID.clear();   // the set or the room changed: the flier surfaces and the cells' scenery are measured again
+  SURF = null; RANGE_CELLS.clear(); RANGE_VOID.clear(); FLOOR.clear();   // the set or the room changed: the flier surfaces and the cells' scenery are measured again
   if (tiles) { tiles.ground(); tintScenery(); }   // and the ground the squares lie on; the scenery takes the range
   try {
     // the map's run of light from high up; each cell the darker of that and its ground under any canopy (battle 13's bamboo
@@ -123,8 +123,24 @@ function measureGround(under) {
 // a tile's height: the highest ground in its cell, a little above, in steps of 0.1, so that neighbours on level
 // ground lie at exactly one height (their overlap, a hair wide, is shaded once) and none sinks into a lump
 const tileY = (x, y) => { let h = -99; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) h = Math.max(h, groundH(x + 0.1 + i * 0.4, y + 0.1 + j * 0.4)); return Math.ceil((h + 0.04) / 0.1) * 0.1; };
-// a tile's height on a blocked cell (a roof, a cliff a flier can reach) sits on top of what is there
-const cellY = (x, y) => (G.terrain && G.terrain[y] && G.terrain[y][x] !== 0) ? Math.max(tileY(x, y), Math.ceil((surfaceY(x, y) + 0.04) / 0.1) * 0.1) : tileY(x, y);
+// a tile's height on a blocked cell (a roof, a cliff a flier can reach) sits on top of what is there; with a unit in it
+// or a square shown on it, on the floor level a unit stands at (floorY: what stands there fades, OBSTRUCT)
+const blocked = (x, y) => !!(G.terrain && G.terrain[y] && G.terrain[y][x] !== 0 && D.costs && D.costs[0] && D.costs[0][G.terrain[y][x]] >= 127);
+const sunk = (x, y) => blocked(x, y) && floorY(x, y) != null && (!!R.unitAt(x, y) || !!(tiles && tiles.sunk.has(y * R.MAP_W + x)));
+const cellY = (x, y) => (G.terrain && G.terrain[y] && G.terrain[y][x] !== 0) ? (sunk(x, y) ? floorY(x, y) : Math.max(tileY(x, y), Math.ceil((surfaceY(x, y) + 0.04) / 0.1) * 0.1)) : tileY(x, y);
+// the floor level of a blocked cell (a column, a tree, a wall, a cliff, the void a flier crosses): the highest square of
+// the walkable cells nearest it (within three), so a unit in it stands on the grid as in the original, not on the top
+// of what is there [the user's call]; null with no walkable cell near (deep in the void: the flier stays as it was)
+const FLOOR = new Map();
+function floorY(x, y) {
+  const k = x + ',' + y; if (FLOOR.has(k)) return FLOOR.get(k);
+  let best = null;
+  for (let r = 1; r <= 3 && best == null; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const nx = x + dx, ny = y + dy;
+    if (R.inMap(nx, ny) && !blocked(nx, ny) && G.terrain[ny][nx] === 0) best = Math.max(best ?? -99, tileY(nx, ny));
+  }
+  FLOOR.set(k, best); return best;
+}
 // the ground's height under the squares, DRAPE samples a cell (at the cells' corners and every 1/DRAPE between): a square
 // on open ground follows it, sloped, stepped or lumpy (a flat plate at the cell's highest point floated over a ledge's
 // slope and let the ground's lumps through: battle 10's ledges, battle 8's grass, the user's report); built again with
@@ -142,10 +158,23 @@ function drapeTexture() {
 // between the cell's foot and the top of what stands on it (cellInfo). Ground, steps, a cliff's face, a rock, a chest
 // all take it; the lines only on what lies flat. A cell with nothing of the set's own under its square (a flier's cell
 // over the void, water drawn by its own shader) keeps the square as before.
-const RU = { uRangeCell: { value: null }, uRangeBand: { value: null }, uRangeSize: { value: new THREE.Vector2(1, 1) }, uRangeOn: { value: 0 }, uRangeAlpha: { value: 1 }, uRangeT: { value: 0 }, uRangeMask: { value: 0 } };   // (one set for every world: a material patched once keeps them)
+const RU = { uRangeCell: { value: null }, uRangeBand: { value: null }, uRangeSize: { value: new THREE.Vector2(1, 1) }, uRangeOn: { value: 0 }, uRangeAlpha: { value: 1 }, uRangeT: { value: 0 }, uRangeMask: { value: 0 }, uCutCell: { value: null }, uCutOn: { value: 0 } };   // (one set for every world: a material patched once keeps them)
 const RANGE_CELLS = new Map(), RANGE_VOID = new Set(); let RANGE_SOLID = [];
 // how light the world beyond the set is (a flier's square over the void is seen against it)
 const backdropLum = () => { const S = world.scene, c = S.background && S.background.isColor ? S.background : S.fog ? S.fog.color : null; return c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0; };
+// a unit in a blocked cell (OBSTRUCT): what stands in that cell above its feet thins away, a screen-door dither over a
+// quarter second, a trace left so the column or the tree still reads (uCutCell: the floor level, the fade, a texel a cell)
+// @qa battle:9 battle:12 battle:18   (shows only where a flier stands in a blocked cell: columns, blocks, trees; tools/qa/scope.mjs)
+const CUT_GLSL = `
+    if (uCutOn > 0.5) {
+      vec2 ctC = floor(vRangeO.xz);   // (by the piece's own root: a tree's crown overhanging the next cell goes with its trunk)
+      if (ctC.x >= 0.0 && ctC.y >= 0.0 && ctC.x < uRangeSize.x && ctC.y < uRangeSize.y) {
+        vec4 ct = texture2D(uCutCell, (ctC + 0.5) / uRangeSize);
+        if (ct.g > 0.01 && vRangeW.y > ct.r + 0.04 && fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) < ct.g * 0.9) discard;
+      }
+    }
+`;
+// @qa sample   (the range on the scenery: the same in every battle; tools/qa/scope.mjs)
 const RANGE_GLSL = `
     if (uRangeOn > 0.5) {
       vec3 rgN = normalize(cross(dFdx(vRangeW), dFdy(vRangeW))); if (dot(rgN, cameraPosition - vRangeW) < 0.0) rgN = -rgN;
@@ -175,8 +204,9 @@ function rangeMaterial(m) {
     if (prev) prev.call(this, sh, r);
     for (const k of Object.keys(RU)) sh.uniforms[k] = RU[k];
     const end = (src, code) => { const i = src.lastIndexOf('}'); return src.slice(0, i) + code + src.slice(i); };
-    sh.vertexShader = 'varying vec3 vRangeW;\n' + end(sh.vertexShader, '\n  vec4 rgW = vec4(transformed, 1.0);\n  #ifdef USE_INSTANCING\n  rgW = instanceMatrix * rgW;\n  #endif\n  vRangeW = (modelMatrix * rgW).xyz;\n');
-    sh.fragmentShader = 'varying vec3 vRangeW;\nuniform sampler2D uRangeCell, uRangeBand;\nuniform vec2 uRangeSize;\nuniform float uRangeOn, uRangeAlpha, uRangeT, uRangeMask;\n' + end(sh.fragmentShader, RANGE_GLSL);
+    // vRangeO: where the piece is rooted (an instance's origin: a tree's clump; a whole mesh, each point itself)
+    sh.vertexShader = 'varying vec3 vRangeW;\nvarying vec3 vRangeO;\n' + end(sh.vertexShader, '\n  vec4 rgW = vec4(transformed, 1.0), rgO = rgW;\n  #ifdef USE_INSTANCING\n  rgW = instanceMatrix * rgW; rgO = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  #endif\n  vRangeW = (modelMatrix * rgW).xyz; vRangeO = (modelMatrix * rgO).xyz;\n');
+    sh.fragmentShader = 'varying vec3 vRangeW;\nvarying vec3 vRangeO;\nuniform sampler2D uRangeCell, uRangeBand, uCutCell;\nuniform vec2 uRangeSize;\nuniform float uRangeOn, uRangeAlpha, uRangeT, uRangeMask, uCutOn;\n' + end(sh.fragmentShader, CUT_GLSL + RANGE_GLSL);
   };
   m.customProgramCacheKey = () => key() + '|range';
   m.userData.rangeTint = true; m.needsUpdate = true;
@@ -208,6 +238,7 @@ function cellInfo(x, y) {
   RANGE_CELLS.set(k, info); return info;
 }
 class Tiles {
+  // @qa sample   (the squares' shader and meshes: the same in every battle; tools/qa/scope.mjs)
   constructor(scene) {
     const geo = new THREE.PlaneGeometry(1, 1, DRAPE, DRAPE); geo.rotateX(-Math.PI / 2);   // its vertices on the height samples (a draped square: no seam with its neighbour)
     const mat = new THREE.ShaderMaterial({
@@ -239,7 +270,7 @@ class Tiles {
           float a = mix(0.11 + 0.02 * sin(uT * 2.5), 0.32, red) + edge * 0.5;
           vec3 col = vC * (0.55 + edge * 0.35);
           float lite = step(0.5, vC.r);
-          col = mix(col, vC, mv); a = mix(a, mix(0.66, 0.3, lite), mv);
+          col = mix(col, vC, mv); a = mix(a, mix(0.66, 0.2, lite), mv);   // white squares (dark ground, the void) faint: at 0.3 they read as grey slabs over the dark [the user's report]
           float w = fwidth(d), hair = mv * smoothstep(1.0 - 1.8 * w, 1.0 - 0.8 * w, d);   // a one-pixel black line keeps the cells apart (white squares too: on a dark floor they merged into one block)
           col = mix(col, vec3(0.0), hair); a = mix(a, 0.92, hair);
           #ifdef XRAY
@@ -261,7 +292,7 @@ class Tiles {
     this.drape = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aDrape', this.drape);   // 1: laid over the ground; 0: flat at its matrix's height (a roof's, a cliff top's: a flier's square)
     this.decal = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aDecal', this.decal);   // 1: the scenery draws it (cellInfo); the square only shows through what hides it
     this.hi = new THREE.InstancedBufferAttribute(new Float32Array(600), 1); geo.setAttribute('aHi', this.hi);   // the top of the cell's column (cellInfo)
-    scene.add(this.mesh); this.mat = mat; this.rangeU = RU;
+    scene.add(this.mesh); this.mat = mat; this.rangeU = RU; this.sunk = new Set();
     let shown = true; delete this.mesh.visible;   // the scenery's range shows and hides with the squares (tools/qa/tiles.js hides them)
     Object.defineProperty(this.mesh, 'visible', { configurable: true, get: () => shown, set: v => { shown = v; this.syncOn(); } });
     // cursor: four gold corners + a hovering marker
@@ -277,10 +308,15 @@ class Tiles {
   set(list) {
     this.last = list;   // (tools/qa/tiles.js reads the cells shown)
     const m = new THREE.Matrix4(), c = new THREE.Color(), W = R.MAP_W, [cd, bd] = this.rangeTex(W, R.MAP_H);
+    // a square on a blocked cell (a column, a block, a tree a flier may enter) lies on the floor level, where the unit would
+    // stand, and what stands there fades while it shows (OBSTRUCT) [the user's call: squares on the columns' tops beside
+    // the floor's read as misaligned, battle 12's third room]; a plain square, not the scenery's tint (that would go
+    // up the faded column)
+    this.sunk = new Set(list.filter(t => blocked(t.x, t.y) && floorY(t.x, t.y) != null).map(t => t.y * W + t.x));
     list.slice(0, 600).forEach((t, i) => {
-      const p = tileCenter(t.x, t.y), move = t.c === C.move, y = cellY(t.x, t.y); m.makeTranslation(p.x, y + (t.lift || 0), p.z); this.mesh.setMatrixAt(i, m);
-      this.drape.array[i] = !t.lift && y <= tileY(t.x, t.y) + 0.001 && this.mat.uniforms.uH.value ? 1 : 0;   // (on top of what stands on a blocked cell: flat)
-      const info = this.mat.uniforms.uH.value ? cellInfo(t.x, t.y) : null, over = !info && RANGE_VOID.has(t.x + ',' + t.y);
+      const p = tileCenter(t.x, t.y), move = t.c === C.move, y = cellY(t.x, t.y), low = this.sunk.has(t.y * W + t.x); m.makeTranslation(p.x, y + (t.lift || 0) + (low ? 0.05 : 0), p.z); this.mesh.setMatrixAt(i, m);
+      this.drape.array[i] = !low && !t.lift && y <= tileY(t.x, t.y) + 0.001 && this.mat.uniforms.uH.value ? 1 : 0;   // (on top of what stands on a blocked cell, or on its floor level: flat)
+      const info = this.mat.uniforms.uH.value && !low ? cellInfo(t.x, t.y) : null, over = !info && RANGE_VOID.has(t.x + ',' + t.y);
       c.setRGB(...(move && (over ? backdropLum() < 0.4 : groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK) ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);   // (over the void: the fill against what is seen beyond, a cloud sea or the dark)
       this.edge.array[i] = move ? 1 : 0;
       this.decal.array[i] = info ? 1 : 0; this.hi.array[i] = info ? info.hi : -1e3;
@@ -309,9 +345,10 @@ class Tiles {
     pts.slice(0, 40).forEach((p, i) => { m.makeTranslation(p.x, p.y + 0.12, p.z); this.dots.setMatrixAt(i, m); });
     this.dots.count = Math.min(40, pts.length); this.dots.instanceMatrix.needsUpdate = true;
   }
+  // the cursor on the cell's square: the top of what is there, or the floor with a unit in it (cellY)
   update(t) {
     this.mat.uniforms.uT.value = t;
-    if (this.cur) { const p = tileCenter(...this.cur); this.cursor.visible = !this.quiet; this.cursor.position.set(p.x, p.y + 0.07, p.z); this.cursor.scale.setScalar(1 + Math.sin(t * 5) * 0.04); const u = R.unitAt(...this.cur); this.marker.visible = !this.quiet && (!u || u !== G.active); this.marker.position.set(p.x, p.y + (u ? 1.45 : 0.55) + Math.sin(t * 3) * 0.06, p.z); this.marker.rotation.y = t * 2; }
+    if (this.cur) { const p = tileCenter(...this.cur); p.y = cellY(...this.cur); this.cursor.visible = !this.quiet; this.cursor.position.set(p.x, p.y + 0.02, p.z); this.cursor.scale.setScalar(1 + Math.sin(t * 5) * 0.04); const u = R.unitAt(...this.cur); this.marker.visible = !this.quiet && (!u || u !== G.active); this.marker.position.set(p.x, p.y + (u ? 1.45 : 0.55) + Math.sin(t * 3) * 0.06, p.z); this.marker.rotation.y = t * 2; }
   }
 }
 // the unit taking its turn: a crisp gold frame on its tile and a small pixel arrow overhead.
@@ -424,11 +461,28 @@ function pushHover(t) { const i = queue.findIndex(e => e.k === 'hover'); if (i >
 export const input = () => queue.length ? Promise.resolve(queue.shift()) : new Promise(r => waiters.push(r));
 let hoverTile = null, cursorTile = [0, 0];
 const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+// a unit's own pixels under the pointer [the user's report: a flier on a column top, drawn above its cell, could not be
+// picked by clicking it]: the sprite planes hit, the picture's alpha read at the hit (its frame, mirrored or not); the
+// nearest opaque one wins. Its transparent margin does not count, so the squares round a unit stay easy to click.
+const ALPHA = new WeakMap();
+function opaqueAt(tex, uv) {
+  const img = tex && tex.image; if (!img || !img.width) return false;
+  let A = ALPHA.get(img); if (!A) { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0); A = g.getImageData(0, 0, c.width, c.height); ALPHA.set(img, A); }
+  const u = tex.offset.x + uv.x * tex.repeat.x, v = tex.offset.y + uv.y * tex.repeat.y;
+  const px = Math.floor(u * A.width), py = Math.floor((1 - v) * A.height);
+  return px >= 0 && py >= 0 && px < A.width && py < A.height && A.data[(py * A.width + px) * 4 + 3] > 96;
+}
+function unitUnder() {
+  const ms = []; for (const a of actors.values()) { const u = a.u; if (!u.alive || u.away || !a.root.visible || (a.fade ?? 1) < 0.5 || !R.inMap(u.x, u.y)) continue; const m = a.big.visible ? a.big : a.mesh; m.userData.actor = a; ms.push(m); }
+  for (const h of ray.intersectObjects(ms, false)) if (h.uv && opaqueAt(h.object.material.map, h.uv)) return h.object.userData.actor.u;
+  return null;
+}
 function pick(ev) {
   const r = world.renderer.domElement.getBoundingClientRect();
   mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(mouse, world.camera);
   const o = ray.ray.origin, d = ray.ray.direction; if (d.y >= -1e-4) return null;
+  const who = unitUnder(); if (who) return [who.x, who.y];   // a unit's body first, wherever its cell's square is drawn
   if (tiles && tiles.mesh.count && tiles.last) {   // a square that is shown, raised ones (on a roof) included
     const hit = ray.intersectObject(tiles.mesh, false)[0], t = hit && tiles.last[hit.instanceId];
     if (t && R.inMap(t.x, t.y)) return [t.x, t.y];
@@ -519,7 +573,34 @@ const roomArt = k => 'assets/battles/' + String(D.n).padStart(2, '0') + (k ? '/r
 // where a unit stands on a cell: the ground; a flier (a move type that may enter terrain 2) stands on whatever is there
 // instead, a roof, a wall or a cliff (battle 9's 雷震子 was drawn inside the temple hall, hidden under its roof)
 export const isFlier = u => { const c = D.costs && D.costs[u.moveType]; return !!(c && c[2] < 127); };
-export const standAt = (u, x, y) => { const p = tileCenter(x, y); if (isFlier(u)) p.y = Math.max(p.y, surfaceY(x, y)); return p; };
+// where a unit stands on a cell: its ground; a flier over a blocked cell on the floor level round it (floorY: what is there
+// fades, OBSTRUCT), or where none is near on top of what is there
+export const standAt = (u, x, y) => { const p = tileCenter(x, y); if (isFlier(u)) { const f = blocked(x, y) ? floorY(x, y) : null; p.y = f != null ? f : Math.max(p.y, surfaceY(x, y)); } return p; };
+// the blocked cells holding someone, a square or a walker's route ahead: their scenery fades above the unit's feet (CUT_GLSL), and comes back once they leave
+const OBSTRUCT = { fade: null, W: 0, H: 0 };
+function obstruct(dt) {
+  const W = R.MAP_W, H = R.MAP_H; if (!W || !H) return;
+  if (!RU.uCutCell.value || OBSTRUCT.W !== W || OBSTRUCT.H !== H || RU.uRangeSize.value.x !== W) {
+    if (RU.uCutCell.value) RU.uCutCell.value.dispose();
+    RU.uCutCell.value = new THREE.DataTexture(new Float32Array(W * H * 4), W, H, THREE.RGBAFormat, THREE.FloatType); RU.uCutCell.value.magFilter = RU.uCutCell.value.minFilter = THREE.NearestFilter;
+    RU.uRangeSize.value.set(W, H); OBSTRUCT.fade = new Float32Array(W * H); OBSTRUCT.W = W; OBSTRUCT.H = H;
+  }
+  const want = new Set();
+  for (const a of actors.values()) { if (!a.u.alive || !a.root.visible) continue; const x = Math.floor(a.pos.x + a.off.x), y = Math.floor(a.pos.z + a.off.y); if (R.inMap(x, y) && blocked(x, y) && floorY(x, y) != null) want.add(y * W + x); }
+  if (tiles && tiles.mesh.visible && tiles.mesh.count) for (const i of tiles.sunk) want.add(i);   // (a square shown on it: Tiles.set)
+  // a unit walking: the cells of its route still ahead (the squares just cleared: the column it is headed for does not come
+  // back only to fade again as it lands)
+  for (const a of actors.values()) if (a.walking && a.route) { const x = Math.floor(a.pos.x), y = Math.floor(a.pos.z), at = a.route.findIndex(([px, py]) => px === x && py === y);
+    for (const [px, py] of a.route.slice(Math.max(0, at))) if (R.inMap(px, py) && blocked(px, py) && floorY(px, py) != null) want.add(py * W + px); }
+  const d = RU.uCutCell.value.image.data, F = OBSTRUCT.fade; let on = 0, changed = false;
+  for (let i = 0; i < W * H; i++) {
+    const t = want.has(i) ? 1 : 0; if (F[i] === t) { if (t) on = 1; continue; }
+    F[i] = t > F[i] ? Math.min(1, F[i] + dt * 4) : Math.max(0, F[i] - dt * 4); changed = true; if (F[i] > 0) on = 1;
+    const x = i % W, y = (i / W) | 0; d[i * 4] = floorY(x, y) ?? 0; d[i * 4 + 1] = F[i];
+  }
+  if (changed) RU.uCutCell.value.needsUpdate = true;
+  RU.uCutOn.value = on;
+}
 export function placeActor(a) { a.pos.copy(standAt(a.u, a.u.x, a.u.y)); a.off.set(0, 0); }
 // the top of whatever stands on a cell: rays straight down at five points of it through the set's solid pieces (not
 // grass or leaf cards, effects, sprites, the tiles, a sky dome); the highest hit within 6 of the ground, or the ground.
@@ -562,7 +643,7 @@ export async function walkActor(u, path) {
   const L = [0]; for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
   const total = L[L.length - 1], T = (path.length - 1) * STEP + RAMP, r = Math.min(0.4, RAMP / T), vmax = 1 / (1 - r);
   const dist = k => k < r ? vmax * k * k / (2 * r) : k > 1 - r ? 1 - vmax * (1 - k) * (1 - k) / (2 * r) : vmax * (k - r / 2);   // trapezoid speed
-  a.walking = true; let seg = 1;
+  a.walking = true; a.route = path; let seg = 1;   // (route: what stands on the cells still ahead stays faded, OBSTRUCT)
   await anim(T, k => {
     const d = Math.min(total, Math.max(0, dist(k)) * total);
     while (seg < pts.length - 1 && L[seg] < d) seg++;
@@ -572,7 +653,7 @@ export async function walkActor(u, path) {
     if (Math.abs(dx) > 1e-4 || Math.abs(dz) > 1e-4) u.facing = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'right' : 'left') : (dz > 0 ? 'down' : 'up');
     cam.focus(a.pos);
   });
-  a.walking = false; [u.x, u.y] = path[path.length - 1]; placeActor(a);
+  a.walking = false; a.route = null; [u.x, u.y] = path[path.length - 1]; placeActor(a);
 }
 export let canvasRect = { width: 1, height: 1, left: 0, top: 0 };
 const _pv = new THREE.Vector3();
@@ -759,7 +840,7 @@ export async function doAttack(au, du) {
   const r = R.physicalAttack(au, du);
   await attackAnim(au, du, r, () => { if (!r.miss) { du.hp = Math.max(0, du.hp - r.dmg); du.hitT = gameT; } });   // the HP bar drops on the blow itself
   if (r.miss) return;
-  if (du.hp <= 0) { du.alive = false; await killAnim(du); }
+  if (du.hp <= 0) { du.alive = false; await killAnim(du); await dropFind(au, du); }
   if (au.side === 'player') await gainExp(au, R.expFor(au, du, !du.alive));
   if (du.status.sleep) du.status.sleep = 0;
 }
@@ -799,10 +880,19 @@ async function itemUse(u, id, at) {
 }
 // opening a chest: the item's icon rises out of it in a burst of light and hangs there while the find is told, then
 // drops into the hero's hands
-async function chestFind(u, ch, it) {
+// an enemy's drop: the item it held rises from where it fell and goes to the hero who felled it, with the chests' chime
+// and line [ROM 0x21420, 0x129B0]
+async function dropFind(u, dead) {
+  const got = R.takeDrop(u, dead); if (!got) return;
+  sfx(SND.found);
+  const give = await chestFind(u, { item: got.id, x: dead.x, y: dead.y }, got.it, 0.1);
+  await ui.say(u.name + '得到了「' + got.it.name + '」！' + (G.found.includes(got.id) && !u.items.includes(got.id) ? '\n（放進了行囊）' : ''), null, 1800);
+  if (give) await give();
+}
+async function chestFind(u, ch, it, lift = 0.45) {   // lift: where the icon starts over the cell (a chest's lid; a fallen enemy's ground)
   const g = itemIcon(ch.item); if (!g) return null;
   const P = tileCenter(ch.x, ch.y);
-  await anim(0.7, k => { const e = 1 - (1 - k) ** 3; g.position.set(P.x, P.y + 0.45 + 1.75 * e, P.z); g.userData.set(Math.min(1, k * 2.5)); g.scale.setScalar(0.5 + 0.5 * e);
+  await anim(0.7, k => { const e = 1 - (1 - k) ** 3; g.position.set(P.x, P.y + lift + (2.2 - lift) * e, P.z); g.userData.set(Math.min(1, k * 2.5)); g.scale.setScalar(0.5 + 0.5 * e);
     if (Math.random() < 0.5) vfx.spark(P.x + rand(-0.15, 0.15), P.y + 0.5, P.z + rand(-0.15, 0.15), { vy: rand(0.6, 1.4), life: 0.6, size: 0.04, r: 1, gg: 0.9, b: 0.5 }); });
   let bob = 0, on = true; const tick = () => { if (!on) return; bob += 0.016; g.position.y = P.y + 2.2 + Math.sin(bob * 4) * 0.04; g.userData.glow.scale.setScalar(1.5 + 0.2 * Math.sin(bob * 6)); requestAnimationFrame(tick); }; tick();
   return async () => { on = false; const A = actorOf(u).chest(), Q = g.position.clone();
@@ -845,7 +935,7 @@ export async function useEffect(u, eff, cells, at, name, script) {
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i], r = results[i];
     if (r && !r.applied && !r.immune) landResult(t, r);   // (a script that never called ctx.hit)
-    if (r && r.dmg !== undefined) { if (t.hp <= 0) { t.alive = false; killedAny = true; await killAnim(t); } }
+    if (r && r.dmg !== undefined) { if (t.hp <= 0) { t.alive = false; killedAny = true; await killAnim(t); await dropFind(u, t); } }
     else if (r) gained += r.exp || 0;
   }
   if (!targets.length && !opts.arena) await ui.toast('沒有效果', 800);
@@ -1152,6 +1242,7 @@ export function frame(now) {
     vfx.update(dt, gameT); if (!world.calm) vfx.ambient(dt, cam.target); vfx.fire.mat.uniforms.uYaw.value = cam.yaw;
     vfx.add.mat.uniforms.uScale.value = vfx.soft.mat.uniforms.uScale.value = world.renderer.domElement.height / (2 * Math.tan(world.camera.fov * Math.PI / 360));
     for (const a of actors.values()) a.update(gameT, world.camera, cam.yaw, cam.pitch);
+    obstruct(dt);
     tiles.update(gameT); activeMark.update(gameT, G.active ? actorOf(G.active) : null); targetMark.update(gameT);
     ui.layout(project, [...actors.values()], dt, !$('hud').classList.contains('hidden'));
     if (menuAnchor) { const [x, y] = menuPos(); for (const m of [$('menu'), $('ring')]) if (m) { m.style.left = x + 'px'; m.style.top = y + 'px'; } }
@@ -1190,7 +1281,7 @@ export function boot() {
   window.addEventListener('resize', resize); resize();
   bank = new SpriteBank(); ui = new UI(bank); cam = new Cam(world.camera);
   setupInput();
-  window.__remake = { G, R, actors, cam, tiles, C, cellInfo, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, yangPose, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState };
+  window.__remake = { G, R, actors, cam, tiles, C, cellInfo, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState };
   requestAnimationFrame(frame);
 }
 // build the world for the loaded battle (R.loadBattle first) and load its sprites; again for every new battle

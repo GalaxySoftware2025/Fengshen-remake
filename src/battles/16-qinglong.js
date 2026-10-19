@@ -16,9 +16,6 @@ const speaker = who => G.units.find(u => u.alive && u.name === who) || null;
 
 export default {
   n: 16,
-  load(D) {   // the map art draws the chests at (1, 1) and (22, 1): (0, 18) and (23, 22) are found by striking their cells
-    D.chests = D.chests.map(c => (c.x === 0 && c.y === 18) || (c.x === 23 && c.y === 22) ? Object.assign({}, c, { hidden: true }) : c);
-  },
   setup(G) { G.beats = 0; G.joined = []; },
   beforeTurn(G) {
     const z = slot(10);

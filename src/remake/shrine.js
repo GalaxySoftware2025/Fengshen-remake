@@ -45,6 +45,39 @@ const ROOMS = {
 };
 let world = null, M = null, chestG = new Map(), LV = null, cur = 2;
 
+// the floor's golden sandstone (the art's grainy gold brick): a texture three cells square, two courses a cell, bricks a
+// cell and a half long in running bond; each brick its own shade, bevelled and worn at its arrises, the sand's grain in
+// dark and pale specks, a few cracked across; sunk dark mortar between. Worn smooth (less rough) where feet have gone.
+function sandstone() {
+  return T.pbr('shrineSandstone', 1024, (u, v, o) => {
+    const row = Math.floor(v * 6), fv = v * 6 - row, bu = u * 2 + (row % 2) * 0.5, bi = Math.floor(bu), fu = bu - bi;
+    const id = T.pnoise(((bi % 2) + 2) % 2, row, 2, 5, 6), id2 = T.pnoise(((bi % 2) + 2) % 2, row, 2, 6, 6);
+    const ex = Math.min(fu, 1 - fu) * 1.5, ey = Math.min(fv, 1 - fv) * 0.5, e = Math.min(ex, ey);   // (cells to the brick's edge)
+    const chip = (T.fbm(u, v, 24, 3, 7) - 0.5) * 0.03, mortar = T.smooth(0.018, 0.008, e + chip), bevel = T.smooth(0.0, 0.07, e + chip);
+    const grain = T.pnoise(u * 340, v * 340, 340, 9), grain2 = T.pnoise(u * 170, v * 170, 170, 10), cloud = T.fbm(u, v, 6, 4, 11);
+    const [w0, w1] = T.worley(u, v, 9, 12, 0.9), crack = id2 > 0.78 ? T.smooth(0.012, 0.0, w1 - w0) * T.smooth(0.03, 0.08, e) : 0;
+    let c = T.mixc([0.56, 0.4, 0.17], [0.84, 0.66, 0.34], id * 0.6 + cloud * 0.4);
+    c = T.mixc(c, [0.42, 0.28, 0.1], T.smooth(0.58, 0.78, grain) * 0.6); c = T.mixc(c, [0.96, 0.84, 0.52], T.smooth(0.66, 0.84, grain2) * 0.45);
+    c = T.mixc(c, [0.38, 0.27, 0.12], T.smooth(0.12, 0.0, e) * 0.35 + T.smooth(0.55, 0.8, T.fbm(u, v, 3, 3, 13)) * 0.25);   // grime in the joints and in broad patches
+    c = T.mixc(c, c.map(q => q * 0.72), 1 - bevel); c = T.mixc(c, [0.3, 0.2, 0.08], crack * 0.8); c = T.mixc(c, [0.24, 0.16, 0.06], mortar);
+    o.c = c; o.h = 0.25 + bevel * 0.55 + (grain - 0.5) * 0.06 + cloud * 0.08 - crack * 0.25 - mortar * 0.25;
+    o.r = 0.78 - (1 - cloud) * 0.25 * bevel + mortar * 0.15;
+  }, 4);
+}
+// the urns' glaze, laid round the body (x) from foot to lip (y): deep cobalt pooling darker low down, paler where it
+// thins on the shoulder, a band of gold cloud-scrolls round the shoulder between two fine gold lines, a faint crackle
+let GLAZE = null;
+function glazeTex() {
+  if (GLAZE) return GLAZE;
+  const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, H, 0, 0); gr.addColorStop(0, '#0a1a48'); gr.addColorStop(0.35, '#16357e'); gr.addColorStop(0.62, '#2a54a8'); gr.addColorStop(0.78, '#1c3e8c'); gr.addColorStop(1, '#10285e');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 260; i++) { const x = Math.random() * W, y = Math.random() * H; g.fillStyle = `rgba(${Math.random() < 0.5 ? '120,160,230' : '6,14,40'},0.07)`; g.beginPath(); g.ellipse(x, y, 10 + Math.random() * 30, 4 + Math.random() * 10, 0, 0, 7); g.fill(); }
+  const y0 = H * 0.44, y1 = H * 0.58; g.strokeStyle = '#d8b04a'; g.lineWidth = 3; for (const y of [y0, y1]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.lineWidth = 3.5; for (let x = 0; x < W; x += 64) { const cy = (y0 + y1) / 2; g.beginPath(); g.arc(x + 20, cy, 14, Math.PI * 0.5, Math.PI * 2.2); g.stroke(); g.beginPath(); g.arc(x + 44, cy, 9, Math.PI * 1.5, Math.PI * 3.1); g.stroke(); }
+  g.strokeStyle = 'rgba(180,210,255,0.08)'; g.lineWidth = 1; for (let i = 0; i < 120; i++) { let x = Math.random() * W, y = Math.random() * H; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (Math.random() - 0.5) * 30; y += (Math.random() - 0.5) * 30; g.lineTo(x, y); } g.stroke(); }
+  GLAZE = new THREE.CanvasTexture(c); GLAZE.colorSpace = THREE.SRGBColorSpace; GLAZE.anisotropy = 8; GLAZE.wrapS = THREE.RepeatWrapping; return GLAZE;
+}
 // the yin-yang inlaid in the floor: dark bronze and pale gold, as the art draws it
 function emblemTex() {
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'), R = 120, O = 128;
@@ -77,12 +110,25 @@ function pillar(red, gold, x, z, y0, y1) {
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.22, 0.18, 16), gold); cap.position.y = y1 + 0.05; g.add(cap);
   g.position.set(x, 0, z); return shade(g);
 }
-// a blue bronze urn on three short feet
-function urn(bronze, x, z, y) {
-  const prof = [[0.001, 0.06], [0.16, 0.07], [0.22, 0.16], [0.24, 0.26], [0.2, 0.36], [0.16, 0.4], [0.2, 0.44], [0.2, 0.47], [0.15, 0.47], [0.13, 0.42]].map(([r, h]) => new THREE.Vector2(r, h));
-  const g = new THREE.Group(), m = new THREE.Mesh(new THREE.LatheGeometry(prof, 16), bronze); g.add(m);
-  for (let k = 0; k < 3; k++) { const f = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.025, 0.08, 6), bronze); f.position.set(Math.cos(k * 2.09) * 0.13, 0.04, Math.sin(k * 2.09) * 0.13); g.add(f); }
-  const ember = new THREE.Mesh(new THREE.CircleGeometry(0.14, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x2a1a10 })); ember.position.y = 0.43; g.add(ember);
+// an incense burner (the art's blue urns on green feet): a glazed cobalt jar, full in the belly, a short neck and a
+// rolled lip ringed in bronze, a bronze foot-ring on three bronze feet; grey ash in its mouth, three sticks of incense
+// standing in it, their tips glowing
+function urn(mats, x, z, y) {
+  const prof = [[0.001, 0.07], [0.12, 0.07], [0.17, 0.1], [0.215, 0.17], [0.24, 0.25], [0.235, 0.31], [0.205, 0.37], [0.155, 0.41], [0.135, 0.44], [0.14, 0.47], [0.17, 0.5], [0.175, 0.52], [0.15, 0.515], [0.125, 0.48]]
+    .map(([r, h]) => new THREE.Vector2(r, h));
+  const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.LatheGeometry(prof, 48), mats.glaze));
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.168, 0.016, 10, 48), mats.bronze); lip.rotation.x = Math.PI / 2; lip.position.y = 0.515; g.add(lip);
+  const neck = new THREE.Mesh(new THREE.TorusGeometry(0.137, 0.01, 8, 48), mats.bronze); neck.rotation.x = Math.PI / 2; neck.position.y = 0.44; g.add(neck);
+  g.add(new THREE.Mesh(new THREE.LatheGeometry([[0.11, 0.035], [0.135, 0.04], [0.14, 0.075], [0.12, 0.085]].map(([r, h]) => new THREE.Vector2(r, h)), 40), mats.bronze));   // the foot-ring
+  for (let k = 0; k < 3; k++) {   // the feet: short legs curling out at the toe
+    const a = k * 2.094 + 0.5, leg = new THREE.Mesh(new THREE.LatheGeometry([[0.001, 0], [0.032, 0.005], [0.024, 0.03], [0.02, 0.05], [0.028, 0.07], [0.001, 0.075]].map(([r, h]) => new THREE.Vector2(r, h)), 10), mats.bronze);
+    leg.position.set(Math.cos(a) * 0.12, 0, Math.sin(a) * 0.12); leg.rotation.set(Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25); g.add(leg);
+  }
+  const ash = new THREE.Mesh(new THREE.CircleGeometry(0.13, 24).rotateX(-Math.PI / 2), mats.ash); ash.position.y = 0.475; g.add(ash);
+  for (let k = 0; k < 3; k++) {
+    const a = k * 2.3 + x, st = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.22, 5), mats.stick); st.position.set(Math.cos(a) * 0.035, 0.585, Math.sin(a) * 0.035); st.rotation.set(Math.sin(a) * 0.12, 0, Math.cos(a) * 0.12); g.add(st);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.008, 6, 4), mats.ember); tip.position.set(Math.cos(a) * 0.035 + Math.cos(a) * 0.013, 0.695, Math.sin(a) * 0.035 - Math.sin(a) * 0.013); g.add(tip);
+  }
   g.scale.setScalar(1.55); g.position.set(x, y, z); return shade(g);
 }
 // a chain of links between two points of the void's edge, sagging a little, just below the floors
@@ -102,8 +148,9 @@ function setFor(fixedKey) {
     LV = new Levels(MW, MH, 4); const WL = new Levels(MW, MH, 4);
     for (const [x0, z0, x1, z1, y] of R.floors) LV.set(x0, z0, x1, z1, y);
     for (const [x0, z0, x1, z1, y0, y1, n, from] of R.stairs) LV.stairs(x0, z0, x1, z1, y0, y1, n, from);
+    if (R.door) { const [x0, z0, x1, z1] = R.door; LV.stairs(x0, z0, x1, z1, 0, 0.48, 4, 's'); }   // the door's steps: whoever waits on them stands on them, not in them
     for (const [x0, z0, x1, z1] of R.walls) WL.set(x0, z0, x1, z1, 3.2);
-    const goldBrick = T.material(T.bricks(0xc89a1c, 3, 'shrineFloor'), { color: 0xffe8a0, roughness: 0.55, metalness: 0.15, emissive: new THREE.Color(0.06, 0.04, 0) }, [2, 2]);
+    const goldBrick = T.material(sandstone(), { color: 0xffffff, emissive: new THREE.Color(0.025, 0.018, 0) }, [0.667, 0.667]);
     const brickSide = T.material(T.bricks(0x8a5a10, 4, 'shrineFace'), { color: 0xf0c880, roughness: 0.7 }, [1, 1]);
     const cloud = T.material(T.cloudRelief(2, { ground: [[0.32, 0.32, 0.29], [0.42, 0.42, 0.38]], line: [[0.66, 0.66, 0.6], [0.84, 0.84, 0.76]], name: 'stone' }), { roughness: 0.9 }, [0.5, 0.5]);   // grey stone, pale clouds (the art's)
     const wallTop = new THREE.MeshStandardMaterial({ color: 0x18160f, roughness: 1 });
@@ -125,13 +172,16 @@ function setFor(fixedKey) {
     }
     const gold = new THREE.MeshStandardMaterial({ color: 0xe8b830, metalness: 0.85, roughness: 0.3, emissive: 0x3a2400, emissiveIntensity: 0.6 });
     const red = new THREE.MeshStandardMaterial({ color: 0x6a1a1c, roughness: 0.45, metalness: 0.1 });
-    const bronze = new THREE.MeshStandardMaterial({ color: 0x1a5a9a, metalness: 0.55, roughness: 0.4, emissive: 0x041428 });
+    const urnM = { glaze: new THREE.MeshPhysicalMaterial({ map: glazeTex(), roughness: 0.28, clearcoat: 0.8, clearcoatRoughness: 0.15, emissive: 0x040a1c }),
+      bronze: T.material(T.bronze(), { color: 0xc89058, metalness: 0.85, roughness: 0.38 }, [2, 2]),
+      ash: new THREE.MeshStandardMaterial({ map: T.material(T.dirt(0x8a8680, 'shrineAsh'), {}).map, color: 0xb0aca4, roughness: 1 }),
+      stick: new THREE.MeshStandardMaterial({ color: 0x8a3a1a, roughness: 0.8 }), ember: new THREE.MeshBasicMaterial({ color: 0xffa040 }) };
     const iron = new THREE.MeshStandardMaterial({ color: 0x6a4a24, metalness: 0.7, roughness: 0.5 });
     const wallFront = (x) => R.walls.filter(([a, , b]) => x >= a && x < b).reduce((m, [, , , z1]) => Math.max(m, z1), 0);
     for (const [x] of R.statues) { const z = wallFront(x) + 0.18; S.add(statue(gold, x, z, LV.at(x, z + 0.4) || (k === 2 ? UP : 0))); }   // each in its alcove on the wall's face
     for (const [x, z] of R.pillars) S.add(pillar(red, M.gold, x, z, isNaN(LV.H[Math.floor(z * 4) * MW * 4 + Math.floor(x * 4)]) ? BASE : LV.at(x, z), 3.0));
     for (const [x0, z0, x1, z1] of R.footings || []) S.add(shade(box(brickSide, x0, -2.5, z0, x1, 0.05, z1)));
-    for (const [x, z] of R.urns) S.add(urn(bronze, x, z, LV.at(x, z)));
+    for (const [x, z] of R.urns) S.add(urn(urnM, x, z, LV.at(x, z)));
     const em = new THREE.MeshStandardMaterial({ map: emblemTex(), roughness: 0.5, metalness: 0.2, transparent: true, polygonOffset: true, polygonOffsetFactor: -2 });
     for (const [x, z, r] of R.emblems) { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), em); m.position.set(x, LV.at(x, z) + 0.006, z); m.receiveShadow = true; S.add(m); }
     for (const [a, b] of R.chains) S.add(chain(iron, a, b, k === 2 && a[1] < 14 ? UP - 0.25 : -0.25));

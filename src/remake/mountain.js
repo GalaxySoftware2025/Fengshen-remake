@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import * as T from '../kit/tex.js';
 import { mats, chest } from '../kit/parts.js';
 import { readLayout, Land, CL, grass, stones, shrubs, windTick } from '../kit/terrain.js';
-import { trees, mouth } from './seacave.js';
+import { trees, mouth, sprigTex } from './seacave.js';
 import { flowerSpots, flowers } from './grassland.js';
 import { D, G } from '../rules.js';
 
@@ -71,13 +71,38 @@ const V = {
   },
 };
 
-// a standing stone: a pale weathered menhir, rounder at its head, leaning a little
+// a standing stone (the art's ochre stumps): rough-hewn, oval in section, scored by deep vertical grooves where the rain
+// has run, its head worn round and chipped, the foot a little wider and sunk in the turf; lichen pale on the weather
+// side, moss and shadow green at the foot, the grooves dark
 function menhir(mat, x, z, y, h) {
-  const prof = []; for (let k = 0; k <= 10; k++) { const t = k / 10; prof.push(new THREE.Vector2(0.15 * (1 - 0.25 * t) * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, t - 0.7) / 0.3, 2))) + 0.004, t * h)); }
-  const geo = new THREE.LatheGeometry(prof, 12), p = geo.attributes.position; geo.translate(0, -h / 2, 0);
-  for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)), n = 1 + Math.sin(a * 3 + x * 5) * 0.08 + Math.sin(a * 5 + z) * 0.05; p.setX(i, p.getX(i) * n); p.setZ(i, p.getZ(i) * n * 0.8); }
+  const seed = Math.floor(x * 7 + z * 13), geo = new THREE.CylinderGeometry(1, 1, 1, 28, 18, false), p = geo.attributes.position, cols = [];
+  const rr = q => { const t = Math.sin(seed * 12.9898 + q * 78.233) * 43758.5453; return t - Math.floor(t); };
+  const FURROWS = Array.from({ length: 2 + Math.floor(rr(1) * 2) }, (_, j) => [rr(j + 2) * Math.PI * 2, 0.18 + rr(j + 7) * 0.2, 0.1 + rr(j + 11) * 0.12]);
+  const w = 0.15 + ((seed * 37) % 7) * 0.006, d = w * (0.72 + ((seed * 11) % 5) * 0.04), lean = [Math.sin(seed) * 0.04, Math.cos(seed * 1.7) * 0.03];
+  const fbm = (u, v, f, s2) => T.fbm(((u % 1) + 1) % 1, ((v % 1) + 1) % 1, f, 3, seed + s2);
+  for (let i = 0; i < p.count; i++) {
+    const px = p.getX(i), pz = p.getZ(i), v = p.getY(i) + 0.5, r0 = Math.hypot(px, pz), a = Math.atan2(pz, px), u = a / (Math.PI * 2) + 0.5;
+    if (r0 < 1e-3) { p.setXYZ(i, lean[0] * v * h, (v - 0.5) * h, lean[1] * v * h); cols.push(v, 0, 0.5); continue; }   // (the caps' centres: on the axis)
+    let groove = 0; for (const [ga, gw, gd] of FURROWS) { let da = Math.abs(((a - ga - (fbm(0.3, v * 0.5, 3, 1) - 0.5) * 0.6) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI); groove += Math.exp(-da * da / (gw * gw)) * gd * (0.4 + fbm(ga, v, 3, 2) * 1.2); }
+    groove += (0.5 + 0.5 * Math.sin(v * h * 22 + fbm(u, v, 3, 6) * 5)) * 0.025;   // the bedding, faint rings round it
+    const tilt = v + px * 0.06, head = tilt > 0.84 ? Math.sqrt(Math.max(0, 1 - Math.pow((tilt - 0.84) / 0.2, 2))) : 1, foot = 1 + Math.max(0, 0.1 - v) * 1.6;
+    const rough = 1 + (fbm(u, v * 0.5, 2, 3) - 0.5) * 0.3 + (fbm(u, v, 9, 8) - 0.5) * 0.1 - groove, chip = v > 0.85 ? (fbm(u, 0.3, 4, 4) - 0.5) * 0.14 : 0;
+    const k = Math.max(0.15, head) * foot * rough, yy = (v - 0.5 + chip) * h;
+    p.setXYZ(i, px * w * k + lean[0] * v * h, yy, pz * d * k + lean[1] * v * h);
+    cols.push(v, groove, fbm(u, v, 5, 5));
+  }
   geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, mat); m.position.set(x, y + h / 2 - 0.04, z); m.rotation.set(Math.sin(x * 3) * 0.06, x * 1.3, Math.cos(z * 2) * 0.06);
+  const nr = geo.attributes.normal, C = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const [v, groove, n] = [cols[i * 3], cols[i * 3 + 1], cols[i * 3 + 2]], weather = Math.max(0, -nr.getX(i) * 0.6 + nr.getY(i) * 0.5 + nr.getZ(i) * 0.3);
+    let c = [1.0 + n * 0.25, 0.86 + n * 0.2, 0.62 + n * 0.15];
+    const dark = 1 - Math.min(0.55, groove * 4.5); c = c.map(q => q * dark);
+    const lich = Math.max(0, n - 0.55) * 2.2 * weather; c = c.map((q, j) => q + ([1.15, 1.12, 0.98][j] - q) * Math.min(0.6, lich));
+    const moss = Math.max(0, 1 - v * 5) * (0.6 + n * 0.6); c = c.map((q, j) => q + ([0.42, 0.55, 0.26][j] - q) * Math.min(0.85, moss));
+    C.set(c, i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y + h / 2 - 0.06, z); m.rotation.y = seed * 0.9;
   m.castShadow = m.receiveShadow = true; return m;
 }
 
@@ -124,14 +149,14 @@ function setFor(key) {
       list.push([x + 0.3 + hash(x, y, 1) * 0.4, y + 0.35 + hash(x, y, 2) * 0.4, (0.85 + hash(x, y, 3) * 0.3) * (front ? 0.55 : 1)]); treeCells.push([x, y]);
     }
     S.add(trees(list, (x, z) => land.at(x, z), v.leaves, v.snow ? 0xa89488 : 0xd88a6a));
-    if (bush.length) S.add(shrubs(bush, { size: 0.55, cols: v.snow ? ['#c8d6e4', '#e8eef6', '#8aa0b4', '#2e4a3a'] : ['#2f5a1e', '#3e6e26', '#4f8230', '#26481a'] }));
-    if (v.stones.length) { const sm = T.material(T.plaster(0xd8c8a0), { color: 0xf4e8cc, roughness: 0.9 }, [0.5, 0.5]); for (const [x, z, h] of v.stones) S.add(menhir(sm, x, z, land.at(x, z), h)); }   // (smooth weathered stone: the rock texture's strata read as stacked rings)
+    if (bush.length) S.add(shrubs(bush, { size: 0.55, tex: sprigTex(v.snow ? ['#8aa0b4', '#2e4a3a', '#c8d6e4', '#e8eef6'] : ['#26481a', '#2f5a1e', '#3e6e26', '#4f8230']) }));
+    if (v.stones.length) { const sm = T.material(T.rock(0xb08c58, 'menhirStone', 0.35), { color: 0xffffff, vertexColors: true, roughness: 0.95 }, [0.6, 0.6]); for (const [x, z, h] of v.stones) S.add(menhir(sm, x, z, land.at(x, z), h)); }   // (smooth weathered stone: the rock texture's strata read as stacked rings)
     // the chests as left (a battle's room keeps them; a scene shows the map's own)
     const chests = D.rooms && G.chests ? G.chests : (D.chests || []).map(c => Object.assign({ open: false }, c));
     for (const c of chests) if (!c.hidden || c.open) { const o = chest(M, c.x + 0.5, c.y + 0.5, land.at(c.x + 0.5, c.y + 0.5), !!c.open, 0, 1.4); S.add(o); chestG.set(c.x + ',' + c.y, o); }
     const open = (x, z) => !list.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < 0.35) && Math.hypot(x - mo.x, z - mo.z - 0.3) > 0.7 && !chests.some(c => Math.abs(x - c.x - 0.5) < 0.6 && Math.abs(z - c.y - 0.5) < 0.6);
     S.add(grass(land.scatter(CL.grass, v.snow ? 6 : 60, open), { size: v.snow ? 0.28 : 0.38, cols: v.grassCols }));
-    S.add(stones(land.scatter(CL.rock, 6, () => true), rockM, { size: 0.3 }));   // the ridges as heaps of boulders
+    S.add(stones(land.scatter(CL.rock, 6, (x, z) => [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]].every(([a, b]) => !walk(Math.floor(x + a), Math.floor(z + b)))), rockM, { size: 0.3 }));   // the ridges as heaps of boulders (kept off the cells a unit can reach: over their edge they stood in them)
     if (v.flowers) S.add(flowers((await flowerSpots(v.art, v.flowers)).filter(f => open(f.x, f.z)), (x, z) => land.at(x, z)));
     E.world.updaters.push((dt, t) => windTick(t));
   }
@@ -140,7 +165,7 @@ function setFor(key) {
     const p = g ? g.position : new THREE.Vector3(x + 0.5, land.at(x + 0.5, y + 0.5), y + 0.5); if (g) S.remove(g);
     const o = chest(M, p.x, p.z, p.y, true, 0, 1.4); S.add(o); chestG.set(x + ',' + y, o);
   }
-  return { build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, mood: v.mood, get props() { return v.stones.map(([x, z]) => [Math.floor(x), Math.floor(z)]).concat(v.bare || [], treeCells); } };   // (the stones' and the trees' cells: a model blocks them, tools/qa/sets.js)
+  return { build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, mood: v.mood, particles: v.snow ? 'snow' : null, get props() { return v.stones.map(([x, z]) => [Math.floor(x), Math.floor(z)]).concat(v.bare || [], treeCells); } };   // (the stones' and the trees' cells: a model blocks them, tools/qa/sets.js)
 }
 export const holyMount = setFor('0f0fdc');
 export const qilinMount = setFor('0f2d64');

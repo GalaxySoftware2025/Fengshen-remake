@@ -35,9 +35,6 @@ const on = (cells, u) => cells.some(([x, y]) => u.x === x && u.y === y);
 
 export default {
   n: 4,
-  load(D) {   // the map art draws no chest at (18, 3)
-    D.chests = D.chests.map(c => c.x === 18 && c.y === 3 ? Object.assign({}, c, { hidden: true }) : c);
-  },
   setup(G) { G.beats = 0; G.joined = []; },
   beforeTurn(G) {
     const out = [];

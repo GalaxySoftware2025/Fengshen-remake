@@ -26,9 +26,6 @@ export const OUTRO = sayList(0x0EB4E8).map((l, i) => i === 0 ? { who: l.who, tex
 
 export default {
   n: 5,
-  load(D) {   // the map art draws no chest at (15, 1) or (2, 18): found by striking their cells
-    D.chests = D.chests.map(c => (c.x === 15 && c.y === 1) || (c.x === 2 && c.y === 18) ? Object.assign({}, c, { hidden: true }) : c);
-  },
   setup(G) { G.beats = 0; },
   beforeTurn(G) {
     if (!(G.beats & 1) && ai(18) !== 7) { wake(10, 11); G.beats |= 1; }

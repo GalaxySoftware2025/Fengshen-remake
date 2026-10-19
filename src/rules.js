@@ -44,13 +44,13 @@ export function expFor(a, d, killed) {           // [ROM] 0x12372
 }
 
 // ---------------------------------------------------------------- state
-export const G = { units: [], round: 0, terrain: [], over: null, triggerFired: false, chests: [], found: [] };
+export const G = { units: [], round: 0, terrain: [], over: null, triggerFired: false, chests: [], found: [], chestFlags: {} };   // chestFlags: ff3252, kept across battles (campaign.js)
 export function makeUnit(src, side, extra) {
   return Object.assign({
     side, name: src.name, cid: src.cid, sprite: src.sprite, lv: src.lv, atk: src.atk, df: src.df, spd: src.spd,
     hp: src.hp, mhp: src.mhp, mp: src.mp, mmp: src.mmp, exp: src.exp || 0, move: src.move, moveType: src.moveType,
     rangeShape: src.rangeShape || 0, atkType: src.atkType ?? (side === 'player' ? ((globalThis.ACTIONS || {}).heroes || {})[src.cid] : undefined),   // 0 / 1 a weapon swung with its piece, 2 a bow
-    items: (src.items || []).slice(), spells: (src.spells || []).slice(),
+    items: (src.items || []).slice(), spells: (src.spells || []).slice(), drop: src.drop ?? null,   // drop: the item its spawn record gives it to hold (+0x12 [ROM 0x13344]), handed over when it falls
     ai: src.ai, aggro: src.aggro, aip: src.aip ? src.aip.slice() : null, growth: src.growth, cls: src.cls, elem: src.elem,
     x: 0, y: 0, facing: 'down', alive: true,   // (a fresh record's +1: 0, down; the battle opens with the heroes so [ROM: the deploy copies their records, 0x6B4A])
     status: { sleep: 0, seal: 0, poison: 0 }, buf: {},
@@ -148,8 +148,11 @@ export function loadBattle(B, party, hooks, tweak) {
     // takes an exit); where the room table's first record is the next room's again (battles 14 and 15: both entries point
     // at the lair, and no way leads back), the first room is that map, not the lair
     const same = (a, b) => b && a.w === b.w && a.h === b.h && JSON.stringify(a.terrain) === JSON.stringify(b.terrain);
-    if (same(D.rooms[0], D.rooms[1]) && (D.rooms[0].w !== B.mapW || D.rooms[0].h !== B.mapH)) D.rooms[0] = Object.assign({}, D.rooms[0], { w: B.mapW, h: B.mapH, terrain: B.terrain, chests: B.chests || [], enemies: [] });
-    G.room = (hooks && hooks.startRoom) || 0; D.chests = D.rooms[G.room].chests; G.chests = null;   // (battle 17 opens in room 2, its own map)
+    if (same(D.rooms[0], D.rooms[1]) && (D.rooms[0].w !== B.mapW || D.rooms[0].h !== B.mapH)) D.rooms[0] = Object.assign({}, D.rooms[0], { w: B.mapW, h: B.mapH, terrain: B.terrain, chests: B.chests || [], chestTable: B.chestTable, enemies: [] });
+    // the room it opens in (battle 17's room 2, its own map) holds the header's chests: the battle loader reads the
+    // header's chest table (+0x20 [ROM 0x13240]), a room record's (+0x3C) only when a hero takes an exit (battle 12's
+    // room 0 names battle 10's table; its battle opens on the header's, empty)
+    G.room = (hooks && hooks.startRoom) || 0; D.rooms[G.room] = Object.assign({}, D.rooms[G.room], { chests: B.chests || [], chestTable: B.chestTable }); D.chests = D.rooms[G.room].chests; D.chestTable = B.chestTable; G.chests = null;
   }
   SHAPES[1] = D.shapes.s1;
   H = hooks || {};
@@ -206,14 +209,14 @@ export function startRound() {
 }
 export function setupBattle(chosen) {
   const k0 = H.startRoom || 0;   // (a battle in rooms starts in the first; battle 17's hook puts it in room 2 before anyone moves, 0x0F3C50)
-  if (D.rooms) { const r = D.rooms[k0]; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; MAP_W = r.w; MAP_H = r.h; }
+  if (D.rooms) { const r = D.rooms[k0]; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; D.chestTable = r.chestTable; MAP_W = r.w; MAP_H = r.h; }
   G.units = []; G.round = 0; G.terrain = D.terrain.map(r => r.slice()); G.over = null; G.triggerFired = false;
-  G.chests = (D.chests || []).map(c => ({ x: c.x, y: c.y, item: c.item, hidden: !!c.hidden, open: false })); G.found = [];
+  G.chests = loadChests(D.chests, D.chestTable); G.found = [];
   const at = p => { const k = (D.party || []).findIndex(q => q.cid === p.cid); return k < 0 ? 99 : k; };
   [...chosen].sort((a, b) => at(a) - at(b))   // in roster order, whoever was picked first or forced (battle 8: 黃飛虎 on the north bank, (15, 13), where scene 15 leaves him; 楊戩 at (7, 21): the user's report)
     .forEach((p, i) => { const u = makeUnit(p, 'player', { slot: i }); [u.x, u.y] = D.deploy[i]; G.units.push(u); });   // slots 0.. in deploy order, as the ROM's
   for (const e of D.enemies) spawn(e);
-  if (D.rooms) { G.room = k0; G.roomChests = {}; }
+  if (D.rooms) G.room = k0;
   if (H.setup) H.setup(G);
 }
 function spawn(e) {
@@ -245,18 +248,18 @@ export function roomExit() {
   return 0;
 }
 // into room k: its map; the heroes on its cells by slot (coming back, its back cells), facing down; its enemies spawned
-// afresh (a room left and entered again is full again); its chests as they were left (the opened flags ff3252 stay);
+// afresh (a room left and entered again is full again); its chests loaded afresh from its table, as the ROM's room change does
+// (0x1D6F8, 0x1E42E: a chest opened before is closed again and holds its second item, loadChests);
 // the round count back to 0
 export function enterRoom(k, back = false) {
   const r = D.rooms[k];
-  if (G.chests) G.roomChests[G.room] = G.chests;
-  G.room = k; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; MAP_W = r.w; MAP_H = r.h;
+  G.room = k; D.mapW = r.w; D.mapH = r.h; D.terrain = r.terrain; D.chests = r.chests; D.chestTable = r.chestTable; MAP_W = r.w; MAP_H = r.h;
   G.terrain = r.terrain.map(row => row.slice());
   const cells = (back ? r.back : r.fwd).cells;
   G.units = G.units.filter(u => u.side === 'player');
   for (const u of G.units) { if (!u.alive) continue; const c = cells[u.slot]; if (c) [u.x, u.y] = c; u.facing = 'down'; }
   for (const e of r.enemies) spawn(e);
-  G.chests = G.roomChests[k] || r.chests.map(c => ({ x: c.x, y: c.y, item: c.item, hidden: !!c.hidden, open: false }));
+  G.chests = loadChests(r.chests, r.chestTable);
   G.round = 0;
 }
 // a guest on the heroes' side (battles 6 and 7's 文王, side 'player', guest): no one commands him, his turn is his AI's
@@ -343,12 +346,35 @@ export function chestTargets(u, r) {          // chest -> the cheapest reachable
   }
   return out;
 }
+// an item given to a hero [ROM 0x13012]: into the first free hand, unless it is equipment or the hands are full: then
+// the bag (G.found, after the battle); ids past the item table (0x24 on: battle 17's note) are nothing [ROM 0x0F4D8]
+function give(u, id) {
+  const it = D.items[id];
+  if (!it) return null;
+  if (!it.equip && u.items.length < MAX_HELD) u.items.push(id); else G.found.push(id);
+  return it;
+}
+// a chest table loaded [ROM 0x1AFF6, at a battle's start and each room change]: every chest closed; one opened before
+// (its bit, 7 - slot, set in the table's flag byte, ff3252 = G.chestFlags) holds its second item instead, `again` (byte 3:
+// 金創藥 for nearly all: battle 12's 疾風種子 only the first time). The flags outlive the battle (campaign.js keeps them):
+// the original clears the table's on a defeat (0x8CC) because a defeat there loses what was found; the remake's heroes
+// keep it [the user's call], so the flags stay too and a chest's special item comes once
+export function loadChests(list, table) {
+  const f = (table != null && G.chestFlags && G.chestFlags[table]) || 0;
+  return (list || []).map(c => ({ x: c.x, y: c.y, item: c.slot != null && (f >> (7 - c.slot)) & 1 && c.again != null ? c.again : c.item, hidden: !!c.hidden, open: false, table, slot: c.slot }));
+}
 export function openChest(u, ch) {
   ch.open = true; faceTo(u, ch.x, ch.y);
-  const it = D.items[ch.item];
-  if (!it) return null;
-  if (!it.equip && u.items.length < MAX_HELD) u.items.push(ch.item); else G.found.push(ch.item);
-  return it;
+  if (ch.table != null && ch.slot != null) { G.chestFlags = G.chestFlags || {}; G.chestFlags[ch.table] = (G.chestFlags[ch.table] || 0) | (1 << (7 - ch.slot)); }   // [0x1BB58]
+  return give(u, ch.item);
+}
+// an enemy's drop [ROM 0x21420, the action's casualties]: each enemy the action leaves at 0 HP hands the item it holds to
+// the unit acting (0xFF0E18), the original's 「得到」 box and chime after (0x129B0, 0x12ABE); the end-of-battle rout's
+// deaths hand nothing (0x1DA7C)
+export function takeDrop(u, dead) {
+  if (dead.side !== 'enemy' || dead.drop == null || u.side !== 'player') return null;
+  const id = dead.drop; dead.drop = null;
+  const it = give(u, id); return it ? { id, it } : null;
 }
 // AI 9 [ROM 0x1EE96]: go to the cell (+34, +35), attacking nothing on the way; there, the AI becomes +37 and +34-36
 // take +38-3A (battle 2: the escort falls back to it and waits, dormant, for the hero to come near)

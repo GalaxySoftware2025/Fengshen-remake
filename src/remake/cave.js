@@ -32,18 +32,6 @@ let bub = null, spl = null, wetCells = [], land = null, chestG = new Map(), M = 
 
 // the void's side of an exit cell (where its tunnel opens): the first neighbour that is void
 export const voidSide = (tc, x, y) => [[0, -1], [1, 0], [-1, 0], [0, 1]].find(([dx, dy]) => tc(x + dx, y + dy) === 1) || [0, -1];
-// a spire: three or four barnacled rock cones leaning together
-export function spire(mat, x, z, y, s) {   // (also 火巖窟's boulders, src/remake/firecave.js)
-  const g = new THREE.Group();
-  for (let k = 0; k < 4; k++) {
-    const h = s * (0.9 - k * 0.18), r = s * (0.24 - k * 0.03), c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 9, 3), mat);
-    const p = c.geometry.attributes.position; for (let i = 0; i < p.count; i++) { const yy = p.getY(i); p.setX(i, p.getX(i) * (1 + Math.sin(yy * 9 + k) * 0.12)); }
-    c.geometry.computeVertexNormals();
-    c.position.set(x + (k ? Math.cos(k * 2.2) * s * 0.22 : 0), y + h / 2 - 0.05, z + (k ? Math.sin(k * 2.2) * s * 0.16 : 0)); c.rotation.set(Math.sin(k) * 0.12, k, Math.cos(k) * 0.12);
-    g.add(c);
-  }
-  return shade(g);
-}
 // 海龍洞's spires [the user's call: the leaning cones read as triangles]: two or three craggy columns of barnacled rock
 // leaning together, each a many-sided column pushed in and out by noise round it and up it (ledges, hollows, a broken
 // top) and bent a little, fallen stones at its foot

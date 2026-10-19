@@ -5,7 +5,7 @@
 // Space plays at 4x, Esc skips to the end of the part. Court scenes (only 紂王's court speaking) get the cutaway look.
 import * as THREE from 'three';
 import * as R from './rules.js';
-import { spriteKey } from './sprites.js';
+import { spriteKey, FLYING_FOES } from './sprites.js';
 import { emoteTexture, FRAMES as EMOTE_FRAMES } from './emotes.js';
 import { registerSets, setFor, dress } from './sets.js';
 import REMADE from './remake/index.js';
@@ -211,6 +211,7 @@ export async function play(E, tag, part, hooks) {
       }
       const wx = x / 32 + 0.5, wz = y / 32 + 0.5, P = E.tileCenter(wx - 0.5, wz - 0.5);
       act.pos.set(wx, P.y, wz); act.off.set(0, 0);
+      if (FLYING_FOES.has(p[3]) && !act.over) { act.over = true; for (const m of [act.mesh, act.big]) { m.material.depthTest = false; m.renderOrder = 6.5; } }   // a flying enemy over the scenery, as in battle (battle.js syncActors)
       if (p[3] === WINGED && !act.hover) act.hover = 0.7;   // 雷震子 flies: held in the air, so our tilted view keeps the gap the original shows (scene 15: he hung on 文王 before taking him up, the user)
       const sk = strikes.find(e => e.slot === slot && t >= e.f && t < e.hit + 40);
       if (sk) strike(sk, act, t, snap);

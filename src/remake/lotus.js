@@ -1,7 +1,8 @@
 // 沁蓮園, 聞太師's treasure garden of lotus ponds (battle 17's eight rooms; scene 35's maps 0f3b58 = room 2 and 0f3b98 =
-// room 0), remade from each room's own art and terrain, as all eight share one tileset: walkways and terraces of pale
-// flagstones over dark ponds of lily pads and red lotus buds, faced with brick, edged with balustrades of capped posts,
-// carved drum columns, stairs between the levels, grass banks with pebble shores (room 2's meadow).
+// room 0), remade from each room's own art and terrain, as all eight share one tileset: walkways and terraces of large
+// worn limestone flags over dark ponds of lily pads and lotus buds, faced with damp brick, edged with balustrades of
+// turned posts and carved panels, fluted drum columns, stairs between the levels, grass banks with shingle shores (room
+// 2's meadow). The tops are one material: the flags where paved, grass, shingle and the ponds' bed by the cells' classes.
 //   classify  each cell of the art by its colours against the tileset's surfaces (PROTO: the share of each palette colour
 //             in a cell of water, grass, pebble bank, flagstone, stairs, balustrade, brick face, column; measured on rooms
 //             0, 2 and 4) and the battle's terrain (walkable or not)
@@ -13,7 +14,8 @@
 import * as THREE from 'three';
 import * as T from '../kit/tex.js';
 import { Levels, mats, box, chest, shade, merged, stairs } from '../kit/parts.js';
-import { grass, stones, shrubs, windTick } from '../kit/terrain.js';
+import { grass, shrubs, windTick } from '../kit/terrain.js';
+import { sprigTex } from './seacave.js';
 import { D, G } from '../rules.js';
 
 const PROTO = {
@@ -147,31 +149,163 @@ function pondWater() {
   m.customProgramCacheKey = () => 'lotusWater';
   return m;
 }
-// the top of every floor: flagstones where the walk is, grass, pebbles, the pond's dark bed, from the cells' classes
-function floorTex(cls, h, MW, MH) {
-  const S = 64, c = document.createElement('canvas'); c.width = MW * S; c.height = MH * S; const g = c.getContext('2d');
-  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-    const k = cls[y][x], X = x * S, Y = y * S;
-    if (k === 'G') { g.fillStyle = '#4a5a1c'; g.fillRect(X, Y, S, S); for (let i = 0; i < 70; i++) { g.fillStyle = R(x * 31 + y * 7 + i) < 0.5 ? 'rgba(110,120,40,0.6)' : 'rgba(30,50,10,0.5)'; g.fillRect(X + R(i + x) * S, Y + R(i * 3 + y) * S, 2, 3); } }
-    else if (k === 'K') { g.fillStyle = '#8a8670'; g.fillRect(X, Y, S, S); for (let i = 0; i < 26; i++) { g.fillStyle = `rgb(${150 + R(i + x) * 60 | 0},${145 + R(i + y) * 55 | 0},${120 + R(i * 2) * 50 | 0})`; g.beginPath(); g.ellipse(X + R(i * 5 + x) * S, Y + R(i * 7 + y) * S, 3 + R(i) * 5, 2 + R(i + 1) * 4, R(i) * 3, 0, 7); g.fill(); } }
-    else if (k === 'W') { g.fillStyle = '#16201a'; g.fillRect(X, Y, S, S); }
-    else {   // flagstones: two by two a cell, pale, joints dark, each stone a little different
-      for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) { const v = 0.92 + R(x * 13 + y * 29 + i + j * 2) * 0.12; g.fillStyle = `rgb(${190 * v | 0},${184 * v | 0},${150 * v | 0})`; g.fillRect(X + i * S / 2, Y + j * S / 2, S / 2, S / 2);
-        for (let n = 0; n < 14; n++) { g.fillStyle = R(n + i + x) < 0.5 ? 'rgba(90,70,40,0.25)' : 'rgba(255,250,220,0.3)'; g.fillRect(X + i * S / 2 + R(n * 3 + y) * S / 2, Y + j * S / 2 + R(n * 7 + x) * S / 2, 3, 2); } }
-      g.strokeStyle = 'rgba(60,44,24,0.8)'; g.lineWidth = 2; g.strokeRect(X + 1, Y + 1, S / 2 - 1, S / 2 - 1); g.strokeRect(X + S / 2, Y + 1, S / 2 - 1, S / 2 - 1); g.strokeRect(X + 1, Y + S / 2, S / 2 - 1, S / 2 - 1); g.strokeRect(X + S / 2, Y + S / 2, S / 2 - 1, S / 2 - 1);
-    }
-  }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1, MW / MH); t.offset.set(0, 1); return t;
+// the walk's paving (the art's pale cream squares, two by two a cell): large worn limestone flags, each its own shade,
+// bevelled and chipped at the edges, grime in the joints, a crack here and there; calm (DESIGN.md §2: large, flat, worn)
+function flagTex() {   // one repeat = two cells (LV.mesh k 0.5): four flags across
+  return T.pbr('lotusFlag3', 1024, (u, v, o) => {
+    const fu = u * 4, fv = v * 4, iu = Math.floor(fu), iv = Math.floor(fv), x = fu - iu, y = fv - iv;
+    const id = T.pnoise(iu, iv, 4, 201, 4), id2 = T.pnoise(iu + 0.5, iv + 0.5, 4, 202, 4);
+    const chip = (T.fbm(u, v, 28, 3, 203) - 0.5) * 0.04, e = Math.min(x, 1 - x, y, 1 - y) + chip;
+    const joint = T.smooth(0.03, 0.012, e), bevel = T.smooth(0.0, 0.09, e);
+    const grain = T.pnoise(u * 300, v * 300, 300, 204), cloud = T.fbm(u, v, 5, 4, 205), wear = T.fbm(u, v, 14, 3, 206);
+    const [w0, w1] = T.worley(u, v, 7, 207, 0.9), crack = id2 > 0.8 ? T.smooth(0.01, 0.0, w1 - w0) * T.smooth(0.04, 0.1, e) : 0;
+    let c = T.mixc([0.52, 0.49, 0.4], [0.7, 0.66, 0.55], id * 0.6 + cloud * 0.4);
+    c = T.mixc(c, [0.5, 0.45, 0.34], T.smooth(0.6, 0.8, grain) * 0.3);
+    c = T.mixc(c, [0.46, 0.42, 0.32], T.smooth(0.16, 0.0, e) * 0.35 + T.smooth(0.58, 0.8, T.fbm(u, v, 3, 3, 208)) * 0.2);   // grime toward the joints, and in broad patches
+    c = T.mixc(c, c.map(q => q * 0.8), 1 - bevel); c = T.mixc(c, [0.3, 0.26, 0.18], crack * 0.7); c = T.mixc(c, [0.26, 0.23, 0.17], joint * 0.8);
+    o.c = c; o.h = 0.3 + bevel * 0.45 + (wear - 0.5) * 0.08 - crack * 0.25 - joint * 0.2; o.r = 0.8 - bevel * (1 - cloud) * 0.15 + joint * 0.12;
+  }, 3);
 }
-// a carved drum column: a round shaft with bands of relief, a wide base and cap
+// the pebble shore (the art's pale banks between the meadow and the ponds): fine grey shingle, a few flat stones, damp
+function shingleTex() {
+  return T.pbr('lotusShingle', 512, (u, v, o) => {
+    const n = T.fbm(u, v, 40, 3, 211), big = T.fbm(u, v, 4, 3, 212), [w0, w1, id] = T.worley(u, v, 9, 213, 0.9), flat = T.smooth(0.0, 0.08, w1 - w0) * T.smooth(0.7, 0.85, id);
+    let c = T.mixc([0.42, 0.4, 0.34], [0.6, 0.58, 0.5], n * 0.6 + big * 0.4);
+    c = T.mixc(c, [0.66, 0.64, 0.56], flat * 0.5);
+    o.c = c; o.h = 0.4 + n * 0.2 + flat * 0.2; o.r = 0.85 - flat * 0.1;
+  }, 2);
+}
+// the faces under the walks (the art's dark brown courses): long fired bricks, worn and bevelled, each its own shade,
+// darker mortar; DAMP darkens them toward the waterline
+function brickTex() {   // five courses a unit, two bricks across
+  return T.pbr('lotusBrick3', 1024, (u, v, o) => {
+    const rows = 5, ry = Math.floor(v * rows), fy = v * rows - ry, bx = u * 2 + (ry % 2) * 0.5, ix = Math.floor(bx), fx = bx - ix;
+    const id = T.pnoise(((ix % 2) + 2) % 2, ry, 2, 221, rows), chip = (T.fbm(u, v, 24, 3, 222) - 0.5) * 0.05;
+    const e = Math.min(Math.min(fx, 1 - fx) * 2 / rows * 2.5, Math.min(fy, 1 - fy)) + chip, mortar = T.smooth(0.07, 0.035, e), bevel = T.smooth(0.03, 0.2, e);
+    const n = T.fbm(u, v, 10, 4, 223), grain = T.pnoise(u * 200, v * 200, 200, 224);
+    let c = T.mixc([0.3, 0.22, 0.15], [0.48, 0.36, 0.25], id * 0.6 + n * 0.4);
+    c = T.mixc(c, [0.22, 0.16, 0.1], T.smooth(0.62, 0.82, grain) * 0.3);
+    c = T.mixc(c, c.map(q => q * 0.78), 1 - bevel); c = T.mixc(c, [0.16, 0.13, 0.1], mortar);
+    o.c = c; o.h = 0.3 + bevel * 0.4 + n * 0.08 - mortar * 0.25; o.r = 0.85;
+  }, 3);
+}
+// pale carved limestone (the balustrades' posts, caps and panels, the stair treads): fine grain, faint cloud
+function stoneTex() {
+  return T.pbr('lotusStone', 512, (u, v, o) => {
+    const n = T.fbm(u, v, 6, 4, 231), g = T.pnoise(u * 160, v * 160, 160, 232), p = T.smooth(0.6, 0.8, T.fbm(u, v, 3, 3, 233));
+    let c = T.mixc([0.66, 0.63, 0.53], [0.8, 0.77, 0.66], n);
+    c = T.mixc(c, [0.54, 0.5, 0.4], T.smooth(0.62, 0.82, g) * 0.3 + p * 0.25);
+    o.c = c; o.h = 0.5 + n * 0.1 + g * 0.04; o.r = 0.72;
+  }, 1);
+}
+// a balustrade panel's face (BoxGeometry's own 0..1 on each face): a recessed field in a raised frame, a carved rosette
+function panelTex() {
+  return T.pbr('lotusPanel3', 512, (u, v, o) => {
+    const ex = Math.min(u, 1 - u) * 2.2, ey = Math.min(v, 1 - v), e = Math.min(ex, ey), frame = T.smooth(0.16, 0.12, e), lip = T.smooth(0.1, 0.13, e) * T.smooth(0.17, 0.14, e);
+    const dx = (u - 0.5) * 2.2, dy = v - 0.5, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    const petal = T.smooth(0.3, 0.26, r / (0.75 + 0.25 * Math.cos(a * 8))) * T.smooth(0.0, 0.04, r), eye = T.smooth(0.07, 0.05, r);
+    const n = T.fbm(u, v, 6, 4, 241), g = T.pnoise(u * 120, v * 120, 120, 242);
+    let c = T.mixc([0.66, 0.63, 0.53], [0.8, 0.77, 0.66], n);
+    c = T.mixc(c, [0.54, 0.5, 0.4], T.smooth(0.62, 0.82, g) * 0.3);
+    const field = 1 - frame, relief = Math.max(petal * 0.8, eye);
+    c = c.map(q => q * (1 - field * 0.18 + relief * 0.14 - lip * 0.25));
+    o.c = c; o.h = 0.5 + frame * 0.3 + relief * 0.18 * field + n * 0.04; o.r = 0.72;
+  }, 4);
+}
+// the carved drums' stone (the art's brown-and-pale barrel columns): warm sandstone, grain, weathered darker below
+function drumTex() {
+  return T.pbr('lotusDrum2', 512, (u, v, o) => {
+    const n = T.fbm(u, v, 6, 4, 251), g = T.pnoise(u * 180, v * 180, 180, 252), streak = T.fbmA(u, v, 30, 3, 3, 253);
+    let c = T.mixc([0.42, 0.33, 0.22], [0.62, 0.5, 0.35], n * 0.6 + streak * 0.4);
+    c = T.mixc(c, [0.3, 0.23, 0.15], T.smooth(0.62, 0.82, g) * 0.35 + T.smooth(0.3, 0.0, v) * 0.35);
+    o.c = c; o.h = 0.5 + n * 0.1 + streak * 0.08; o.r = 0.78;
+  }, 1.5);
+}
+// the floors' tops in one material: the flags (the map, its relief and roughness) where a cell is paved; grass, shingle
+// and the ponds' dark bed blended by the cells' classes (a texture of them, a soft copy warped by noise for the natural
+// edges) and laid in world space
+function topMat(cls, MW, MH) {
+  const d = new Uint8Array(MW * MH * 4);
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { const k = cls[y][x], i = (y * MW + x) * 4; d[i + (k === 'G' ? 1 : k === 'K' ? 2 : k === 'W' ? 3 : 0)] = 255; }
+  const hard = new THREE.DataTexture(d, MW, MH, THREE.RGBAFormat); hard.needsUpdate = true;
+  const soft = new THREE.DataTexture(d, MW, MH, THREE.RGBAFormat); soft.magFilter = soft.minFilter = THREE.LinearFilter; soft.needsUpdate = true;
+  const m = T.material(flagTex(), {}), U = { uHard: { value: hard }, uSoft: { value: soft }, uSize: { value: new THREE.Vector2(MW, MH) },
+    uTurf: { value: T.turf(0x56702a).map }, uShin: { value: shingleTex().map }, uBed: { value: new THREE.Color(0x0c140f) } };
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vWp; uniform sampler2D uHard, uSoft, uTurf, uShin; uniform vec2 uSize; uniform vec3 uBed; float gPav;
+      float th(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      vec2 cu = vWp.xz / uSize; float nz = tn(vWp.xz * 2.3) * 0.6 + tn(vWp.xz * 7.0) * 0.4;
+      gPav = texture2D(uHard, cu).r;
+      vec4 cs = texture2D(uSoft, cu + (vec2(nz, tn(vWp.zx * 2.3 + 5.0)) - 0.5) * 0.7 / uSize);
+      vec3 tf = texture2D(uTurf, vWp.xz * 0.35).rgb * (0.85 + 0.3 * tn(vWp.xz * 0.7)), shg = texture2D(uShin, vWp.xz * 0.45).rgb;
+      float sw = smoothstep(0.35, 0.65, cs.b / max(0.001, cs.g + cs.b + cs.a) + (nz - 0.5) * 0.5), ww = smoothstep(0.45, 0.75, cs.a + (nz - 0.5) * 0.4);
+      vec3 nat = mix(mix(tf, shg, sw), uBed, ww);
+      diffuseColor.rgb = mix(nat, diffuseColor.rgb, gPav);`)
+      .replace('mapN.xy *= normalScale;', 'mapN.xy *= normalScale * gPav;')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n      roughnessFactor = mix(0.95, roughnessFactor, gPav);');
+  };
+  m.customProgramCacheKey = () => 'lotusTop';
+  return m;
+}
+// the brick faces: darker and greener toward the waterline, as stone stays wet there
+function damp(m) {
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vWp; float dh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float dn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(dh(i), dh(i+vec2(1,0)), f.x), mix(dh(i+vec2(0,1)), dh(i+vec2(1,1)), f.x), f.y); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      float wn = dn(vec2(vWp.x + vWp.z, vWp.y * 3.0) * 4.0), wet = 1.0 - smoothstep(${WATER.toFixed(2)} + 0.04, ${WATER.toFixed(2)} + 0.3 + wn * 0.12, vWp.y);
+      diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - wet * 0.45), vec3(0.07, 0.1, 0.05), wet * 0.3 * wn);`);
+  };
+  m.customProgramCacheKey = () => 'lotusDamp';
+  return m;
+}
+// a balustrade post (the art's round posts with a ball on top): turned stone, plinth, shaft, collar, finial
+function postGeo() {
+  const pts = [[0, 0], [0.12, 0], [0.12, 0.05], [0.1, 0.07], [0.085, 0.09], [0.075, 0.12], [0.075, 0.38], [0.085, 0.4], [0.105, 0.42], [0.105, 0.46], [0.08, 0.48], [0.05, 0.52]];
+  for (let i = 0; i <= 8; i++) { const a = -Math.PI / 2 + 0.75 + (Math.PI / 2 - 0.75 + Math.PI / 2) * i / 8; pts.push([Math.max(0.0001, 0.078 * Math.cos(a)), 0.6 + 0.078 * Math.sin(a)]); }
+  return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 20);
+}
+// a carved drum column (the art's banded barrel columns): a fluted shaft between two carved bands, a moulded base and
+// capital
 function column(stone, x, z, y) {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.LatheGeometry([[0, 0], [0.36, 0], [0.36, 0.1], [0.3, 0.16], [0.28, 0.2], [0.28, 1.05], [0.31, 1.1], [0.36, 1.16], [0.36, 1.26], [0, 1.26]].map(([a, b]) => new THREE.Vector2(a, b)), 28), stone));
-  for (const yy of [0.32, 0.62, 0.92]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.285, 0.03, 6, 28), stone); r.rotation.x = Math.PI / 2; r.position.y = yy; g.add(r); }
+  const g = new THREE.Group(), H = 1.0, shaft = new THREE.CylinderGeometry(0.27, 0.285, H, 48, 30), p = shaft.attributes.position;
+  for (let i = 0; i < p.count; i++) { const px = p.getX(i), pz = p.getZ(i), py = p.getY(i) + H / 2, r = Math.hypot(px, pz); if (r < 1e-3) continue;
+    const a = Math.atan2(pz, px), band = (py > 0.2 && py < 0.3) || (py > 0.72 && py < 0.82), groove = band ? 0 : Math.pow(0.5 + 0.5 * Math.cos(a * 14), 4) * 0.09;
+    const k = (band ? 1.04 + 0.012 * Math.cos(a * 20) : 1) - groove; p.setXYZ(i, px * k, p.getY(i), pz * k); }
+  shaft.computeVertexNormals();
+  const s = new THREE.Mesh(shaft, stone); s.position.y = 0.16 + H / 2; g.add(s);
+  const lathe = pts => new THREE.Mesh(new THREE.LatheGeometry(pts.map(([r, q]) => new THREE.Vector2(r, q)), 48), stone);
+  g.add(lathe([[0.001, 0], [0.38, 0], [0.38, 0.06], [0.35, 0.08], [0.33, 0.1], [0.34, 0.12], [0.3, 0.14], [0.285, 0.16]]));
+  const cap = lathe([[0.27, 0], [0.3, 0.02], [0.31, 0.05], [0.29, 0.07], [0.34, 0.1], [0.38, 0.12], [0.38, 0.18], [0.001, 0.18]]); cap.position.y = 0.16 + H; g.add(cap);
   g.position.set(x, y, z); return shade(g);
 }
-// a lily pad: a flat round leaf with its notch, a little tilted; a lotus bud: a pink pointed bud on a short stem
-function padGeo() { const s = new THREE.Shape(); s.absarc(0, 0, 0.2, 0.25, Math.PI * 2 - 0.25, false); s.lineTo(0, 0); return new THREE.ShapeGeometry(s, 16).rotateX(-Math.PI / 2); }
+// a lily pad's leaf: round with its notch, veins from the stem out, a paler waxy rim (alpha outside the leaf)
+function padTex() {
+  return T.pbr('lotusPad', 256, (u, v, o) => {
+    const dx = u - 0.5, dy = v - 0.5, r = Math.hypot(dx, dy) * 2, a = Math.atan2(dy, dx), notch = Math.abs(a) < 0.12 + (1 - r) * 0.05 && r > 0.04;
+    const vein = T.smooth(0.12, 0.0, Math.abs(Math.sin(a * 11)) * r * 6) * T.smooth(0.05, 0.2, r), n = T.fbm(u, v, 8, 3, 261);
+    let c = T.mixc([0.17, 0.3, 0.08], [0.3, 0.46, 0.13], n * 0.6 + r * 0.3);
+    c = T.mixc(c, [0.42, 0.55, 0.2], vein * 0.35 + T.smooth(0.86, 0.96, r) * 0.3);
+    o.c = c; o.a = r < 0.97 && !notch ? 1 : 0; o.h = 0.5 - vein * 0.15; o.r = 0.4;
+  }, 1);
+}
+// a lotus bud (the art's red buds standing out of the ponds): five petals closed to a point, pale green at the base
+// flushing to deep pink at the tip, on a curved stem
+function budGeo() {
+  const pts = []; for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push(new THREE.Vector2(Math.max(0.0005, 0.07 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.1)), 0.7) * (1 - 0.45 * t)), t * 0.24)); }
+  const g = new THREE.LatheGeometry(pts, 20), p = g.attributes.position, C = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), y = p.getY(i), t = y / 0.24, a = Math.atan2(z, x), k = 1 + 0.12 * Math.abs(Math.cos(a * 2.5)) * Math.sin(Math.PI * t);
+    p.setXYZ(i, x * k, y, z * k);
+    const c = t < 0.35 ? T.mixc([0.62, 0.72, 0.42], [0.95, 0.72, 0.72], t / 0.35) : T.mixc([0.95, 0.72, 0.72], [0.78, 0.16, 0.26], (t - 0.35) / 0.65); C.set(c, i * 3); }
+  g.setAttribute('color', new THREE.BufferAttribute(C, 3)); g.computeVertexNormals(); return g;
+}
 
 export function lotus(src) {
   let LV = null, slopes = [], props = [], world = null, M = null, chestG = new Map();
@@ -200,58 +334,63 @@ export function lotus(src) {
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) LV.set(x, y, x + 1, y + 1, h[y][x] ?? BED);
     for (const r of ramps) LV.stairs(r.x0, r.z0, r.x1, r.z1, r.y0, r.y1, Math.max(3, (r.z1 - r.z0) * 3), 's');
     slopes = ramps.flatMap(r => r.cells);
-    const floor = new THREE.MeshStandardMaterial({ map: floorTex(cls, h, MW, MH), roughness: 0.9 });
-    const brick = T.material(T.bricks(0x6c5838, 4, 'lotusBrick'), { color: 0xd8ccb0 }, [16, 16]);
-    S.add(LV.mesh(floor, brick, BED - 0.4, 1 / 32));
-    const tread = T.material(T.bricks(0xb4ac88, 1, 'lotusTread'), {}, [1, 1]), riser = T.material(T.bricks(0x5a4a30, 2, 'lotusRiser'), {}, [1, 1]);
-    for (const r of LV.ramps) S.add(stairs(r, tread, riser, 0.5));
+    const brick = damp(T.material(brickTex(), {}));
+    S.add(LV.mesh(topMat(cls, MW, MH), brick, BED - 0.4, 0.5));
+    const stone = T.material(stoneTex(), {}), riser = damp(T.material(brickTex(), {}));
+    for (const r of LV.ramps) S.add(stairs(r, stone, riser, 1));
     // the water over every pond, and on past the map
     const water = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40).rotateX(-Math.PI / 2), pondWater()); water.position.set(MW / 2, WATER, MH / 2); S.add(water);   // (no shadows on it: the walkways' fell black on the ponds)
     const bed = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x0c1410, roughness: 1 })); bed.position.set(MW / 2, BED - 0.42, MH / 2); S.add(bed);
-    // balustrades on the blocked flagstone-and-post cells: a capped post at each, a carved panel to each neighbour
-    const cap = T.material(T.rock(0xd8d4b8, 'lotusCap', 0.3), { color: 0xf0ecd8 }, [0.5, 0.5]), panelM = T.material(T.bricks(0xb8b090, 2, 'lotusPanel'), {}, [1, 1]);
+    // balustrades on the blocked flagstone-and-post cells: a turned post at each, a carved panel under a rounded rail to
+    // each neighbour at the same height
+    const panelM = T.material(panelTex(), {});
     const rail = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH && !walk(x, y) && cls[y][x] === 'R';
-    const posts = [], panels = [], balls = [];
+    const pg0 = postGeo(), posts = [], panels = [], rails = [];
+    const span = (ax, az, bx, bz, yy) => {   // a panel from post a to post b
+      const along = ax !== bx, len = (along ? bx - ax : bz - az) - 0.2, mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      const pn = new THREE.Mesh(new THREE.BoxGeometry(along ? len : 0.07, RAIL - 0.2, along ? 0.07 : len), panelM); pn.position.set(mx, yy + 0.06 + (RAIL - 0.2) / 2, mz); panels.push(pn);
+      const base = box(stone, mx - (along ? len / 2 : 0.06), yy, mz - (along ? 0.06 : len / 2), mx + (along ? len / 2 : 0.06), yy + 0.06, mz + (along ? 0.06 : len / 2), 2); rails.push(base);
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, len, 10), stone); if (along) top.rotation.z = Math.PI / 2; else top.rotation.x = Math.PI / 2;
+      top.position.set(mx, yy + RAIL - 0.12, mz); rails.push(top);
+      const lip = box(stone, mx - (along ? len / 2 : 0.055), yy + RAIL - 0.16, mz - (along ? 0.055 : len / 2), mx + (along ? len / 2 : 0.055), yy + RAIL - 0.13, mz + (along ? 0.055 : len / 2), 2); rails.push(lip);
+    };
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       if (!rail(x, y)) continue; const yy = h[y][x] ?? DECK, cx = x + 0.5, cz = y + 0.6;
-      posts.push(box(cap, cx - 0.09, yy, cz - 0.09, cx + 0.09, yy + RAIL, cz + 0.09, 0.5));
-      const b = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), cap); b.position.set(cx, yy + RAIL + 0.07, cz); balls.push(b);
-      if (rail(x + 1, y) && Math.abs((h[y][x + 1] ?? DECK) - yy) < 0.05) panels.push(box(panelM, cx + 0.09, yy + 0.05, cz - 0.05, cx + 0.91, yy + RAIL - 0.1, cz + 0.05, 1), box(cap, cx + 0.09, yy + RAIL - 0.12, cz - 0.07, cx + 0.91, yy + RAIL - 0.04, cz + 0.07, 0.5));
-      if (rail(x, y + 1) && Math.abs((h[y + 1][x] ?? DECK) - yy) < 0.05) panels.push(box(panelM, cx - 0.05, yy + 0.05, cz + 0.09, cx + 0.05, yy + RAIL - 0.1, cz + 0.91, 1), box(cap, cx - 0.07, yy + RAIL - 0.12, cz + 0.09, cx + 0.07, yy + RAIL - 0.04, cz + 0.91, 0.5));
+      const pm0 = new THREE.Mesh(pg0, stone); pm0.position.set(cx, yy, cz); pm0.rotation.y = R(x * 3 + y) * 6; posts.push(pm0);
+      if (rail(x + 1, y) && Math.abs((h[y][x + 1] ?? DECK) - yy) < 0.05) span(cx, cz, cx + 1, cz, yy);
+      if (rail(x, y + 1) && Math.abs((h[y + 1][x] ?? DECK) - yy) < 0.05) span(cx, cz, cx, cz + 1, yy);
     }
-    if (posts.length) S.add(shade(merged(cap, posts)), shade(merged(cap, balls)));
+    if (posts.length) S.add(shade(merged(stone, posts)));
     if (panels.length) S.add(shade(merged(panelM, panels)));
+    if (rails.length) S.add(shade(merged(stone, rails)));
     // the carved columns: one at each run of blocked column cells, standing on its lowest
-    const drum = T.material(T.rock(0xa89a78, 'lotusDrum', 0.4), { color: 0xe8dcc0 }, [1, 1]), seen = new Set(); props = [];
+    const drum = T.material(drumTex(), {}), seen = new Set(); props = [];
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       if (walk(x, y) || cls[y][x] !== 'C' || seen.has(x + ',' + y)) continue;
       let y1 = y; while (y1 + 1 < MH && !walk(x, y1 + 1) && cls[y1 + 1][x] === 'C') y1++;
       for (let j = y; j <= y1; j++) { seen.add(x + ',' + j); props.push([x, j]); }
       S.add(column(drum, x + 0.5, y1 + 0.5, h[y1][x] ?? DECK));
     }
-    // lily pads and lotus buds where the art has them, grass on the meadow, pebbles on the shores
-    const padM = new THREE.MeshStandardMaterial({ color: 0x5a8a24, roughness: 0.6, side: THREE.DoubleSide }), pg = padGeo(), pm = new THREE.InstancedMesh(pg, padM, Math.max(1, pads.length * 2)), d = new THREE.Object3D(); let n = 0;
-    for (const [x, z, s] of pads) for (let i = 0; i < (s > 120 ? 2 : 1); i++) { d.position.set(x + (i ? 0.18 : 0), WATER + 0.012, z + (i ? 0.14 : 0)); d.rotation.set(0, R(x * 9 + z + i) * 6.28, 0); d.scale.setScalar(i ? 0.7 : 1); d.updateMatrix(); pm.setMatrixAt(n++, d.matrix); }
+    // lily pads and lotus buds where the art has them, grass on the meadow
+    const padM = T.material(padTex(), { side: THREE.DoubleSide, alphaTest: 0.5 }), pg = new THREE.RingGeometry(0.001, 0.2, 28, 3);
+    { const p = pg.attributes.position; for (let i = 0; i < p.count; i++) { const r = Math.hypot(p.getX(i), p.getY(i)) / 0.2; p.setZ(i, r * r * 0.025); } pg.rotateX(-Math.PI / 2); pg.computeVertexNormals(); }   // (the rim turned up a little)
+    const pm = new THREE.InstancedMesh(pg, padM, Math.max(1, pads.length * 2)), d = new THREE.Object3D(), pc = new THREE.Color(); let n = 0;
+    for (const [x, z, s] of pads) for (let i = 0; i < (s > 120 ? 2 : 1); i++) { d.position.set(x + (i ? 0.18 : 0), WATER + 0.008, z + (i ? 0.14 : 0)); d.rotation.set(0, R(x * 9 + z + i) * 6.28, 0); d.scale.setScalar((i ? 0.7 : 1) * (0.85 + R(x + z * 5 + i) * 0.3)); d.updateMatrix(); pm.setMatrixAt(n, d.matrix); const t = 0.85 + R(x * 3 + z + i) * 0.3; pm.setColorAt(n++, pc.setRGB(t, t, t * 0.9)); }
     pm.count = n; pm.receiveShadow = true; S.add(pm);
-    const budM = new THREE.MeshStandardMaterial({ color: 0xe86a8a, roughness: 0.5, emissive: 0x3a0a14 }), stemM = new THREE.MeshStandardMaterial({ color: 0x3a6a1c });
+    const budM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }), stemM = new THREE.MeshStandardMaterial({ color: 0x3a5a1c, roughness: 0.8 }), bg = budGeo(), sways = [];
     for (const [x, z] of buds) {
-      const g = new THREE.Group(); const b = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), budM); b.scale.set(1, 1.7, 1); b.position.y = 0.16; g.add(b);
-      const t = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.1, 8), budM); t.position.y = 0.3; g.add(t);
-      const st = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 5), stemM); st.position.y = 0.06; g.add(st);
-      g.position.set(x, WATER, z); S.add(shade(g));
+      const g = new THREE.Group(), lean = (R(x * 5 + z) - 0.5) * 0.3, stem = new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, -0.1, 0), new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(lean * 0.3, 0.14, 0)), 6, 0.012, 5);
+      g.add(new THREE.Mesh(stem, stemM)); const b = new THREE.Mesh(bg, budM); b.position.set(lean * 0.3, 0.13, 0); b.rotation.z = -lean; g.add(b);
+      g.position.set(x, WATER, z); g.rotation.y = R(x + z * 3) * 6.28; S.add(shade(g)); sways.push([g, R(x * 7 + z) * 6.28]);
     }
-    const tufts = [], peb = [];
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-      if (cls[y][x] === 'G') for (let i = 0; i < 5; i++) { const px = x + R(x * 7 + y * 13 + i), pz = y + R(x * 3 + y * 17 + i * 5); tufts.push([px, LV.at(px, pz), pz]); }
-      if (cls[y][x] === 'K') for (let i = 0; i < 3; i++) { const px = x + R(x * 11 + y + i), pz = y + R(y * 5 + x + i * 3); peb.push([px, LV.at(px, pz), pz]); }
-    }
+    const tufts = [];
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (cls[y][x] === 'G') for (let i = 0; i < 5; i++) { const px = x + R(x * 7 + y * 13 + i), pz = y + R(x * 3 + y * 17 + i * 5); tufts.push([px, LV.at(px, pz), pz]); }
     if (tufts.length) S.add(grass(tufts, { size: 0.36, cols: ['#4a6a1e', '#5a7a24', '#3a5a18', '#6a8a2a'] }));
-    if (peb.length) S.add(stones(peb, T.material(T.rock(0x9a9684, 'lotusPebble', 0.3), {}, [0.5, 0.5]), { size: 0.09 }));
     const chests = G.chests || (D.chests || []).map(c => ({ x: c.x, y: c.y, hidden: c.hidden, open: false }));
     for (const c of chests) if (!c.hidden || c.open) { const o = chest(M, c.x + 0.5, c.y + 0.5, LV.at(c.x + 0.5, c.y + 0.5), !!c.open, 0, 1.3); S.add(o); chestG.set(c.x + ',' + c.y, o); }
     props = props.concat(chests.map(c => [c.x, c.y]), low);
-    if (bushes.length) S.add(shrubs(bushes, { size: 0.55, cols: ['#2f5a1e', '#3e6e26', '#4f8230', '#26481a'] }));
-    E.world.updaters.push((dt, t) => { water.material.userData.u.uTime.value = t; windTick(t); });
+    if (bushes.length) S.add(shrubs(bushes, { size: 0.55, tex: sprigTex(['#2f5a1e', '#3e6e26', '#4f8230', '#26481a']) }));
+    E.world.updaters.push((dt, t) => { water.material.userData.u.uTime.value = t; windTick(t); for (const [g, ph] of sways) { g.rotation.x = Math.sin(t * 0.7 + ph) * 0.05; g.rotation.z = Math.sin(t * 0.55 + ph * 1.3) * 0.05; } });
     void FX;
   }
   function openChest(x, y) {

@@ -16,17 +16,17 @@ const LV = {
 
 // ---------------------------------------------------------------- shared pieces
 const later = (fn, ms) => { wait(ms).then(fn); };   // setTimeout on game time: keeps to the fast-forward and to tools/qa/video.js's stepped frames
-const axes = () => { const q = world.camera.quaternion; return { right: V(1, 0, 0).applyQuaternion(q).setY(0).normalize(), toCam: V(0, 0, 1).applyQuaternion(q).setY(0).normalize() }; };
+export const axes = () => { const q = world.camera.quaternion; return { right: V(1, 0, 0).applyQuaternion(q).setY(0).normalize(), toCam: V(0, 0, 1).applyQuaternion(q).setY(0).normalize() }; };
 const drop = m => { for (const it of vfx.items) if (it.mesh === m) it.life = 0; };
-const canvasTex = (w, h, draw, frames) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d')); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; if (frames) t.repeat.set(1 / frames, 1); return t; };
-const once = (key, make) => once.c[key] || (once.c[key] = make()); once.c = {};
+export const canvasTex = (w, h, draw, frames) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d')); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; if (frames) t.repeat.set(1 / frames, 1); return t; };
+export const once = (key, make) => once.c[key] || (once.c[key] = make()); once.c = {};
 // a flat picture in the world (a spirit beast, a banner): turned to the camera by face() each frame
-function card(map, w, h, o = {}) {
+export function card(map, w, h, o = {}) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
     blending: o.add ? THREE.AdditiveBlending : THREE.NormalBlending, color: new THREE.Color(...(o.col || [1, 1, 1])) }));
   m.renderOrder = o.order || 6; vfx.timed(m, 1e9, () => {}); return m;
 }
-const face = (m, flip = 1, rz = 0) => { m.quaternion.copy(world.camera.quaternion); if (rz) m.rotateZ(rz); m.scale.x = Math.abs(m.scale.x) * flip; };
+export const face = (m, flip = 1, rz = 0) => { m.quaternion.copy(world.camera.quaternion); if (rz) m.rotateZ(rz); m.scale.x = Math.abs(m.scale.x) * flip; };
 // tapered segments joined with round joints (limbs, necks, tails of the drawn beasts)
 function limb(g, pts, ws, col) {
   g.fillStyle = col;
@@ -142,7 +142,7 @@ function lotusBloom(P) {   // two rings of petals round his feet, closed as a bu
   };
   bloom.open(0); return bloom;
 }
-function fireWheel() {   // a 風火輪: a red-gold rim on six spokes, spun about its axle; flames are added along the rim each frame
+export function fireWheel() {   // a 風火輪: a red-gold rim on six spokes, spun about its axle; flames are added along the rim each frame
   const g = new THREE.Group(), spin = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.3, 0.05), transparent: true, toneMapped: false });
   spin.add(new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.03, 6, 28), mat));
   const hub = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.85, 0.35), transparent: true, toneMapped: false });
@@ -179,11 +179,10 @@ function clothStrip(o) {   // a camera-facing strip of cloth drawn through the l
   };
 }
 // 楊戩's level-up pieces: the third eye (pinned to the eye mark in his own frames), 哮天犬 drawn as a glowing silver hound
-// (a four-beat gallop and a sitting frame), and his blade-to-the-sky pose (made from his cast frame: none of his frames has it)
-let EYE_TEX = null, HOUND_TEX = null, YANG_POSE = null;
-const YANG_MARK = { guard: [65, 33.5], sky: [65.6, 33.5] };   // the third eye's centre in his 128 px guard (act row 2, frame 3) and cast (frame 6) frames
-const YANG_TIP = [[185, 6], [186, 4]];   // the blade's tip in the 256 px pose canvas: held at the shoulder, raised high
-function eyeTex() {   // a vertical eye: gold-white lids round a red-gold iris and a dark slit
+// (a four-beat gallop and a sitting frame)
+let EYE_TEX = null, HOUND_TEX = null;
+const YANG_MARK = { guard: [65, 33.5] };   // the third eye's centre in his 128 px guard frame (act row 2, frame 3)
+export function eyeTex() {   // a vertical eye: gold-white lids round a red-gold iris and a dark slit
   const c = document.createElement('canvas'); c.width = 64; c.height = 128; const g = c.getContext('2d');
   const lids = () => { g.beginPath(); g.moveTo(32, 4); g.quadraticCurveTo(62, 64, 32, 124); g.quadraticCurveTo(2, 64, 32, 4); g.closePath(); };
   g.shadowColor = '#ffd36a'; g.shadowBlur = 10; g.fillStyle = '#fff3c4'; lids(); g.fill(); g.shadowBlur = 0;
@@ -261,54 +260,12 @@ function houndTex() {   // each frame drawn flat, then laid on the strip with on
   HOUND_POSES.forEach((p, i) => { o.clearRect(0, 0, 256, 128); drawHound(o, p); g.drawImage(one, i * 256, 0); });
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(1 / n, 1); return t;
 }
-// his blade-to-the-sky pose, made from his cast frame (left hand raised to the shoulder): the blade it holds downward is
-// cut away and the 三尖兩刃刀 drawn upright in the raised hand; high, the forearm and hand are cut away too and repainted in
-// his own colours with the arm thrust straight up, the blade gripped above his head
-export function yangPose(a, high) {
-  const src = a.texAct.image, fw = src.width / 9, k = fw / 128, c = document.createElement('canvas'); c.width = c.height = 256 * k;
-  const g = c.getContext('2d'); g.scale(k, k);
-  const fr = document.createElement('canvas'); fr.width = fr.height = fw; const f = fr.getContext('2d');
-  f.drawImage(src, 6 * fw, 2 * fw, fw, fw, 0, 0, fw, fw);
-  f.globalCompositeOperation = 'destination-out'; f.scale(k, k);
-  f.beginPath(); f.moveTo(0, 103); f.lineTo(13, 86); f.lineTo(26, 85); f.lineTo(31, 88); f.lineTo(31, 98); f.lineTo(24, 106); f.lineTo(9, 122); f.lineTo(0, 122); f.closePath(); f.fill();
-  if (high) f.fillRect(104, 44, 24, 18);   // the arm held out at the shoulder, from the elbow
-  const [X, TY] = YANG_TIP[high ? 1 : 0];
-  // the blade, behind him: his hand grips the shaft and his cape covers its foot
-  const blade = (ol) => {
-    const w = ol ? 4 : 0;
-    g.fillStyle = ol ? '#000' : '#d40000'; g.fillRect(X - 3 - w, TY + 34, 6 + w * 2, 128);                     // shaft
-    g.fillStyle = ol ? '#000' : '#ffd23c'; g.fillRect(X - 13 - w, TY + 32 - w, 26 + w * 2, 6 + w * 2);        // gold guard
-    g.fillStyle = ol ? '#000' : '#ffffff';
-    g.beginPath(); g.moveTo(X - 6 - w, TY + 34); g.lineTo(X, TY - w * 1.5); g.lineTo(X + 6 + w, TY + 34); g.closePath(); g.fill();   // the long middle point
-    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(X + s * (6 - w), TY + 34); g.quadraticCurveTo(X + s * (18 + w), TY + 28, X + s * (20 + w * 0.5), TY + 8 - w * 1.5); g.quadraticCurveTo(X + s * (12 - w), TY + 20, X + s * (12 - w), TY + 34); g.closePath(); g.fill(); }   // the two side points
-  };
-  blade(true); blade(false);
-  g.fillStyle = '#00b4fc'; g.beginPath(); g.moveTo(X + 1, TY + 6); g.lineTo(X + 5, TY + 32); g.lineTo(X + 1, TY + 32); g.closePath(); g.fill();   // the edges' cyan, as on his own blade
-  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(X + s * 19, TY + 12); g.quadraticCurveTo(X + s * 15, TY + 24, X + s * 14, TY + 32); g.lineTo(X + s * 12, TY + 32); g.closePath(); g.fill(); }
-  g.drawImage(fr, 0, 0, fw, fw, 64, 64, 128, 128);
-  if (high) {   // the raised arm: shoulder, elbow, fist (canvas px), outlined in black like the sprite
-    const seg = (p0, p1, w0, w1, col) => { const dx = p1[0] - p0[0], dy = p1[1] - p0[1], l = Math.hypot(dx, dy), nx = -dy / l, ny = dx / l; g.fillStyle = col;
-      g.beginPath(); g.moveTo(p0[0] + nx * w0 / 2, p0[1] + ny * w0 / 2); g.lineTo(p1[0] + nx * w1 / 2, p1[1] + ny * w1 / 2); g.lineTo(p1[0] - nx * w1 / 2, p1[1] - ny * w1 / 2); g.lineTo(p0[0] - nx * w0 / 2, p0[1] - ny * w0 / 2); g.fill();
-      g.beginPath(); g.arc(p1[0], p1[1], w1 / 2, 0, 6.28); g.fill(); };
-    const Sh = [164, 120], El = [182, 99], Fi = [X, 72];
-    g.fillStyle = '#000'; g.fillRect(168, 124, 24, 2);   // closes the cape's top where the old arm was cut away
-    seg(Sh, El, 19, 16, '#000'); seg(El, Fi, 16, 15, '#000');
-    seg(Sh, El, 13, 11, '#4800fc'); seg(El, [Fi[0], Fi[1] + 8], 11, 10, '#4800fc');                     // the sleeve
-    seg([Sh[0] - 3, Sh[1] - 3], [El[0] - 3, El[1] - 2], 4, 3, '#00b4fc'); seg([El[0] - 3, El[1] - 2], [Fi[0] - 3, Fi[1] + 12], 3, 3, '#245afc');   // its lit edge
-    seg([Fi[0], Fi[1] + 12], [Fi[0], Fi[1] + 8], 12, 12, '#fcb400');                                   // gold cuff
-    g.fillStyle = '#000'; g.beginPath(); g.ellipse(Fi[0], Fi[1], 10.5, 9, 0, 0, 6.28); g.fill();        // the fist round the shaft
-    g.fillStyle = '#fcb448'; g.beginPath(); g.ellipse(Fi[0], Fi[1], 8, 6.5, 0, 0, 6.28); g.fill();
-    g.fillStyle = '#fcd890'; g.beginPath(); g.ellipse(Fi[0] - 1, Fi[1] - 1.5, 6.5, 4.5, 0, 0, 6.28); g.fill();
-    g.fillStyle = '#d87e00'; g.fillRect(Fi[0] - 6, Fi[1] + 2, 12, 1.5);                                // the fingers' line
-  }
-  return tex(c);
-}
 async function yangLevel(a, P) {
   const camQ = world.camera.quaternion, right = V(1, 0, 0).applyQuaternion(camQ).setY(0).normalize(), toCam = V(0, 0, 1).applyQuaternion(camQ).setY(0).normalize();
   const mist = (n, r, up) => { for (let i = 0; i < n; i++) { const t = rand(0, 6.28), rr = rand(0.2, r); vfx.smokePuff(P.x + Math.cos(t) * rr, P.y + 0.08, P.z + Math.sin(t) * rr, { vx: -Math.sin(t) * 0.6, vz: Math.cos(t) * 0.6, vy: rand(0.05, up), drag: 1.5, life: rand(1, 1.5), size: rand(0.25, 0.35), size1: rand(0.6, 0.85), tint: [0.78, 0.84, 0.95] }); } };
   // a point on his sprite, from its pixels: [x, y] in the 128 px body frame (both sprite planes put the body at 0..1 tall)
   const onSprite = (px, py, z = 0.02) => { const m = a.big.visible ? a.big : a.mesh; m.updateMatrixWorld(); return m.localToWorld(V(px / 128 - 0.5, 1 - py / 128, z)); };
-  let mark = YANG_MARK.guard;
+  const mark = YANG_MARK.guard;
   a.u.facing = 'down'; LV.guard(a);
   // 1. silver mist gathers at his feet; the third eye opens on his brow and its gold beam sweeps the field
   mist(14, 0.9, 0.25); vfx.decal(P, [0.6, 0.7, 1], 1.1, 3.2, { intensity: 0.35 });
@@ -353,17 +310,9 @@ async function yangLevel(a, P) {
     const d = q.clone().sub(P); a.u.facing = Math.abs(d.x) > Math.abs(d.z) ? (d.x > 0 ? 'right' : 'left') : (d.z > 0 ? 'down' : 'up');   // his eyes follow the hound
   });
   frame(4); dog.scale.x = P.clone().sub(prev).dot(right) < 0 ? -1 : 1;   // it sits looking up at him
-  // 3. he lifts the three-pointed blade and thrusts it high over his head; a gleam runs up it to a glint at its point
-  a.u.facing = 'down'; YANG_POSE = YANG_POSE || [yangPose(a, false), yangPose(a, true)]; mark = YANG_MARK.sky;
-  a.act = { kind: 'tex', tex: YANG_POSE[0] }; await wait(140);
-  a.act = { kind: 'tex', tex: YANG_POSE[1] };
-  vfx.ring(P, [0.7, 0.82, 1], 1.6, 0.8, { intensity: 0.6 });
-  const tip = () => onSprite(YANG_TIP[1][0] - 64, YANG_TIP[1][1] - 64), hand = () => onSprite(YANG_TIP[1][0] - 64, 10);
-  await anim(0.25, k => { const q = hand().lerp(tip(), k); vfx.spark(q.x, q.y, q.z, { life: 0.25, size: 0.09, r: 1, gg: 1, b: 1, shape: 0 }); });
-  const t0 = tip();
-  vfx.light(t0, [0.75, 0.85, 1], 8, 0.5, 4);
-  vfx.burst(t0, { n: 14, speed: 1.3, cols: [[1, 1, 1], [0.7, 0.85, 1]], size: 0.045, life: 0.45, g: 0, shape: 0 });
-  await wait(800);
+  // 3. he turns back to us in his guard as the hound sits (no blade thrust to the sky: the user's call)
+  a.u.facing = 'down'; LV.guard(a);
+  await wait(900);
   await anim(0.3, k => { eye.scale.set(1, Math.max(0.04, 1 - ease(k)), 1); dog.material.opacity = 1 - k; });
   for (const it of vfx.items.filter(i => i.mesh === eye || i.mesh === dog)) it.life = 0;
   vfx.burst(prev.clone(), { n: 14, speed: 1.2, cols: [[1, 1, 1], [0.7, 0.8, 1]], size: 0.04, life: 0.5, g: -0.5, shape: 0 });
@@ -412,12 +361,12 @@ async function nezhaLevel(a, P) {
   vfx.flash([1, 0.9, 0.6], 0.2); vfx.light(caught, [1, 0.85, 0.45], 12, 0.4, 5);
   vfx.burst(caught, { n: 26, speed: 3, cols: [[1, 1, 0.85], [1, 0.8, 0.3]], size: 0.05, life: 0.5, g: 2, shape: 0 });
   vfx.ring(caught, [1, 0.85, 0.4], 0.8, 0.35, { vertical: true, yaw: cam.yaw, y: caught.y, intensity: 1 });
-  LV.atk(a, 0);
+  a.act = null;
   await anim(0.22, (k, dt = 1 / 60) => { T += dt; putWheels(dt, 1); sashAt(T, dt); });
-  // 4. down spear-first: the fire bursts out in a ring, the wheels gutter out and the lotus petals scatter
-  LV.atk(a, 1);
+  // 4. he comes down, standing (no dive pose: the user's call): the fire bursts out in a ring, the wheels gutter out and
+  // the lotus petals scatter
   await anim(0.16, (k, dt = 1 / 60) => { T += dt; a.hover = 0.8 * (1 - k * k); putWheels(dt, 1); sashAt(T, dt); });
-  a.hover = 0; LV.atk(a, 2);
+  a.hover = 0;
   for (const s of sashes) s.fade(0.5);
   for (const w of wheels) { const f = w.position.clone(); vfx.smokePuff(f.x, f.y, f.z, { vy: 0.5, life: 0.6, size: 0.15, size1: 0.4, tint: [0.4, 0.36, 0.34] }); const it = vfx.items.find(i => i.mesh === w); if (it) it.life = 0; }
   lotus.scatter();
@@ -590,7 +539,7 @@ const LEI_WINGS = [   // [cut polygon, shoulder pivot] in his 128 px frame (act 
   [[[0, 8], [33, 16], [33, 46], [25, 52], [0, 62]], [32, 38], 1],
   [[[87, 10], [128, 10], [128, 62], [112, 70], [97, 59], [87, 48]], [90, 40], -1],
 ];
-function leiFlapFrames(a, n) {
+export function leiFlapFrames(a, n) {
   const src = a.texAct.image, fw = src.width / 9, k = fw / 128;
   const frame = (clip) => { const c = document.createElement('canvas'); c.width = c.height = fw; const g = c.getContext('2d'); g.scale(k, k);
     g.beginPath(); for (const poly of clip.polys) { poly.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); }

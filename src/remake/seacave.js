@@ -17,27 +17,63 @@ const MOUTH = { x: 3.5, z: 2.0, w: 0.95, h: 1.15 };   // 哪吒 walks in at (3, 
 const OPEN = [[7.5, 5.6, 0.8]];   // 楊戩 on the pond bank's top at (7, 5), f1320-1439: the boulders give way
 let land = null;
 
-// a broadleaf tree: a stout trunk forking into two or three boughs, crowns of leaf clumps round their ends (leaves: the
-// crowns' colours; also 聖靈山 and the snow of 麒麟山, src/remake/mountain.js)
+// leaves for the crowns, painted once per palette: sprigs of real leaves (ovate, pointed, a pale midrib, lit on one
+// half) on thin twigs running out from the card's middle, the outline ragged where the sprigs end, never a disc
+const SPRIG = new Map();
+export function sprigTex(cols) {
+  const key = cols.join(); if (SPRIG.has(key)) return SPRIG.get(key);
+  const N = 512, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d');
+  let s = 7; const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16), f = q => Math.max(0, Math.min(255, Math.round(q * k))); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
+  const pick = () => { const i = Math.floor(Math.pow(rnd(), 2.2) * cols.length); return cols[Math.min(cols.length - 1, i)]; };   // (the palette's first, darker colours most)
+  const leaf = (x, y, ang, L, col) => {
+    g.save(); g.translate(x, y); g.rotate(ang); const W = L * 0.42;
+    g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(W, L * 0.2, W * 0.9, L * 0.7, 0, L); g.bezierCurveTo(-W * 0.9, L * 0.7, -W, L * 0.2, 0, 0);
+    const gr = g.createLinearGradient(-W, 0, W, 0); gr.addColorStop(0, shade(col, 0.72)); gr.addColorStop(0.5, shade(col, 1.0)); gr.addColorStop(1, shade(col, 1.22));
+    g.fillStyle = gr; g.fill(); g.strokeStyle = shade(col, 0.7); g.lineWidth = 1; g.stroke();
+    g.strokeStyle = shade(col, 1.3); g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, L * 0.05); g.lineTo(0, L * 0.85); g.stroke();
+    g.restore();
+  };
+  for (let t = 0; t < 15; t++) {   // twigs from near the middle out to a ragged rim
+    const a0 = rnd() * Math.PI * 2, r0 = rnd() * 50, len = 140 + rnd() * 90; let x = N / 2 + Math.cos(a0) * r0, y = N / 2 + Math.sin(a0) * r0, a = a0;
+    const steps = 6; g.strokeStyle = '#3a2a1a'; g.lineWidth = 3;
+    for (let k = 0; k < steps; k++) {
+      const nx = x + Math.cos(a) * len / steps, ny = y + Math.sin(a) * len / steps; g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
+      for (const side of [-1, 1]) if (rnd() < 0.85) { const L = 36 + rnd() * 20; leaf(nx, ny, a - Math.PI / 2 + side * (0.6 + rnd() * 0.5), L, pick()); }
+      x = nx; y = ny; a += (rnd() - 0.5) * 0.35;
+    }
+    leaf(x, y, a - Math.PI / 2, 42 + rnd() * 14, pick());
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; SPRIG.set(key, t); return t;
+}
+// a broadleaf tree: a stout trunk forking into three boughs, a crown of many small leaf clumps round them, uneven,
+// darker underneath and inside than on top (leaves: the crowns' colours; also 聖靈山, the snow of 麒麟山 and the peach
+// forest, src/remake/mountain.js)
 export function trees(list, at, leaves = ['#14401a', '#1e5a20', '#2e7024', '#6a9a1a', '#c8c820', '#3a6a1e'], barkCol = 0xd88a6a) {
   const g = new THREE.Group(), bark = T.material(T.bark(0x6a2a14), { color: barkCol }, [1, 2]);
-  const tex = leafTex(leaves);
-  const leaf = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
-  const crown = clumpGeo(16), d = new THREE.Object3D();
+  const tex = sprigTex(leaves);
+  const leaf = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.8 });
+  const crown = clumpGeo(14), d = new THREE.Object3D();
   const clumps = [];
   for (const [x, z, s] of list) {
     const y = at(x, z) - 0.05, h = 1.5 * s;
+    let q = Math.floor(x * 31 + z * 17) * 7 + 3; const rnd = () => { q = (q * 16807) % 2147483647; return q / 2147483647; };
     const trunk = shade(new THREE.Mesh(new THREE.CylinderGeometry(0.07 * s, 0.13 * s, h, 8), bark)); trunk.position.set(x, y + h / 2, z); g.add(trunk);
     for (let k = 0; k < 3; k++) {
       const a = k * 2.1 + x, len = 0.7 * s, b = shade(new THREE.Mesh(new THREE.CylinderGeometry(0.035 * s, 0.06 * s, len, 6), bark));
       b.position.set(x + Math.cos(a) * 0.22 * s, y + h + 0.15 * s, z + Math.sin(a) * 0.12 * s); b.rotation.set(Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6); g.add(b);
-      clumps.push([x + Math.cos(a) * 0.5 * s, y + h + 0.45 * s, z + Math.sin(a) * 0.3 * s, 0.85 * s]);
     }
-    clumps.push([x, y + h + 0.75 * s, z - 0.1, 1.0 * s]);
+    // the crown: clumps over an uneven dome round the boughs' ends, a few hanging lower at its rim
+    const cy = y + h + 0.55 * s, n = 11 + Math.floor(rnd() * 5);
+    for (let k = 0; k < n; k++) {
+      const a = rnd() * Math.PI * 2, up = k < 2 ? 0.9 : rnd() * 1.1 - 0.25, r = Math.sqrt(Math.max(0, 1 - up * up));
+      const px = x + Math.cos(a) * r * 0.62 * s, py = cy + up * 0.42 * s, pz = z + Math.sin(a) * r * 0.5 * s - 0.05;
+      clumps.push([px, py, pz, (0.42 + rnd() * 0.24) * s, 0.62 + (up + 0.25) * 0.32 + rnd() * 0.12]);
+    }
   }
   const m = new THREE.InstancedMesh(crown, leaf, clumps.length), c = new THREE.Color();
-  clumps.forEach(([x, y, z, s], i) => { d.position.set(x, y, z); d.rotation.set(0, i * 1.7, 0); d.scale.set(s * 1.1, s * 0.8, s); d.updateMatrix(); m.setMatrixAt(i, d.matrix); const t = 0.75 + (i % 5) * 0.08; m.setColorAt(i, c.setRGB(t, t, t)); });
-  m.castShadow = m.receiveShadow = true; m.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.5 });
+  clumps.forEach(([x, y, z, s, t], i) => { d.position.set(x, y, z); d.rotation.set((i % 3) * 0.4, i * 1.7, (i % 2) * 0.3); d.scale.set(s * 1.15, s * 0.9, s); d.updateMatrix(); m.setMatrixAt(i, d.matrix); m.setColorAt(i, c.setRGB(t, t, t)); });
+  m.castShadow = m.receiveShadow = true; m.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.45 });
   g.add(m); return g;
 }
 // the cave's mouth: a black opening under a ragged arch of the boulders, a breath of cold air at its foot

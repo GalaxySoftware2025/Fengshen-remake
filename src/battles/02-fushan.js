@@ -19,7 +19,6 @@ const fallBack = (n, ai, p) => { const u = slot(n); if (!u || !u.alive) return; 
 export default {
   n: 2,
   load(D) {
-    D.chests = D.chests.map(c => c.x === 27 && c.y === 3 ? Object.assign({}, c, { hidden: true }) : c);   // the map art draws no chest at (27, 3)
     // [design, the user's choice] the strip along the bottom row (14, x 8-23), open floor below the rim in the
     // original, is cliff here: blocked, as the remade gorge draws it (src/remake/gorge.js)
     D.terrain = D.terrain.map((r, y) => y === 14 ? r.map((t, x) => x >= 8 && x <= 23 ? 2 : t) : r);

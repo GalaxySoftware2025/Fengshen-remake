@@ -17,11 +17,10 @@ const wake = (...ns) => { for (const n of ns) { const u = slot(n); if (u && u.al
 
 export default {
   n: 3,
-  load(D) {   // the map art draws no chest at (6, 2) (in 燕蓉's cell) nor at (15, 0) (the hall's corner)
+  load(D) {
     // [design, the user's call] the store room's east wall opened at (12, 8): the original seals the room (barred front,
     // walls), so its chest at (11, 8) could not be reached; a hero now steps in beside it from the hall
     D.terrain = D.terrain.map((r, y) => y === 8 ? r.map((t, x) => x === 12 ? 0 : t) : r);
-    D.chests = D.chests.map(c => (c.x === 6 && c.y === 2) || (c.x === 15 && c.y === 0) ? Object.assign({}, c, { hidden: true }) : c);
     // [design, the user's call] the store room's chest one cell west, (10, 8): the original draws it at (11, 8), right at
     // the gap we opened in the room's east wall
     D.chests = D.chests.map(c => c.x === 11 && c.y === 8 ? Object.assign({}, c, { x: 10 }) : c);

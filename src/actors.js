@@ -1,7 +1,7 @@
 // Characters: the original pixel sprites as lit billboards standing in the 3D world (HD-2D style).
 import * as THREE from 'three';
 import { groundH } from './world.js';
-import { isLegacy, LEGACY } from './sprites.js';
+import { isLegacy, LEGACY, ONE_POSE } from './sprites.js';
 import { steppers } from './kit/terrain.js';
 
 const AD = globalThis.ANIM_DATA;
@@ -44,8 +44,9 @@ export class SpriteBank {
         const sd = await load('assets/units/' + n + '.png');
         let hd; try { hd = await load('assets/units/hd/' + n + '.png'); } catch (e) { hd = upscale(sd, HD); }
         const e = { walk: stripShadow(sd, hd), acts: {} };
-        // its action frames for each attack type it is seen with (tools/rom/actions.py: attack, hurt, guard, cast)
-        for (const t of ((globalThis.ACTIONS || {}).sheets || {})[n] || []) {
+        // its action frames for each attack type it is seen with (tools/rom/actions.py: attack, hurt, guard, cast);
+        // none for a sheet of one pose, whose action blobs are other sprites' tiles (src/sprites.js ONE_POSE)
+        for (const t of ONE_POSE.has(n) ? [] : ((globalThis.ACTIONS || {}).sheets || {})[n] || []) {
           const f = n + '-' + t + '.png', asd = await load('assets/units/act/' + f);
           let ahd; try { ahd = await load('assets/units/act/hd/' + f); } catch (err) { ahd = upscale(asd, HD); }
           const act = stripShadow(asd, ahd, [0, 2, 3]); e.acts[t] = { act, atk: this.attackComposite(act, t, true) };
@@ -192,7 +193,7 @@ export class Actor {
       // on then: a phase from the current cell would skip a frame every cell crossed on a walk)
       if (this.phase == null) this.phase = (u.x * 3 + u.y + (parseInt(u.slot, 10) || 0)) & 3;
       const step = u.done && !this.walking ? 0 : (tick + this.phase) % 4;
-      frame = u.sprite === 'jiang_bound' ? tick % 2 : u.still != null ? u.still : FACE[flip ? 'left' : vd][step];
+      frame = u.sprite === 'jiang_bound' ? tick % 2 : u.still != null ? u.still : ONE_POSE.has(u.sprite) ? 0 : FACE[flip ? 'left' : vd][step];   // (ONE_POSE: frame 0 in every facing, src/sprites.js)
       if (this.u.sprite === 'jiang_bound') { tx.repeat.x = 1 / 2; }
     }
     const nFrames = this.act && this.act.kind === 'tex' ? 1 : tx === this.texAtk ? 9 : (u.sprite === 'jiang_bound' && tx === this.texWalk ? 2 : 9);
