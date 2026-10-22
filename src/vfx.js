@@ -1,7 +1,6 @@
 // Effects engine: particles, rings, rune circles, pillars, lightning, lights, screen beats, and the fire wall.
 import * as THREE from 'three';
-import { groundH, rand, MARGIN } from './world.js';
-import { MAP_H } from './rules.js';
+import { groundH, rand } from './world.js';
 
 // ---------------------------------------------------------------- particles
 const PVS = `attribute vec4 aCol; attribute float aSize; attribute float aShape; uniform float uScale;
@@ -95,9 +94,10 @@ export const NOISE = `float fh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.
 const FLAME_VS = `attribute vec4 iPos; attribute vec4 iData; attribute vec3 iTint; varying vec2 vUv; varying vec4 vData; varying vec3 vTint;
   void main(){ vUv = uv; vData = iData; vTint = iTint;
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
-    vec3 up = iData.w < 0.5 ? vec3(0.0, 1.0, 0.0) : vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    bool upright = iData.w < 0.5 || iData.w > 2.5;   // (tongues and real fire stand up; puffs and smoke face the camera)
+    vec3 up = upright ? vec3(0.0, 1.0, 0.0) : vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     float s = iPos.w, asp = iData.z;
-    vec2 q = iData.w < 0.5 ? vec2(position.x, position.y + 0.5) : position.xy;   // tongues grow up from their base
+    vec2 q = upright ? vec2(position.x, position.y + 0.5) : position.xy;   // tongues grow up from their base
     vec3 p = iPos.xyz + right * q.x * s + up * q.y * s * asp;
     gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`;
 const FLAME_FS = `uniform float uT, uCover; varying vec2 vUv; varying vec4 vData; varying vec3 vTint;
@@ -106,7 +106,22 @@ const FLAME_FS = `uniform float uT, uCover; varying vec2 vUv; varying vec4 vData
     float k = vData.x, seed = vData.y * 31.7, mode = vData.w;
     vec2 p = vUv * 2.0 - 1.0;
     vec3 col; float a;
-    if (mode < 0.5) {
+    if (mode > 2.5) {
+      // real fire (v.fire): the body of a flame shaped by turbulent noise rushing up, cut by a threshold rising with
+      // height, so it burns solid low down and tears into licks and wisps (src/kit/fire.js, the same look); it flares
+      // up and dies down over its life
+      float y = clamp(vUv.y, 0.0, 1.0), x = vUv.x - 0.5;
+      vec2 q = vec2(x * 1.5 + seed, y * 1.5 - uT * 1.5);
+      vec2 w2 = vec2(fbm(q * 1.1), fbm(q * 1.1 + 4.3));
+      float n = fbm(q * vec2(2.8, 2.0) + (w2 - 0.5) * 2.2); n = clamp((n - 0.5) * 2.6 + 0.5, 0.0, 1.0);
+      float sway = (w2.x - 0.5) * 0.45 * y, wd = mix(0.48, 0.2, y) * (0.8 + 0.5 * w2.y);
+      float env = 1.0 - smoothstep(wd * 0.35, wd, abs(x + sway));
+      float h = env * (n * 1.5 - y * 1.05 + 0.22) * smoothstep(0.0, 0.26, y) * (1.0 - smoothstep(0.62, 0.97, y)) * min(1.0, k * 5.0) * (1.0 - k * k);
+      a = smoothstep(0.04, 0.35, h);
+      vec3 c = mix(vec3(0.35, 0.03, 0.0), vec3(0.9, 0.16, 0.01), smoothstep(0.0, 0.25, h * 1.15));
+      c = mix(c, vec3(1.0, 0.45, 0.04), smoothstep(0.25, 0.55, h * 1.15)); c = mix(c, vec3(1.0, 0.75, 0.25), smoothstep(0.55, 0.8, h * 1.15));
+      col = mix(c, vec3(1.0, 0.95, 0.75), smoothstep(0.85, 1.1, h * 1.15)) * vTint;
+    } else if (mode < 0.5) {
       float y = clamp(vUv.y, 0.0, 1.0);
       float n = fbm(vec2(p.x * 1.4 + seed, y * 1.8 - uT * 2.6 - seed));
       float n2 = fbm(vec2(p.x * 3.2 - seed, y * 3.6 - uT * 4.8));
@@ -132,7 +147,7 @@ const FLAME_FS = `uniform float uT, uCover; varying vec2 vUv; varying vec4 vData
     }
     if (a < 0.01) discard;
     // premultiplied: the cooler outer flame partly covers what is behind it (keeps the colour saturated), the hot core adds light
-    gl_FragColor = mode > 1.5 ? vec4(col, a) : vec4(col * a, a * uCover); }`;
+    gl_FragColor = mode > 2.5 ? vec4(col * a, a * 0.92) : mode > 1.5 ? vec4(col, a) : vec4(col * a, a * uCover); }`;
 class Flames {
   constructor(scene, n, smoke) {
     this.n = n; this.list = [];
@@ -234,7 +249,6 @@ export class VFX {
     for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 1.6); l.position.set(0, -50, 0); S.add(l); this.lights.push({ l, t: 0, life: 0, base: 0 }); }
     this.screen = { shake: 0, shakeT: 0, flash: 0, flashCol: new THREE.Color(1, 1, 1), chroma: 0, dark: 0, darkTarget: 0, darkCol: new THREE.Color(1, 1, 1), bars: 0, barsTarget: 0 };
     this.hitstop = 0; this.timeScale = 1;
-    this.fire = new FireWall(world, this);
   }
   // ---- primitives
   spark(x, y, z, o) { this.add.add(Object.assign({ x, y, z }, o)); }
@@ -249,6 +263,7 @@ export class VFX {
     }
   }
   flame(x, y, z, o) { this.flames.add(Object.assign({ x, y, z }, o)); }
+  realFire(x, y, z, o) { this.flames.add(Object.assign({ x, y, z, mode: 3 }, o)); }   // real fire: noise-shaped flame bodies (not tongues), mode 3
   puff(x, y, z, o) { this.flames.add(Object.assign({ x, y, z, mode: 1 }, o)); }
   smokePuff(x, y, z, o) { this.smokes.add(Object.assign({ x, y, z, mode: 2, tint: [0.16, 0.13, 0.12] }, o)); }
   ribbon(o) { return new Ribbon(this, o); }
@@ -387,80 +402,9 @@ export class VFX {
     sc.dark += (sc.darkTarget - sc.dark) * (1 - Math.exp(-dt * 3)); sc.bars += (sc.barsTarget - sc.bars) * (1 - Math.exp(-dt * 4));
     const gr = this.world.grade.uniforms;
     gr.uFlash.value = sc.flash; gr.uFlashCol.value.copy(sc.flashCol); gr.uChroma.value = sc.chroma; gr.uDark.value = sc.dark; gr.uDarkCol.value.copy(sc.darkCol); gr.uBars.value = sc.bars;
-    this.fire.update(dt, t);
   }
   ambient(dt, center) {
     // drifting dust motes in the sunlight (no falling leaves: a battle's set adds those when it wants them, the user's call)
     if (Math.random() < dt * 9) this.spark(center.x + rand(-9, 9), rand(0.3, 3), center.z + rand(-6, 6), { vx: rand(-0.15, 0.05), vy: rand(-0.03, 0.05), vz: rand(-0.05, 0.05), life: rand(3, 6), size: rand(0.03, 0.05), r: 1, gg: 0.92, b: 0.7, a: 0.5, shape: 0, fadeIn: 1, wob: 0.1, ph: rand(0, 6) });
-  }
-}
-
-// ---------------------------------------------------------------- the fire wall
-// the original pixel flames (fire.png, 4 frames) as instanced billboards along every burnt column
-class FireWall {
-  constructor(world, vfx) {
-    this.world = world; this.vfx = vfx; this.cols = new Map(); // col -> burn time
-    // the original fire tile includes scorched ground behind the flames: key those colours out (mask from the SD frames)
-    const cv = document.createElement('canvas'), tex = new THREE.CanvasTexture(cv); tex.magFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
-    Promise.all(['assets/sd/fire.png', 'assets/fire.png'].map(src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = src; }))).then(([sd, hd]) => {
-      const a = document.createElement('canvas'); a.width = sd.width; a.height = sd.height; const ag = a.getContext('2d'); ag.drawImage(sd, 0, 0);
-      const m = ag.getImageData(0, 0, sd.width, sd.height).data;
-      cv.width = hd.width; cv.height = hd.height; const g = cv.getContext('2d'); g.drawImage(hd, 0, 0);
-      const id = g.getImageData(0, 0, cv.width, cv.height), k = hd.width / sd.width;
-      const bg = (r, gg, b) => (r === 108 && gg === 72) || (r === 72 && gg === 36) || (r === 144 && gg === 144) || (r === 216 && gg === 216 && b === 180);
-      for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
-        const j = ((y / k | 0) * sd.width + (x / k | 0)) * 4;
-        if (bg(m[j], m[j + 1], m[j + 2])) id.data[(y * cv.width + x) * 4 + 3] = 0;
-      }
-      g.putImageData(id, 0, 0); tex.needsUpdate = true;
-    });
-    const MAX = 2200, geo = new THREE.InstancedBufferGeometry();
-    const base = new THREE.PlaneGeometry(1, 1); base.translate(0, 0.5, 0);
-    geo.index = base.index; geo.setAttribute('position', base.attributes.position); geo.setAttribute('uv', base.attributes.uv);
-    this.aPos = new Float32Array(MAX * 4); this.aInfo = new Float32Array(MAX * 2);
-    geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(this.aPos, 4).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('iInfo', new THREE.InstancedBufferAttribute(this.aInfo, 2).setUsage(THREE.DynamicDrawUsage));
-    geo.instanceCount = 0; this.geo = geo; this.MAX = MAX;
-    const mat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, blending: THREE.NormalBlending, toneMapped: false,
-      uniforms: { uMap: { value: tex }, uTime: { value: 0 }, uYaw: { value: 0 } },
-      vertexShader: `attribute vec4 iPos; attribute vec2 iInfo; uniform float uTime, uYaw; varying vec2 vUv; varying float vA;
-        void main(){ float fr = floor(mod(uTime * 9.0 + iInfo.x * 4.0, 4.0)); vUv = vec2((uv.x + fr) / 4.0, uv.y); vA = iInfo.y;
-          float s = iPos.w; vec3 right = vec3(cos(uYaw), 0.0, -sin(uYaw));
-          vec3 p = iPos.xyz + right * (position.x * s) + vec3(0.0, position.y * s * 1.25, 0.0);
-          gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
-      fragmentShader: `uniform sampler2D uMap; varying vec2 vUv; varying float vA;
-        void main(){ vec4 c = texture2D(uMap, vUv); if (c.a < 0.1) discard; gl_FragColor = vec4(c.rgb * 1.6, c.a * vA); }`,
-    });
-    this.mesh = new THREE.Mesh(geo, mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 3; world.scene.add(this.mesh);
-    this.mat = mat;
-    this.layout = [];
-  }
-  burn(col, t) { this.cols.set(col, t); this.relayout(); }
-  relayout() {
-    const L = []; const front = Math.min(...this.cols.keys());
-    for (const [c, t0] of this.cols) {
-      const age = c - front;                 // 0 = the advancing front
-      const rows = [];
-      for (let z = -MARGIN; z < MAP_H + MARGIN; z += age === 0 ? 0.5 : age === 1 ? 0.9 : 1.6) rows.push(z);
-      for (const z of rows) {
-        const x = c + rand(0.05, 0.95), zz = z + rand(0, 0.4);
-        const s = age === 0 ? rand(1.3, 2.3) : age === 1 ? rand(0.8, 1.3) : rand(0.3, 0.6);
-        if (age > 2 && Math.random() < 0.65) continue;
-        L.push([x, groundH(x, zz) - 0.05, zz, s, Math.random(), age === 0 ? 1 : age === 1 ? 0.8 : 0.5]);
-      }
-    }
-    const n = Math.min(this.MAX, L.length);
-    for (let i = 0; i < n; i++) { const l = L[i]; this.aPos.set([l[0], l[1], l[2], l[3]], i * 4); this.aInfo.set([l[4], l[5]], i * 2); }
-    this.geo.instanceCount = n; this.geo.attributes.iPos.needsUpdate = true; this.geo.attributes.iInfo.needsUpdate = true;
-    this.front = front;
-  }
-  update(dt, t) {
-    this.mat.uniforms.uTime.value = t;
-    if (!this.cols.size) return;
-    const f = this.front, v = this.vfx;
-    // embers lifting off the front and smoke rolling west on the wind
-    for (let i = 0; i < 3; i++) if (Math.random() < dt * 60) v.spark(f + rand(0, 1.2), rand(0.2, 1.6), rand(-4, MAP_H + 4), { vx: rand(-1.6, -0.4), vy: rand(0.8, 2.2), vz: rand(-0.3, 0.3), life: rand(0.8, 2), size: rand(0.03, 0.06), r: 1, gg: rand(0.45, 0.8), b: 0.15, shape: 1, flicker: 1, ph: rand(0, 9), wob: 0.4 });
-    if (Math.random() < dt * 14) v.smoke(f + rand(0, 2), rand(0.8, 2), rand(-4, MAP_H + 4), { vx: rand(-1.2, -0.5), vy: rand(0.5, 1), vz: rand(-0.2, 0.2), life: rand(3, 5), size: rand(0.9, 1.4), size1: rand(2.4, 3.6), r: 0.16, gg: 0.13, b: 0.12, a: 0.32, shape: -1, fadeIn: 0.8 });
   }
 }

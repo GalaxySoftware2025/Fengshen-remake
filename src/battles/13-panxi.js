@@ -25,7 +25,7 @@ export function burnColumn(x) {
 export default {
   n: 13,
   load(D) {
-    D.mapH = 14;                      // the bottom row is all wall, and the HD map art of the 磻溪 build covers 14 rows
+    D.mapH = 14;                      // the bottom row is all wall (the set draws it as forest); as the first 磻溪 build had it (test/panxi-parity.mjs)
     D.enemies.push(Object.assign({}, JIANG));
   },
   setup(G) { G.fireCol = FIRE_START; G.burnt = new Set(); burnColumn(FIRE_START); },   // [ROM] setup burns column 31 before round 1

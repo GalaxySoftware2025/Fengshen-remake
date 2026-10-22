@@ -37,6 +37,19 @@ export function physicalAttack(a, d) {           // [ROM] 0xF8C2
   if (PHYS_IMMUNE.includes(d.moveType)) dmg = 0;
   return { miss, crit, dmg };
 }
+// a unit of move type 8 (石頭) never strikes: its attack is to blow itself up [ROM 0x0E96A sends it to 0xF0672]. The
+// blast takes everyone in the eight cells round it who stands in a hero's slot (0-9: the heroes and their guests; the
+// table at 0xF856), each losing the stone's attack less its own defence, at least 1, no miss and no double [0xF0954];
+// the stone is gone (its record cleared, no experience) [0xF07E4]
+export const explodes = u => u.moveType === 8;
+export function selfDestruct(u) {
+  const hits = [];
+  for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
+    const t = G.units.find(v => v.alive && !v.away && v.x === u.x + dx && v.y === u.y + dy && (v.slot != null ? v.slot < 10 : v.side === 'player'));
+    if (t) hits.push({ t, dmg: Math.max(1, u.atk - t.df) });
+  }
+  return hits;
+}
 export const spellPower = (caster, sp) => sp.pow + (caster.side === 'player' ? (caster.atk >> 2) : 0);   // [ROM] 0x21022
 export function expFor(a, d, killed) {           // [ROM] 0x12372
   const e = D.expTable[clamp(a.lv - d.lv, -6, 5) + 6];
@@ -58,6 +71,11 @@ export function makeUnit(src, side, extra) {
 }
 export const unitAt = (x, y) => G.units.find(u => u.alive && u.x === x && u.y === y);
 export const players = () => G.units.filter(u => u.alive && u.side === 'player');
+// who says a battle line: the unit the line names if it stands on the board, else the one standing there by the
+// speaker's name, on any side (the say-lists mark most speakers 255, no unit: battle 14's 龍鬚虎, an enemy, went
+// unfocused when the lookup took only the heroes, the user's report); null for a narrator or someone not on the board
+export const speakerOf = (who, unit) => (unit && G.units.includes(unit) && unit.alive !== false && !unit.away ? unit : null)
+  || (who ? G.units.find(u => u.alive !== false && !u.away && u.name === who) || null : null);
 export const foes = u => G.units.filter(v => v.alive && v !== u && (u.side === 'player' ? v.side === 'enemy' : v.side === 'player'));
 export const allies = u => G.units.filter(v => v.alive && v.side === u.side);
 export const inMap = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
@@ -125,12 +143,19 @@ export function itemEffect(user, it) {
     default: return null;
   }
 }
-// level-up [ROM 0x12B24] with the per-character growth tables; returns what changed
+// level-up [ROM 0x12B24] with the per-character growth tables (0x3BBEE: a row of 6 bytes a level, hp mp atk df spd and a
+// spell learnt); returns what changed. As the original does it: each gain is the next row's byte less this row's, as a
+// byte (so where a table goes down, the wrap: 燃燈's HP at Lv98, 118 to 109, gains 247, as in the original, whose HP is
+// a word; attack, defence and speed are bytes, so for them the wrap comes back to the drop); HP and MP gain nothing once
+// their maximum is 999 or more, attack, defence and speed nothing at 255; no level past 99
 export function levelUp(u) {
   const g = u.growth; if (!g) { u.lv++; return { lv: u.lv }; }
+  if (u.lv >= 99 || !g[u.lv]) return { lv: u.lv };
   const before = g[u.lv - 1], after = g[u.lv]; u.lv++;
-  const ch = { lv: u.lv, hp: after[0] - before[0], mp: after[1] - before[1], atk: after[2] - before[2], df: after[3] - before[3], spd: after[4] - before[4] };
-  u.mhp += ch.hp; u.hp += ch.hp; u.mmp += ch.mp; u.mp += ch.mp; u.atk += ch.atk; u.df += ch.df; u.spd += ch.spd;
+  const gain = k => (after[k] - before[k]) & 0xFF, ch = { lv: u.lv, hp: 0, mp: 0, atk: 0, df: 0, spd: 0 };
+  if (u.mhp < 999 && gain(0)) { ch.hp = gain(0); u.mhp += ch.hp; u.hp += ch.hp; }   // [0x12C9A: the max HP word, +0x28]
+  if (u.mmp < 999 && gain(1)) { ch.mp = gain(1); u.mmp += ch.mp; u.mp += ch.mp; }
+  for (const [k, s] of [[2, 'atk'], [3, 'df'], [4, 'spd']]) if (u[s] !== 255 && gain(k)) { const v = (u[s] + gain(k)) & 0xFF; ch[s] = v - u[s]; u[s] = v; }   // [add.b: a byte]
   if (after[5] !== 255 && !u.spells.includes(after[5])) { u.spells.push(after[5]); ch.spell = after[5]; }
   return ch;
 }

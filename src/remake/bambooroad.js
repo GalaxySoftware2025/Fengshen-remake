@@ -1,4 +1,5 @@
-// The bamboo road to the old man's hut (maps 0eebd8 / 0f0b10, the same art: scenes 21 and 24; the old man sends 林雲
+// The bamboo road to the old man's hut (maps 0eebd8 / 0f0b10 / 0f1bb2 / 0f1c0e, the same art: scenes 21, 24 and 26, and
+// battle 13 磻溪 with its fire; the old man sends 林雲
 // for the 龍吟劍, then for the 洛書), remade: a gravel path with pale stepping stones winding east through a dense bamboo
 // forest, white-flowering clumps at its edges, and at its end the thatched hut (x 25.5-29.8, its front at row 7: log
 // posts, a dark doorway, two small blue-paned windows, a basket and a pot by the door). Grid: open cells are the path,
@@ -9,13 +10,70 @@ import * as T from '../kit/tex.js';
 import { box, shade, merged } from '../kit/parts.js';
 import { readLayout, Land, CL, grass, stones, bamboo, windTick } from '../kit/terrain.js';
 import { D } from '../rules.js';
+import { sheets } from '../kit/fire.js';
 
 const MW = 32, MH = 15;
 const PALETTE = { [CL.ground]: [0x90906c, 0x6c4848, 0xd8d8b4, 0xfcfcfc], [CL.grass]: [0x004800, 0x009000, 0x90d800] };
 const HUT = { x0: 25.6, x1: 29.6, z0: 4.4, z1: 6.9 };
 const hutCell = (x, y) => x + 0.5 > HUT.x0 - 0.2 && x + 0.5 < HUT.x1 + 0.2 && y + 0.5 > 2.6 && y + 0.5 < HUT.z1;
 const TUFTS = [[8.5, 7.5], [8.5, 8.5], [10.5, 11.5], [10.5, 12.5], [10.5, 13.3], [31.4, 5.8], [31.4, 6.8], [31.4, 7.8], [31.4, 8.8], [30.5, 9.6], [31.4, 9.6]];
-let land = null;
+let land = null, forest = null;
+// 磻溪's fire (scene 26 from its frame 472, battle 13): the burnt columns, the front (the westmost), its two lights
+const FIRE = { cols: new Map(), front: null, lights: [], ash: {}, wall: null, glow: null };   // cols: column -> how far it has caught (0-1)
+const FIRE_BLOCK = 58;   // the block scene 26 lays down the map's east column (x 31, rows 3-9) as 申公豹 shows the fire
+// column col takes fire: flames there (flameWall), the canes char down, the floor scorched (k: 0 to 1, as it happens)
+export function burnCol(E, col, k = 1) {
+  if (!FIRE.cols.has(col) && land) E.world.scene.add(FIRE.ash[col] = ash(col));
+  const was = FIRE.cols.get(col); FIRE.cols.set(col, k);
+  if (forest) forest.userData.burn(col, k);
+  if (FIRE.glow && Math.min(...FIRE.cols.keys()) !== FIRE.front) FIRE.glow.userData.place(Math.min(...FIRE.cols.keys()));
+  if (FIRE.ash[col]) FIRE.ash[col].material.opacity = 0.85 * k;
+  const front = Math.min(...FIRE.cols.keys()); if (front !== FIRE.front || was == null || Math.abs(k - was) > 0.04 || k === 1) { FIRE.front = front; if (FIRE.wall) FIRE.wall.layout(); }
+}
+// the forest fire in the remake's real fire (src/kit/fire.js sheets): tall sheets close along the front, lower ones on
+// the column behind it, a few smouldering further back; their height follows how far a column has caught
+function flameWall(S) {
+  const fire = sheets(S), h = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };   // fixed per spot: a relayout keeps each sheet where it was
+  return { tick: t => fire.tick(t), layout() {
+    const list = [], front = FIRE.front;
+    for (const [c, k] of FIRE.cols) {
+      const age = c - front, step = age === 0 ? 0.55 : age === 1 ? 0.9 : 1.7;
+      if (age > 4) continue;   // further back: only the stumps and the ash
+      for (let z = -5; z < MH + 3; z += step) {
+        const r = h(c, z), r2 = h(z, c + 0.5); if (age >= 2 && r > (age === 2 ? 0.55 : 0.3)) continue;
+        const x = c + 0.15 + r * 0.7, zz = z + r2 * step * 0.7, kk = 0.2 + 0.8 * k;
+        const ht = (age === 0 ? 2.6 + r2 * 1.2 : age === 1 ? 1.3 + r2 * 0.5 : 0.5 + r2 * 0.3) * kk, wd = age === 0 ? 1.7 : age === 1 ? 1.2 : 0.7;
+        // (a sheet's foot at the highest ground just behind it: leaning back, it cut into the bank there in a straight line)
+        const y = Math.max(land.at(x, zz), land.at(x + 0.6, zz), land.at(x + 1.2, zz), land.at(x, zz - 0.6)) - 0.15;
+        list.push([x, y, zz, ht, r * 37, (age === 0 ? 1.08 : age === 1 ? 0.95 : 0.8) * (0.6 + 0.4 * k), wd * (0.85 + r * 0.3)]);
+      }
+    }
+    fire.set(list);
+  } };
+}
+// the glow the fire throws on the ground along its front (moved with the front)
+function frontGlow() {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 4; const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 64, 0);
+  gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.55, 'rgba(255,255,255,1)'); gr.addColorStop(0.8, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 4);
+  const z0 = -5, z1 = MH + 3, geo = new THREE.PlaneGeometry(2.4, z1 - z0, 6, (z1 - z0) * 2).rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), color: 0xff6a1a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+  m.userData.noRange = true; m.renderOrder = 0.6;
+  m.userData.place = col => { const p = geo.attributes.position; if (!m.userData.base) m.userData.base = Float32Array.from(p.array);
+    const b = m.userData.base; for (let i = 0; i < p.count; i++) { const x = col + 0.3 + b[i * 3], z = (z0 + z1) / 2 + b[i * 3 + 2]; p.setXYZ(i, x, land.at(x, z) + 0.05, z); } p.needsUpdate = true; };
+  return m;
+}
+// the scorched floor of a burnt column: a dark strip laid over the ground (the turf stayed green under black stumps)
+function ash(col) {
+  const z0 = -5, z1 = MH + 3, geo = new THREE.PlaneGeometry(1, z1 - z0, 4, (z1 - z0) * 2).rotateX(-Math.PI / 2), p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) { const x = col + 0.5 + p.getX(i), z = (z0 + z1) / 2 + p.getZ(i); p.setXYZ(i, x, land.at(x, z) + 0.03, z); }
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x140c08, transparent: true, opacity: 0, depthWrite: false }));
+  m.userData.noRange = true; m.renderOrder = 0.5; return m;
+}
+// the forest east of the map already ablaze from col on (the map's last column and the eight past it), as 申公豹 shows
+// it in scene 26 and as battle 13 starts
+export function ablaze(E, col) { for (let c = col; c < col + 9; c++) burnCol(E, c, 1); }
 
 // straw on a canvas: dense golden strokes, darker toward the bottom of each course
 function thatchTex() {
@@ -74,13 +132,16 @@ async function build(E, FX) {
   const open = (x, y) => tc(x, y) === 0;
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
     const k = (y * 4 + j) * W + x * 4 + i;
-    if (!open(x, y)) lay[k] = hutCell(x, y) ? CL.ground : CL.grass;
+    if (!open(x, y)) lay[k] = hutCell(x, y) ? CL.ground : CL.rock;
   }
-  const outside = () => CL.grass;
-  land = new Land({ w: MW, h: MH, layout: lay, ext: 10, outside, rockH: 0.3, lumpH: 0.04,
-    tex: { dirt: T.dirt(0x8a806a, 'gravelPath'), turf: T.turf(0x2a5a1e), rock: T.rock(0x6a6050, 'pathRock', 0.3) },
-    tint: { dirt: 0xf0ece0, turf: 0xd0e8c0, rock: 0xe0d8c8 } });
-  S.add(land.mesh({ dirtK: 0.3, rockK: 0.4, topGreen: 0, bed: 0x2a3a2a }));
+  // the forest stands on a low bank (rock class: raised inside the blocked cells, its slope never reaching the path; mossy
+  // on top, bare earth on its faces), so in battle 13 no blocked cell reads as a flat way through (DESIGN.md: what no unit
+  // can reach is raised; tools/qa/sets.js), as on the land past the map
+  const outside = () => CL.rock;
+  land = new Land({ w: MW, h: MH, layout: lay, ext: 10, outside, rockH: 0.5, lumpH: 0.04,
+    tex: { dirt: T.dirt(0x8a806a, 'gravelPath'), turf: T.turf(0x2a5a1e), rock: T.dirt(0x5a4630, 'forestBank') },
+    tint: { dirt: 0xf0ece0, turf: 0xd0e8c0, rock: 0xd8c8b0 } });
+  S.add(land.mesh({ dirtK: 0.3, rockK: 0.5, topGreen: 1, bed: 0x2a3a2a }));
   S.add(hut(land.at(27.6, 6.5)));
   // the forest: canes on every blocked cell (and on past the map), low just south of the path (no one hidden behind)
   const southOf = (x, y) => { for (let d = 1; d <= 3; d++) if (open(x, y - d)) return d; return 9; };
@@ -91,7 +152,22 @@ async function build(E, FX) {
     const d = southOf(x, y), h = d === 1 ? 0.9 : d === 2 ? 1.6 : d === 3 ? 2.4 : 3.4;
     for (let k = 0; k < 2; k++) { const px = x + 0.15 + Math.random() * 0.7, pz = y + 0.15 + Math.random() * 0.7; pts.push([px, land.at(px, pz), pz, h * (0.9 + Math.random() * 0.25)]); }
   }
-  S.add(bamboo(pts));
+  S.add(forest = bamboo(pts));
+  // the fire: none yet on a new build (the flames belong to the engine's effects, kept across builds), its warm light
+  // flickering along the front once there is one
+  FIRE.cols.clear(); FIRE.front = null; FIRE.ash = {};
+  FIRE.wall = flameWall(S); S.add(FIRE.glow = frontGlow());
+  FIRE.lights = [0, 1, 2].map(i => { const l = new THREE.PointLight(0xff7a2a, 0, 9, 1.6); l.position.set(40, 1.4, 2 + i * 5); S.add(l); return l; });
+  let em = 0, sm = 0;
+  E.world.updaters.push((dt, t) => {
+    for (const [i, l] of FIRE.lights.entries()) { if (FIRE.front == null) { l.intensity = 0; continue; } l.position.x = FIRE.front + 0.2; l.intensity = 14 * (0.75 + 0.25 * Math.sin(t * 13 + i * 2.1) * Math.sin(t * 7.7 + i)); }
+    if (FIRE.front == null) { FIRE.glow.material.opacity = 0; return; }
+    FIRE.wall.tick(t); FIRE.glow.material.opacity = 0.85 * (0.8 + 0.2 * Math.sin(t * 9) * Math.sin(t * 5.3));
+    const f = FIRE.front, rz = () => -3 + Math.random() * (MH + 6);
+    // embers lifting off the front, drifting west on the wind, and dark smoke rolling up behind it
+    for (em += dt; em > 0.02; em -= 0.02) { const z = rz(); E.vfx.spark(f + 0.2 + Math.random() * 0.8, land.at(f + 0.5, z) + 0.6 + Math.random() * 1.6, z, { vx: -0.3 - Math.random() * 1.1, vy: 0.8 + Math.random() * 1.4, vz: (Math.random() - 0.5) * 0.4, life: 0.8 + Math.random() * 1.2, size: 0.02 + Math.random() * 0.03, r: 1, gg: 0.45 + Math.random() * 0.35, b: 0.12, shape: 1 }); }
+    for (sm += dt; sm > 0.09; sm -= 0.09) { const z = rz(); E.vfx.smokePuff(f + 0.5 + Math.random() * 1.5, land.at(f + 1, z) + 1.6 + Math.random() * 0.8, z, { vx: -0.4 - Math.random() * 0.5, vy: 0.5 + Math.random() * 0.4, life: 3 + Math.random() * 2, size: 0.5, size1: 2.2 + Math.random(), tint: [0.16, 0.13, 0.12] }); }
+  });
   // the white-flowering clumps at the path's edges, tufts along the verges, pale stones on the path
   S.add(grass(TUFTS.map(([x, z]) => [x, land.at(x, z), z]), { size: 0.75, cols: ['#e8f0c8', '#d0e0a0', '#f8f8e0', '#b8d088'] }));
   S.add(grass(land.scatter(CL.grass, 20, (x, z) => open(Math.floor(x), Math.floor(z)) || southOf(Math.floor(x), Math.floor(z)) <= 1), { size: 0.36, cols: ['#2e6a1e', '#4a8a24', '#1e5a18'] }));
@@ -102,6 +178,9 @@ async function build(E, FX) {
 
 export default {
   build, ground: (x, z) => land ? land.at(x, z) : 0,
+  props: (() => { const o = []; for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (hutCell(x, y)) o.push([x, y]); return o; })(),   // the hut's cells: the hut blocks them (tools/qa/sets.js)
+  // scene 26: the fire block laid down the east column (seeking to a later frame lays it again: once is enough)
+  cell: (E, x, y, block) => { if (block === FIRE_BLOCK && !FIRE.cols.has(x)) ablaze(E, x); },
   // a green, quiet afternoon under the canes
   mood: { bg: 0xc8d8c0, voidCol: false, fog: 0xb8ccb0, fogD: 0.014, sky: 0xd0e8d8, under: 0x2a4a20, hemi: 1.0,
     sun: 0xfff0d0, sunI: 2.8, sunDir: [-0.4, 0.8, 0.4], sat: 1.05, exposure: 1.02, bloom: 0.3, aoR: 0.8,

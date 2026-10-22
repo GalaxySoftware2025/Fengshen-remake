@@ -2,7 +2,7 @@
 // battle rules.js has loaded. A battle's own presentation comes in as FX (src/battles/NN-*-fx.js), called with this
 // module (E) so it can use the same camera, effects and animations.
 import * as THREE from 'three';
-import { World, groundH, rand, setLook, U as WU } from './world.js';
+import { World, groundH, rand, setLook } from './world.js';
 import { SpriteBank, Actor } from './actors.js';
 import { LEVEL_POSE } from './levelup.js';
 import { speed } from './speed.js';
@@ -13,7 +13,9 @@ import { UI, spellDesc, itemDesc } from './ui.js';
 import * as R from './rules.js';
 import * as E from './battle.js';
 import { sfx, jingle } from './audio.js';
+import { deathOf } from './deaths.js';
 import { dress } from './sets.js';
+import { downIndex } from './downcast.js';
 const { D, G } = R;
 const AD = globalThis.ANIM_DATA;
 const $ = id => document.getElementById(id);
@@ -30,6 +32,7 @@ export const opts = { auto: /auto/.test(location.hash), rescue: /rescue/.test(lo
   free: /[#&]free\b/.test(location.hash) && /battle=\d+/.test(location.hash) };
 opts.go = /[#&]go\b/.test(location.hash);   // a test start straight into round 1 (src/main.js single)
 opts.test = opts.arena || (/[#&]test\b/.test(location.hash) && /battle=\d+/.test(location.hash));
+opts.classicfall = /[#&]classicfall\b/.test(location.hash);   // the original's hero fall instead of each hero's own (src/deaths.js)
 
 // tweens on game time (respects hit-stop and fast-forward)
 const tweens = [];
@@ -74,9 +77,21 @@ export class Cam {
 // evening battle's sand still takes the dark squares)
 let groundLum = null, LUM_DARK = 0.16;
 export const groundLight = () => ({ lum: groundLum, dark: LUM_DARK });   // (tools/qa/tiles.js)
+// QA (the downward-ray index against the Raycaster it replaced): the highest hit under five points of every cell
+export function downCheck() {
+  const ray = new THREE.Raycaster(), bad = []; let n = 0;
+  for (let y = 0; y < R.MAP_H; y++) for (let x = 0; x < R.MAP_W; x++) for (const [dx, dz] of [[0.5, 0.5], [0.2, 0.2], [0.8, 0.8]]) {
+    const g = groundH(x + 0.5, y + 0.5) + 6; ray.set(new THREE.Vector3(x + dx, g, y + dz), DOWN);
+    const a = ray.intersectObjects(RANGE_SOLID, false)[0], b = rangeIdx().cast(x + dx, y + dz, g)[0]; n++;
+    if (!!a !== !!b || (a && (Math.abs(a.point.y - b.y) > 2e-3 || a.object !== b.object))) bad.push((x + dx) + ',' + (y + dz) + ' ray ' + (a ? a.point.y.toFixed(3) : '-') + ' idx ' + (b ? b.y.toFixed(3) : '-'));
+  }
+  return { n, bad: bad.length, first: bad.slice(0, 5) };   // (a point exactly on an edge may go either way: battle 4 has one)
+}
+// QA (tools/qa/battlecheck.js): the first move squares drawn again from cold (their scenery looked up afresh), in ms
+export function squaresCold() { RANGE_CELLS.clear(); RANGE_VOID.clear(); const t0 = performance.now(); tiles.set(tiles.last || []); return performance.now() - t0; }
 export function measureLight() {
-  SURF = null; RANGE_CELLS.clear(); RANGE_VOID.clear(); FLOOR.clear();   // the set or the room changed: the flier surfaces and the cells' scenery are measured again
-  if (tiles) { tiles.ground(); tintScenery(); }   // and the ground the squares lie on; the scenery takes the range
+  SURF = null; RANGE_IDX = null; RANGE_CELLS.clear(); RANGE_VOID.clear(); FLOOR.clear();   // the set or the room changed: the flier surfaces and the cells' scenery are measured again
+  if (tiles) { tiles.ground(); tintScenery(); rangeIdx(); }   // and the ground the squares lie on; the scenery takes the range (its downward-ray index made now, under the loading screen)
   try {
     // the map's run of light from high up; each cell the darker of that and its ground under any canopy (battle 13's bamboo
     // tops read the shaded ground under them as light: tools/qa/tiles.js)
@@ -86,6 +101,20 @@ export function measureLight() {
     LUM_DARK = med < 0.05 ? 0.16 : Math.min(0.16, med * 0.6) * 0.8;   // a map too dark for dark squares to show on at all takes white ones: the dark interiors, battles 3, 5, 6, 11 (median 0.040-0.043), not battle 2's night sand (0.057; tools/qa/tiles.js)   // (0.8: only ground clearly darker than the map's run; on battle 7's evenly dark night court a wall's shadow, 0.04 against 0.05 round it, turned two cells white: the user's report)
   }
   catch (e) { groundLum = null; }
+  warmUp();
+}
+// every shader program the battle will draw, made now rather than in the frames of the fight (the user's report: a lag
+// after each battle's name shows). The first frame of a set compiled ~20 programs (0.65 s) and the first move squares
+// ~20 more; renderer.compile alone misses the shadow map's depth programs, the AO pass's normal programs and each
+// material as actually lit, so one real frame is drawn too (under the loading screen; stage() again with the units, in
+// the camp's fade); the marks and the squares are shown for it, so theirs compile as well. Draws nothing anyone sees:
+// the frame is drawn over by the next.
+export function warmUp() {
+  if (!world || !world.renderer || !world.scene || !ready) return;
+  const hidden = [tiles && tiles.cursor, tiles && tiles.marker, tiles && tiles.dots, activeMark && activeMark.group, targetMark && targetMark.group].filter(o => o && !o.visible);
+  for (const o of hidden) o.visible = true;
+  try { world.renderer.compile(world.scene, world.camera); world.shadowsLive = true; world.render(); } catch (e) { console.warn('warmUp', e); }
+  for (const o of hidden) o.visible = false;
 }
 // each cell's brightness averaged with its neighbours' (its own counted twice), so that a shadow's edge or a speck does
 // not flip one cell's fill against the cells round it
@@ -159,7 +188,10 @@ function drapeTexture() {
 // all take it; the lines only on what lies flat. A cell with nothing of the set's own under its square (a flier's cell
 // over the void, water drawn by its own shader) keeps the square as before.
 const RU = { uRangeCell: { value: null }, uRangeBand: { value: null }, uRangeSize: { value: new THREE.Vector2(1, 1) }, uRangeOn: { value: 0 }, uRangeAlpha: { value: 1 }, uRangeT: { value: 0 }, uRangeMask: { value: 0 }, uCutCell: { value: null }, uCutOn: { value: 0 } };   // (one set for every world: a material patched once keeps them)
-const RANGE_CELLS = new Map(), RANGE_VOID = new Set(); let RANGE_SOLID = [];
+const RANGE_CELLS = new Map(), RANGE_VOID = new Set(); let RANGE_SOLID = [], RANGE_IDX = null;
+// the downward-ray index of the solid pieces (src/downcast.js), made once a world (measureLight, under the loading screen)
+const downArea = () => [-3, -3, R.MAP_W + 3, R.MAP_H + 3];
+const rangeIdx = () => RANGE_IDX || (RANGE_IDX = downIndex(RANGE_SOLID, downArea()));
 // how light the world beyond the set is (a flier's square over the void is seen against it)
 const backdropLum = () => { const S = world.scene, c = S.background && S.background.isColor ? S.background : S.fog ? S.fog.color : null; return c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0; };
 // a unit in a blocked cell (OBSTRUCT): what stands in that cell above its feet thins away, a screen-door dither over a
@@ -217,7 +249,7 @@ function tintScenery() {
   for (const o of [tiles && tiles.mesh, tiles && tiles.cursor, tiles && tiles.marker, tiles && tiles.dots, activeMark && activeMark.group, targetMark && targetMark.group]) if (o) o.traverse(q => skip.add(q));
   world.scene.traverse(o => { if (o.isMesh && !skip.has(o) && !o.userData.noRange) for (const m of [].concat(o.material)) rangeMaterial(m); });
   // what a square can lie on, for cellInfo: every opaque mesh seen (water in its own shader too: it is not tinted)
-  RANGE_SOLID = []; world.scene.traverseVisible(o => { if (o.isMesh && !skip.has(o) && [].concat(o.material).some(m => m && !m.transparent && m.blending === THREE.NormalBlending && m.colorWrite !== false && m.side !== THREE.BackSide)) RANGE_SOLID.push(o); });
+  RANGE_IDX = null; RANGE_SOLID = []; world.scene.traverseVisible(o => { if (o.isMesh && !skip.has(o) && [].concat(o.material).some(m => m && !m.transparent && m.blending === THREE.NormalBlending && m.colorWrite !== false && m.side !== THREE.BackSide)) RANGE_SOLID.push(o); });
 }
 // what a cell of the range tints: from its foot (the lowest ground round it, so the face of a step down from it is
 // coloured) to the top of what stands on it (on open ground no higher than 1.2 over it: not a canopy); null when what
@@ -230,9 +262,8 @@ function cellInfo(x, y) {
   foot = Math.max(foot, g - 2.5) - 0.05;
   let top = -99, good = 0, info = { lo: foot, hi: 0 };
   for (const [dx, dz] of [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]]) {   // the middle and at least two of the corners
-    _down.set(new THREE.Vector3(x + dx, g + 6, y + dz), DOWN);
-    const hit = _down.intersectObjects(RANGE_SOLID, false).find(h => !walk || h.point.y <= g + 1.2), hm = hit && (Array.isArray(hit.object.material) ? hit.object.material[hit.face.materialIndex] : hit.object.material);
-    if (hit && hit.point.y >= foot && hm && hm.userData.rangeTint) { good++; top = Math.max(top, hit.point.y); } else if (dx === 0.5) { if (!hit || hit.point.y < foot) RANGE_VOID.add(k); good = -9; break; }
+    const hit = rangeIdx().cast(x + dx, y + dz, g + 6).find(h => !walk || h.y <= g + 1.2), hm = hit && hit.material;
+    if (hit && hit.y >= foot && hm && hm.userData.rangeTint) { good++; top = Math.max(top, hit.y); } else if (dx === 0.5) { if (!hit || hit.y < foot) RANGE_VOID.add(k); good = -9; break; }
   }
   if (good < 3) info = null; else { info.hi = (walk ? Math.max(g + 0.3, top) : Math.max(g, top)) + 0.05; info.g = g; }
   RANGE_CELLS.set(k, info); return info;
@@ -615,13 +646,12 @@ function surfaceY(x, y) {
       if (m.blending === THREE.AdditiveBlending || (m.transparent && !m.depthWrite) || m.side === THREE.BackSide || (o.isInstancedMesh && m.alphaTest > 0)) return;
       solid.push(o);
     });
-    SURF = { solid, cells: new Map() };
+    SURF = { solid, cells: new Map(), idx: downIndex(solid, downArea()) };
   }
   const k = x + ',' + y; if (SURF.cells.has(k)) return SURF.cells.get(k);
   const g = groundH(x + 0.5, y + 0.5); let h = g;
   for (const [dx, dz] of [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) {
-    _down.set(new THREE.Vector3(x + dx, g + 6, y + dz), DOWN);
-    const hit = _down.intersectObjects(SURF.solid, false)[0]; if (hit) h = Math.max(h, hit.point.y);
+    const hit = SURF.idx.cast(x + dx, y + dz, g + 6)[0]; if (hit) h = Math.max(h, hit.y);
   }
   SURF.cells.set(k, h); return h;
 }
@@ -671,31 +701,124 @@ export function showResult(t, r) {
   else if (r.heal !== undefined) { ui.floater(p, '+' + r.heal, 'dmg heal', 1.4); a.flash = 0.5; anim(0.6, k => { a.flash = 0.5 * (1 - k); }); }
   else if (r.text && r.text.startsWith('法力')) ui.floater(p, r.text, 'dmg heal', 1.4);   // status words (淨化, 睡眠...) are not shown
 }
-// an ally falls: it spins like an enemy (deathSpin, below), then its spirit (a pale copy of the sprite) rises out of the body as it blinks away
+// a hero falls, as the original plays it [ROM 0x1091A, recorded frame by frame in the harness: 515 frames]: the spin
+// (0x103E8, no cry), then the hero kneels in its death pose (action blob 9, loaded to VRAM 0x5A0) while the whole map
+// fades to black round it (frames 72-120); the lament starts (0x10A16); a thin beam of white light comes down onto it
+// (136-184) and opens into a pillar; the hero's spirit, a pale copy of the kneeling pose, rises up the pillar (250-416)
+// while rows of cyan stars stream down the black; the pillar narrows to a line and goes, the body with it (416-448); the
+// map fades back in without the hero (452-512) [the user's call: the original's longer fall, not a short blink]. Built
+// as light: a soft glowing pillar with streaks flowing up, a glowing spirit, four-point star glints, on a black
+// backdrop drawn over the scenery (the hero, the pillar and the spirit over it)
+// @qa job:hud job:sounds   (shows only in a hero's fall: allyDeath; tools/qa/scope.mjs)
+const DIE_TEX = new Map();
+export function dieTex(gfx) {   // the death pose's HD frame (assets/units/die/hd, the extractor's), on the 256 px canvas a tex act takes
+  if (!DIE_TEX.has(gfx)) DIE_TEX.set(gfx, new Promise(res => {
+    const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = c.height = 256; c.getContext('2d').drawImage(img, 64, 64, 128, 128);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; res(t); };
+    img.onerror = () => res(null); img.src = 'assets/units/die/hd/' + gfx.toString(16).padStart(6, '0') + '.png';
+  }));
+  return DIE_TEX.get(gfx);
+}
+// @qa job:hud job:sounds   (shows only in a hero's fall: allyDeath; tools/qa/scope.mjs)
+const STAR_FS = `uniform float uA, uStars, uT, uAsp; varying vec2 vUv;
+  float h(float n){ return fract(sin(n * 127.1) * 43758.5453); }
+  void main(){
+    vec2 p = vec2(vUv.x * uAsp, vUv.y); vec3 col = vec3(0.0); float glow = 0.0;
+    // rows of star glints falling down the screen: a row every 0.2 of its height, each with its own stars
+    float sy = p.y + uT * 0.22, row = floor(sy / 0.2), fy = fract(sy / 0.2) * 0.2 - 0.1;
+    for (int k = 0; k < 9; k++) {
+      float sx = (float(k) + 0.15 + 0.7 * h(row * 9.1 + float(k))) / 9.0 * uAsp, d = h(row * 3.7 + float(k) * 1.3);
+      vec2 q = vec2(p.x - sx, fy + (d - 0.5) * 0.02); float s = mix(0.006, 0.014, d) * (0.75 + 0.25 * sin(uT * 6.0 + d * 30.0));
+      float arms = max(exp(-abs(q.y) / (s * 0.12)) * exp(-abs(q.x) / (s * 1.6)), exp(-abs(q.x) / (s * 0.12)) * exp(-abs(q.y) / (s * 1.6)));   // a four-point glint
+      glow += exp(-length(q) / (s * 0.35)) * 1.4 + arms;
+    }
+    col = mix(vec3(0.35, 0.75, 1.0), vec3(0.9, 1.0, 1.0), clamp(glow - 0.5, 0.0, 1.0)) * glow * uStars;
+    gl_FragColor = vec4(col, max(uA, clamp(glow * uStars, 0.0, 1.0)));
+  }`;
+// @qa job:hud job:sounds   (shows only in a hero's fall: allyDeath; tools/qa/scope.mjs)
+const BEAM_FS = `uniform float uA, uTip, uT; varying vec2 vUv;
+  float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+  void main(){
+    float x = abs(vUv.x - 0.5) * 2.0, y = vUv.y;
+    if (y < 1.0 - uTip) discard;                                                    // coming down from the top
+    float core = 1.0 - smoothstep(0.0, 0.75, x), edge = 1.0 - smoothstep(0.6, 1.0, x);
+    float streak = n(vec2(vUv.x * 14.0, y * 3.0 - uT * 1.6)) * 0.35 + n(vec2(vUv.x * 30.0, y * 7.0 - uT * 3.0)) * 0.15;
+    float a = (edge * (0.55 + streak) + core * 0.6) * smoothstep(0.0, 0.02, y) * uA;
+    vec3 col = mix(vec3(0.62, 0.8, 1.0), vec3(1.0), core);
+    gl_FragColor = vec4(col * a, a);
+  }`;
+// @qa job:hud job:sounds   (a hero's fall: tools/qa/hud.js checks it; it runs once a job, which best-effort coverage misses)
 export async function allyDeath(u) {
-  const a = actorOf(u), P = a.pos.clone(), face = u.facing;
-  cam.focus(P);
-  vfx.screen.darkTarget = 0.35; vfx.screen.darkCol.setRGB(0.6, 0.6, 0.45);
-  await deathSpin(u, false);   // [ROM 0x1091A calls the enemy's 0x103E8: the same spin, but a hero (slot 0-9) does not cry out]
-  vfx.smokePuff(P.x, P.y + 0.1, P.z, { vy: 0.3, life: 1.2, size: 0.4, size1: 1.1, tint: [0.45, 0.42, 0.38] }); sfx(SND.burst);   // [ROM 0x10506, for every unit]
-  await wait(250);
-  // the spirit leaves the body
-  const src = a.mesh.material.map, t2 = src.clone(); t2.needsUpdate = true;
-  const ghost = new THREE.Mesh(a.mesh.geometry.clone(), new THREE.MeshBasicMaterial({ map: t2, color: new THREE.Color(0.75, 0.9, 1.3), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
-  ghost.renderOrder = 6;
-  vfx.light(P.clone().setY(P.y + 1), [0.6, 0.75, 1], 8, 2.2, 5);
-  vfx.pillar(P, [0.55, 0.7, 1], 0.42, 3.5, 2.0, { taper: 0.8, intensity: 0.35, grow: 1 });
-  vfx.timed(ghost, 2.0, (k) => {
-    ghost.position.copy(a.mesh.position).add(V(0, k * 1.8, 0)); ghost.rotation.copy(a.mesh.rotation);
-    ghost.material.opacity = Math.min(1, k * 4) * (1 - k) * 0.8; ghost.scale.setScalar(1 + k * 0.15);
-    if (Math.random() < 0.5) { const q = ghost.position; vfx.spark(q.x + rand(-0.3, 0.3), q.y + rand(0.1, 0.9), q.z + rand(-0.2, 0.2), { vy: rand(0.3, 0.8), life: 1, size: 0.05, r: 0.7, gg: 0.85, b: 1, shape: 0, wob: 0.4, ph: rand(0, 6) }); }
-  });
-  // meanwhile the body blinks out (the original puffs it away in a small cloud)
-  for (let i = 0; i < 14; i++) { a.flashPal = i % 2 === 0; a.flash = i % 2 ? 0 : 0.5; a.hidden = !!(i % 2 && i > 6); await wait(i < 7 ? 90 : 70); }
-  a.flashPal = false; a.flash = 0; a.act = null; a.hidden = false; a.dissolve = 1; u.facing = face;
-  await wait(900);
-  vfx.screen.darkTarget = 0;
-  jingle(0x0a);   // a short lament over the music, then the battle's song again [ROM 0x10A16, the end of the ally's fall]
+  const own = !opts.classicfall && deathOf(u); if (own) return own(u);   // each hero's and guest's own fall (src/deaths.js); #...&classicfall: the original's
+  const a = actorOf(u), P = a.pos.clone(), face = u.facing, S = world.scene, cm = world.camera, hudOn = !document.getElementById('hud').classList.contains('hidden');
+  cam.shot(P.clone().setY(P.y + 0.6), { speed: 3 });
+  const pose = dieTex(u.gfx || (D.heroes && D.heroes[u.cid] ? D.heroes[u.cid].gfx : 0));   // (a battle's units keep no graphic address: the hero table's)
+  await deathSpin(u, false, 3);   // [ROM 0x1091A calls the enemy's 0x103E8: the same spin, but a hero (slot 0-9) does not cry out; three rounds here, not one: the user's call]
+  sfx(SND.burst);   // [ROM 0x10506, for every unit]
+  const tx = await pose; u.facing = 'down'; if (tx) a.act = { kind: 'tex', tex: tx };
+  // the backdrop over the scenery, and the hero over it
+  const quad = (fs, u0) => new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({ uniforms: u0, transparent: true, depthTest: false, depthWrite: false, toneMapped: false,
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: fs }));
+  const back = quad(STAR_FS, { uA: { value: 0 }, uStars: { value: 0 }, uT: { value: 0 }, uAsp: { value: 1 } }); back.renderOrder = 7; back.frustumCulled = false;
+  const beam = quad(BEAM_FS, { uA: { value: 0 }, uTip: { value: 0 }, uT: { value: 0 } }); beam.renderOrder = 7.5; beam.frustumCulled = false;
+  beam.material.blending = THREE.CustomBlending; beam.material.blendSrc = THREE.OneFactor; beam.material.blendDst = THREE.OneMinusSrcAlphaFactor; beam.geometry.translate(0, 0.5, 0);
+  const spirit = new THREE.Mesh(a.big.geometry.clone(), new THREE.MeshBasicMaterial({ map: tx || a.mesh.material.map, color: new THREE.Color(0.7, 0.82, 1.15), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));   // (the original's pale copy, seen over the white)
+  spirit.renderOrder = 9; spirit.visible = false;
+  S.add(back, beam, spirit);
+  // (over: into the transparent pass, after the backdrop, as a flier is: the opaque pass draws before any transparent one)
+  const kept = [a.mesh, a.big].map(m => [m, m.material.depthTest, m.renderOrder]), wasOver = a.over;
+  a.over = true; for (const m of [a.mesh, a.big]) { m.material.depthTest = false; m.renderOrder = 8; }
+  const marks = [activeMark && activeMark.group, targetMark && targetMark.group].filter(Boolean).map(g => [g, g.visible]);
+  const W0 = 1.15, HB = 14;   // the pillar's width (a little wider than the body) and its length up the screen
+  const up = new THREE.Vector3();   // the screen's up, in the world: the pillar and the spirit rise along it
+  const tick = (dt, t) => {
+    const d = new THREE.Vector3(); cm.getWorldDirection(d);
+    back.position.copy(cm.position).addScaledVector(d, 1); back.quaternion.copy(cm.quaternion);
+    const hh = 2 * Math.tan(cm.fov * Math.PI / 360) * 1.02; back.scale.set(hh * cm.aspect, hh, 1); back.material.uniforms.uAsp.value = cm.aspect; back.material.uniforms.uT.value = t;
+    // the pillar lies parallel to the screen, rising from the hero's feet up it: as wide at the top as at the foot (an
+    // upright sheet seen from above widened toward the camera, the user's report)
+    // (its foot below the hero's: the hero kneels up in the light, the user's call)
+    up.set(0, 1, 0).applyQuaternion(cm.quaternion); beam.position.set(P.x, P.y, P.z).addScaledVector(up, -0.9); beam.quaternion.copy(cm.quaternion); beam.material.uniforms.uT.value = t;
+    spirit.rotation.copy(a.big.rotation); spirit.scale.copy(a.big.scale);
+  };
+  world.updaters.push(tick);
+  try {
+    if (hudOn) ui.show('hud', false); for (const [g] of marks) g.visible = false;
+    await wait(800);                                                       // kneeling (to frame 72)
+    await anim(0.8, k => { back.material.uniforms.uA.value = k; a.size = 1 + 0.2 * k * k * (3 - 2 * k); });   // the map fades to black round the hero (72-120), who grows a fifth (1.5 was too much) [the user's call]
+    jingle(0x0a);                                                          // the lament [0x10A16]
+    // with only the hero to see, the view slides so the hero kneels low on the screen, the pillar's length above it, as in
+    // the original (a pan: the player's zoom kept [the user's call]); it comes back while the screen is still black
+    { const f = new THREE.Vector3(); cm.getWorldDirection(f); f.y = 0; f.normalize();
+      const d = 0.47 * cam.user.dist * Math.tan(cm.fov * Math.PI / 360) / Math.sin(cam.user.pitch);   // (the pillar's foot, below the hero, kept on the screen)
+      cam.shot(P.clone().setY(P.y + 0.6).addScaledVector(f, d), { speed: 2.5 }); }
+    await wait(270);
+    beam.material.uniforms.uA.value = 1; beam.scale.set(0.05, HB, 1);
+    await anim(0.8, k => { beam.material.uniforms.uTip.value = k; });       // a thin line of light comes down onto it (136-184)
+    vfx.light(P.clone().setY(P.y + 1), [0.7, 0.85, 1], 10, 0.6, 5);
+    await anim(0.27, k => { beam.scale.x = 0.05 + (W0 - 0.05) * (1 - (1 - k) * (1 - k)); });   // and opens into a pillar
+    await wait(880);
+    spirit.visible = true;
+    await anim(2.77, k => {                                                // the spirit rises up the pillar (250-416), the stars stream down
+      back.material.uniforms.uStars.value = Math.min(1, k * 4);
+      spirit.position.copy(a.big.position).addScaledVector(up, k * 7); spirit.material.opacity = Math.min(1, k * 5) * (1 - Math.max(0, k - 0.8) / 0.2) * 0.85;
+    });
+    spirit.visible = false;
+    await anim(0.53, k => {                                                // the pillar narrows to a line and goes, the body with it (416-448)
+      beam.scale.x = Math.max(0.02, W0 * (1 - k)); a.fade = Math.max(0, 1 - k * 1.4); if (k > 0.85) beam.material.uniforms.uA.value = (1 - k) / 0.15;   // (a quiet fade, not a demon's ember dissolve)
+    });
+    beam.visible = false; a.hidden = true;
+    cam.shot(P.clone().setY(P.y + 0.6), { speed: 3 }); cam.snap(); await wait(70);
+    await anim(1.0, k => { back.material.uniforms.uA.value = 1 - k; back.material.uniforms.uStars.value = 1 - k; });   // the map again (452-512)
+  } finally {
+    world.updaters.splice(world.updaters.indexOf(tick), 1);
+    for (const o of [back, beam, spirit]) { S.remove(o); o.geometry.dispose(); o.material.dispose(); }
+    a.over = wasOver; for (const [m, dt, ro] of kept) { m.material.depthTest = dt; m.renderOrder = ro; }
+    for (const [g, v] of marks) g.visible = v;
+    if (hudOn) ui.show('hud', true);
+    a.act = null; a.hidden = false; a.fade = 1; a.dissolve = 1; a.size = 1; u.facing = face; cam.release();
+  }
 }
 // a unit falls [ROM 0x103E8 -> 0x1105A]: it spins once on the spot, its facing set down, right, up, left and down again,
 // 5 frames each, then the original puffs it away (a 5-frame cloud, 0x560-0x5A0). Here the demon's body breaks apart
@@ -703,16 +826,17 @@ export async function allyDeath(u) {
 // the battle's sound effects, the ROM's own [the attack routine 0x0E93A: a melee blow plays only the impact (0x0EC9C); the
 // bow path (move type 1, from 0x0F098) adds the arrow's whoosh (0x0F228) before the same impact; the death 0x103E8]
 const SND = { arrow: 0x8081, hit: 0x8089, cry: 0x805d, burst: 0x806f, found: 0x8061, levelUp: 'levelup' };   // levelUp: 星落鈴音, falling-star chimes made for the remake (tools/audio/levelup.py; the user's pick of five) instead of the original's 0x805A
-export async function deathSpin(u, cry = true) {
+export async function deathSpin(u, cry = true, rounds = 1) {
   const a = actorOf(u); a.act = null; a.off.set(0, 0); if (cry) sfx(SND.cry);   // the death cry as the spin begins [ROM 0x1040E: only for a unit past slot 9, an enemy]
-  for (const f of ['down', 'right', 'up', 'left', 'down']) { u.facing = f; await wait(1000 * 5 / 60); }
+  for (let r = 0; r < rounds; r++) for (const f of ['down', 'right', 'up', 'left']) { u.facing = f; await wait(1000 * 5 / 60); }
+  u.facing = 'down'; await wait(1000 * 5 / 60);
 }
 // a fall starts DEATH_GAP seconds after the blow that caused it, whatever dealt it [the user's call: a bow's kill fell
 // 0.3 s after the arrow, a sword's 1.3 s, a spell's 0.8-1.4 s; all now wait as the slowest, 1.4 s]
 const DEATH_GAP = 1.4;
 export async function killAnim(u) {
   if (u.hitT != null) { const left = DEATH_GAP - (gameT - u.hitT); u.hitT = null; if (left > 0) await wait(left * 1000); }
-  if (u.side === 'player') return allyDeath(u);
+  if (u.side === 'player' || u.side === 'npc') return allyDeath(u);   // (a guest the heroes protect falls as a hero does: 文王, battle 13's bound 姜子牙)
   const a = actorOf(u), P = a.pos.clone();
   await deathSpin(u);
   a.flash = 0.6; a.off.set(0, 0); sfx(SND.burst);   // and the burst as the body goes [ROM 0x10506]
@@ -835,7 +959,40 @@ export async function gainExp(u, amount) {
 }
 
 // ---------------------------------------------------------------- actions
+// 石頭 blows itself up instead of striking (R.selfDestruct, ROM 0xF0672): it shudders and glows as the rock cracks with
+// light, then bursts: a flash, a fireball, the eight pieces the original throws outward and more chips of stone, dust; each
+// hero round it takes the blast; the stone is gone, with no experience to anyone
+async function explodeAttack(au) {
+  const a = actorOf(au), P = a.pos.clone(), c = a.chest(), hits = R.selfDestruct(au);
+  cam.focus(P);
+  await anim(0.75, (k, dt = 1 / 60) => {   // the charge: trembling, glowing hotter, sparks spitting from the cracks
+    a.off.set(rand(-1, 1) * 0.04 * k, rand(-1, 1) * 0.02 * k); a.flash = 0.25 + 0.5 * k * (0.6 + 0.4 * Math.sin(k * 60));
+    if (Math.random() < 0.3 + k) vfx.spark(c.x + rand(-0.3, 0.3), c.y + rand(-0.3, 0.3), c.z + 0.1, { vx: rand(-1, 1), vy: rand(0.5, 2), vz: rand(-0.4, 0.4), g: 4, life: 0.4, size: rand(0.03, 0.05), r: 1, gg: rand(0.5, 0.8), b: 0.2, shape: 1 });
+    if (Math.random() < k * 0.5) vfx.light(c, [1, 0.5, 0.15], 4 + 10 * k, 0.08, 3);
+  });
+  a.off.set(0, 0); a.flash = 0; a.dissolve = 1; au.alive = false;
+  sfx(SND.burst); vfx.flash([1, 0.75, 0.4], 0.16); vfx.shake(0.32, 0.5); vfx.hitstop = 0.08;
+  vfx.explode(c, 1.1, { n: 26, tint: [1.3, 1.05, 0.6], smokeTint: [0.3, 0.27, 0.24] });
+  vfx.light(c, [1, 0.6, 0.25], 30, 0.7, 7); vfx.ring(P, [1, 0.7, 0.35], 2.6, 0.5, { intensity: 0.8 }); vfx.decal(P, [0.25, 0.2, 0.16], 1.3, 3, { intensity: 0.6 });
+  // the stone in pieces: the original's eight thrown outward, and smaller chips with them
+  const rock = new THREE.MeshStandardMaterial({ color: 0x8a8278, roughness: 0.95 });
+  for (let i = 0; i < 22; i++) {
+    const ang = i < 8 ? i / 8 * Math.PI * 2 : rand(0, 6.28), sp = i < 8 ? rand(2.4, 3.2) : rand(1.2, 3.6), s = i < 8 ? rand(0.09, 0.14) : rand(0.04, 0.08);
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rock); m.castShadow = true; m.position.copy(c);
+    const v = V(Math.cos(ang) * sp, rand(2, 4.5), Math.sin(ang) * sp * 0.8), spin = V(rand(-9, 9), rand(-9, 9), rand(-9, 9));
+    vfx.timed(m, rand(1.1, 1.6), (k, dt) => { v.y -= dt * 11; m.position.addScaledVector(v, dt); m.rotation.x += spin.x * dt; m.rotation.y += spin.y * dt;
+      const g = groundH(m.position.x, m.position.z) + s * 0.6; if (m.position.y < g) { m.position.y = g; v.multiplyScalar(0.35); v.y = Math.abs(v.y) * 0.4; spin.multiplyScalar(0.5); }
+      if (k > 0.7) m.scale.setScalar(1 - (k - 0.7) / 0.3); });
+  }
+  for (let i = 0; i < 16; i++) { const t = i / 16 * Math.PI * 2, sp = rand(1.6, 2.6); vfx.smokePuff(P.x, P.y + 0.1, P.z, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: rand(0.2, 0.6), drag: 2.4, life: rand(1, 1.6), size: 0.3, size1: 0.9, tint: [0.48, 0.44, 0.4] }); }
+  // the blast on each hero round it
+  for (const { t, dmg } of hits) { const d = actorOf(t); if (!d) continue; t.hp = Math.max(0, t.hp - dmg); t.hitT = gameT;
+    ui.floater(d.head().add(V(0, 0.15, 0)), String(dmg), 'dmg ally', 1.4); flinch(d, 1.6); d.flash = 1; anim(0.3, kk => { d.flash = 1 - kk; }); }
+  await wait(700);
+  for (const { t } of hits) if (t.hp <= 0 && t.alive) { t.alive = false; await killAnim(t); }
+}
 export async function doAttack(au, du) {
+  if (R.explodes(au)) return explodeAttack(au);   // (石頭: its attack is its end)
   R.faceTo(au, du.x, du.y);
   const r = R.physicalAttack(au, du);
   await attackAnim(au, du, r, () => { if (!r.miss) { du.hp = Math.max(0, du.hp - r.dmg); du.hitT = gameT; } });   // the HP bar drops on the blow itself
@@ -1172,7 +1329,7 @@ export async function runBattle() {
       if (step) { G.active = null; await enterRoom(G.room + step, step < 0); break; }
       const lines = R.beforeTurn(u);   // the battle's turn hook: scripted lines (and wake-ups) before this unit moves
       if (G.joined && G.joined.length) await joinHeroes(G.joined.splice(0));   // units the hook brought in (battle 4's 楊戩, battle 7's reinforcements)
-      if (lines) { for (const l of lines) { cam.release(); if (l.unit) cam.focus(actorOf(l.unit).pos); await ui.say(l.text, l.who || null); } if (!u.alive || G.over) { G.active = null; continue; } }
+      if (lines) { for (const l of lines) await speak(l.text, l.who, l);  if (!u.alive || G.over) { G.active = null; continue; } }
       if (R.skipsTurn(u)) { G.active = null; u.done = true; continue; }   // the hook ended the heroes' round (battle 14's lair)
       if (u.side === 'player' && !opts.auto && !u.guest) await playerTurn(u); else await aiTurn(u);   // a guest (文王) moves by his AI
       G.active = null; u.done = true; ui.card(null);
@@ -1185,10 +1342,17 @@ export async function runBattle() {
   if (G.over && G.over.win && (G.over.lines || G.over.rout)) await winBeats(G.over);
   return G.over;
 }
+// a battle line: the camera on its speaker (R.speakerOf: the unit the line names, else whoever stands there by that
+// name, on any side), else on the cell the line points at (o.at), then the line
+export async function speak(text, who, o = {}) {
+  const u = R.speakerOf(who, o.unit), a = u && actorOf(u);
+  cam.release(); if (a) cam.focus(a.pos); else if (o.at) cam.focus(tileCenter(...o.at));
+  await ui.say(text, who || null);
+}
 // a win the battle's hook declares with its own end: its lines, then the rout [ROM 0x1DA7C: every enemy still standing
 // (not move type 9, not a phantom) falls in turn, the camera on each (0xB134), its death (0x103E8)]
 async function winBeats(o) {
-  for (const l of o.lines || []) { cam.release(); const a = l.unit && actorOf(l.unit); if (a) cam.focus(a.pos); else if (l.at) cam.focus(tileCenter(...l.at)); await ui.say(l.text, l.who || null); }
+  for (const l of o.lines || []) await speak(l.text, l.who, l);
   if (o.rout) for (const u of G.units.filter(v => v.side === 'enemy' && v.alive && !v.away && v.moveType !== 9)) {
     const a = actorOf(u); if (!a) continue; cam.release(); cam.focus(a.pos); await wait(300); u.alive = false; await killAnim(u);
   }
@@ -1236,10 +1400,9 @@ export function frame(now) {
     canvasRect = world.renderer.domElement.getBoundingClientRect();
     cam.update(rdt, vfx ? vfx.screen.shake : 0);
     const f = G.active && actorOf(G.active) ? actorOf(G.active).pos : cam.target;   // see-through follows the acting unit, never the cursor
-    WU.focus.value.copy(f).setY(f.y + 0.6);
     world.shadowsLive = tweens.length > 0; for (const a of actors.values()) if (a.walking) world.shadowsLive = true;   // anything animating (a walk, a blow): shadows every frame, or they trail the sprites at half rate
     world.update(dt, gameT);
-    vfx.update(dt, gameT); if (!world.calm) vfx.ambient(dt, cam.target); vfx.fire.mat.uniforms.uYaw.value = cam.yaw;
+    vfx.update(dt, gameT); if (!world.calm) vfx.ambient(dt, cam.target);
     vfx.add.mat.uniforms.uScale.value = vfx.soft.mat.uniforms.uScale.value = world.renderer.domElement.height / (2 * Math.tan(world.camera.fov * Math.PI / 360));
     for (const a of actors.values()) a.update(gameT, world.camera, cam.yaw, cam.pitch);
     obstruct(dt);
@@ -1268,8 +1431,8 @@ export function hudRound() { ui.round(G.round, R.H.hud ? R.H.hud(G) : null); }
 export function stage(chosen) {
   R.setupBattle(chosen); ui.clearUnits(); syncActors();
   for (const a of actors.values()) { placeActor(a); a.dissolve = a.u.alive ? 0 : 1; }
-  vfx.fire.cols.clear();
   if (FX.stage) FX.stage(E);
+  warmUp();   // (the units' sprites, and what the battle's own staging added)
 }
 // the test tools fill these in (src/testkit.js); toolbar actions queue up and run at safe points in a turn
 export const PG = { queue: [], popup: false, endPhase: false, enemiesAct: true, sel: null, flush: async () => {}, frame: null };
@@ -1281,7 +1444,7 @@ export function boot() {
   window.addEventListener('resize', resize); resize();
   bank = new SpriteBank(); ui = new UI(bank); cam = new Cam(world.camera);
   setupInput();
-  window.__remake = { G, R, actors, cam, tiles, C, cellInfo, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState };
+  window.__remake = { G, R, actors, cam, tiles, C, cellInfo, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState, downCheck, squaresCold };
   requestAnimationFrame(frame);
 }
 // build the world for the loaded battle (R.loadBattle first) and load its sprites; again for every new battle

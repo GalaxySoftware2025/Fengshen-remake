@@ -11,7 +11,7 @@ import { registerSets, setFor, dress } from './sets.js';
 import REMADE from './remake/index.js';
 import * as Audio from './audio.js';
 import { speed } from './speed.js';
-import { soften, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff } from './tracks.js';
+import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff } from './tracks.js';
 registerSets(REMADE);
 const { G } = R;
 const $ = id => document.getElementById(id);
@@ -151,7 +151,7 @@ export async function play(E, tag, part, hooks) {
     for (const [slot, tr] of Object.entries(S.actors)) {
       const u = { side: 'npc', name: '', sprite: 'p0', x: 0, y: 0, facing: 'down', alive: true, status: { sleep: 0, seal: 0, poison: 0 }, buf: {}, hp: 1, mhp: 1, mp: 0, mmp: 0, done: false, slot };
       const sk = strikes.find(e => e.slot === slot); if (sk) u.atkType = sk.type;   // its action frames of the attack type it strikes with
-      units.set(slot, { u, tr: soften(tr, 24, 5, camAt, loads) });
+      units.set(slot, { u, tr: soften(pinned(S, slot, tr), 24, 5, camAt, loads) });
     }
     if (window.__remake) window.__remake.tracks = Object.fromEntries([...units].map(([k, a]) => [k, a.tr]));   // what is shown (src/qa.js)
     G.units = []; E.syncActors();
@@ -237,7 +237,9 @@ export async function play(E, tag, part, hooks) {
       // the wall behind 林雲 in scene 3)
       let near = null, nd = 48;
       for (const a of units.values()) { const q = at(a.tr, t), act = q && E.actors.get(a.u); if (!act || act.hidden) continue; const d = Math.hypot(q.x - emoteEv.x + 16, q.y - emoteEv.y - 16); if (d < nd) { nd = d; near = { act, dx: emoteEv.x - q.x }; } }
-      if (near) { const H = near.act.head(); emote.position.set(H.x + Math.sign(near.dx || 1) * 0.7, H.y + 0.5, H.z); }   // up and to the side, its tail at the head
+      // [the user's call] higher over the head, to the side the speaker faces (left when it faces left, else right), the
+      // balloon mirrored there so its tail still points down at the head
+      if (near) { const H = near.act.head(), side = near.act.u.facing === 'left' ? -1 : 1; emote.position.set(H.x + side * 0.5, H.y + 0.8, H.z); emote.scale.x = side * Math.abs(emote.scale.x); }
       else { const P = E.tileCenter((emoteEv.x + 16) / 32 - 0.5, (emoteEv.y + 16) / 32 - 0.5); emote.position.set(P.x, P.y + 1.1, P.z); }
     }
     if (window.__remake) window.__remake.propsOn = [];
@@ -279,7 +281,7 @@ export async function play(E, tag, part, hooks) {
           else if (e.kind === 'descent') { await setMap(e.map, true); await fade(1, 0); lit = false; }
           else if (e.kind === 'fadeIn' || e.kind === 'say') lit = true;
           else if (e.kind === 'fadeOut' || CARDS.includes(e.kind)) lit = e.kind !== 'fadeOut' && lit;
-          else if (e.kind === 'emote' && worldReady) { if (!emote) emote = emoteSprite(E.world.scene); emote.visible = true; emoteEv = e; }
+          else if (e.kind === 'emote' && worldReady) { if (!emote) emote = emoteSprite(E.world.scene); emote.visible = true; emoteEv = e; if (window.__remake) window.__remake.emote = emote; }
           else if (e.kind === 'emoteOff' && emote) { emote.visible = false; emoteEv = null; }
           else if (e.kind === 'toss' && worldReady && e.path[e.path.length - 1][0] >= seek) tossEv = e;   // still in the air at the seek frame
           else if (e.kind === 'cell' && worldReady && setFor(mapKeyOf(S, e.f))) setFor(mapKeyOf(S, e.f)).cell?.(E, e.x, e.y, e.block);

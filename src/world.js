@@ -1,5 +1,5 @@
-// The battlefield in 3D: terrain, sky, light and post-processing, plus what a battle's look asks for (setLook):
-// its map art, an optional bamboo forest on one terrain code, cells kept clear of it, and its own dressing (props).
+// The battlefield in 3D: terrain, sky, light and post-processing, plus what a battle's look asks for (setLook): a
+// remade set (src/remake), or the original map art painted flat on the ground.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -9,12 +9,12 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
-import { D, MAP_W, MAP_H } from './rules.js';
+import { MAP_W, MAP_H } from './rules.js';
 const BLOOM_THRESHOLD = 1.35;   // linear scene luminance
 
 export const MARGIN = 8;                       // decorative border around the playable board
 let TW = 0, TH = 0;
-// the battle's look: { mapSD, mapHD?, hdCell?, forest?: terrain code drawn as bamboo, clear?(cx, cy), dress?(world) }
+// the look: { set } (a remade set, src/remake) or { mapSD } (the original map art)
 let LOOK = {};
 export function setLook(look) { LOOK = look; TW = MAP_W + MARGIN * 2; TH = MAP_H + MARGIN * 2; }
 const SUN_DIR = new THREE.Vector3(-0.55, 0.78, 0.32).normalize();
@@ -30,21 +30,9 @@ const fbm = (x, y) => vnoise(x, y) * 0.55 + vnoise(x * 2.1, y * 2.1) * 0.3 + vno
 export const rand = (a, b) => a + Math.random() * (b - a);
 
 // ---------------------------------------------------------------- terrain helpers
-const isForestCell = (cx, cy) => LOOK.forest != null && (cx < 0 || cy < 0 || cx >= MAP_W || cy >= MAP_H || D.terrain[cy][cx] === LOOK.forest);
-const isHutCell = (cx, cy) => !D.arena && !!LOOK.clear && LOOK.clear(cx, cy);   // cells kept free of forest (磻溪's hut); the 演武場 arena has none
-const artCell = (cx, cy) => D.artSrc ? D.artSrc[cy][cx] : [cx, cy];   // which cell of the original map art paints a board cell
-function forestField(x, z) {                   // smooth 0..1 forest coverage at a world point
-  const fx = x - 0.5, fz = z - 0.5, x0 = Math.floor(fx), z0 = Math.floor(fz), tx = fx - x0, tz = fz - z0;
-  const f = (a, b) => (isForestCell(a, b) && !isHutCell(a, b) ? 1 : 0);
-  const s = t => t * t * (3 - 2 * t);
-  const a = f(x0, z0), b = f(x0 + 1, z0), c = f(x0, z0 + 1), d = f(x0 + 1, z0 + 1);
-  return (a + (b - a) * s(tx)) * (1 - s(tz)) + (c + (d - c) * s(tx)) * s(tz);
-}
 export function groundH(x, z) {
   if (LOOK.set) return LOOK.set.ground(x, z);   // a remade set's own walking surface (src/remake)
-  if (LOOK.forest == null) return 0;   // painted map art (scenes, battles without a forest look): perfectly flat, so its lines stay straight
-  const f = forestField(x, z);
-  return f * 0.26 + (fbm(x * 0.35, z * 0.35) - 0.5) * 0.12 + f * (fbm(x * 1.3 + 9, z * 1.3) - 0.5) * 0.16 + (fbm(x * 3, z * 3) - 0.5) * 0.02;
+  return 0;   // painted map art (a map with no remade set): perfectly flat, so its lines stay straight
 }
 
 // ---------------------------------------------------------------- textures (pixel-art, generated on canvas)
@@ -56,8 +44,8 @@ export function canvasTex(w, h, draw, opts) {
 }
 export function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
 
-// a battle without a forest look: its original map art, cell for cell, with the edge cells stretched out under the border
-async function plainGroundTexture() {
+// a map without a remade set: its original map art, cell for cell, with the edge cells stretched out under the border
+async function groundTexture() {
   const PX = 64, sd = await loadImg(LOOK.mapSD);
   return canvasTex(TW * PX, TH * PX, (g, W, H) => {
     g.imageSmoothingEnabled = false;
@@ -70,142 +58,12 @@ async function plainGroundTexture() {
     g.fillRect(0, MARGIN * PX, MARGIN * PX, MAP_H * PX); g.fillRect((MAP_W + MARGIN) * PX, MARGIN * PX, MARGIN * PX, MAP_H * PX);
   });
 }
-async function groundTexture() {
-  if (LOOK.forest == null || !LOOK.mapHD) return plainGroundTexture();
-  const PX = 64, HC = LOOK.hdCell || 128, map = await loadImg(LOOK.mapHD), sd = await loadImg(LOOK.mapSD);
-  const SW = sd.width / 32;   // the art's width in cells (the 演武場 arena paints from the full map)
-  // read the original map to find clean dirt and vegetation overlap
-  const sc = document.createElement('canvas'); sc.width = sd.width; sc.height = sd.height; const sg = sc.getContext('2d'); sg.drawImage(sd, 0, 0);
-  const sdata = sg.getImageData(0, 0, sd.width, sd.height).data;
-  const green = (x, y) => { const i = (y * sd.width + x) * 4, r = sdata[i], g = sdata[i + 1], b = sdata[i + 2]; return g > r + 18 && g > b + 8; };
-  let best = null;
-  for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
-    const [sx, sy] = artCell(cx, cy);
-    if (D.terrain[cy][cx] !== 0 || sx >= SW - 2) continue;   // not the east edge, under the fire
-    let n = 0; for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) n += green(sx * 32 + x, sy * 32 + y);
-    if (!best || n < best.n) best = { cx: sx, cy: sy, n };
-  }
-  return canvasTex(TW * PX, TH * PX, (g, W, H) => {
-    g.imageSmoothingEnabled = false;
-    // forest floor everywhere first: moss, litter and dark gaps in 2-texel "pixels"
-    g.fillStyle = '#26381c'; g.fillRect(0, 0, W, H);
-    const cols = ['#2f4a22', '#3a5a26', '#1c2c14', '#4a5a2a', '#5a4a2a', '#3d6a2a', '#22361a'];
-    for (let i = 0; i < W * H / 22; i++) { g.fillStyle = cols[(Math.random() * cols.length) | 0]; g.fillRect(((Math.random() * W) >> 1) << 1, ((Math.random() * H) >> 1) << 1, 2, 2); }
-    for (let i = 0; i < W * H / 900; i++) {   // fallen bamboo leaves
-      g.fillStyle = Math.random() < 0.5 ? '#7a6a32' : '#6a7a30'; const x = ((Math.random() * W) >> 1) << 1, y = ((Math.random() * H) >> 1) << 1;
-      for (let k = 0; k < 4; k++) g.fillRect(x + k * 2, y + (k === 0 || k === 3 ? 0 : -2), 2, 2);
-    }
-    // path cells from the original HD map art, with overhanging vegetation painted out
-    const tmp = document.createElement('canvas'); tmp.width = PX; tmp.height = PX; const tg = tmp.getContext('2d'); tg.imageSmoothingEnabled = false;
-    const clean = document.createElement('canvas'); clean.width = PX; clean.height = PX; const cg = clean.getContext('2d'); cg.imageSmoothingEnabled = false;
-    cg.drawImage(map, best.cx * HC, best.cy * HC, HC, HC, 0, 0, PX, PX);
-    const cleanD = cg.getImageData(0, 0, PX, PX).data;
-    for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
-      if (D.terrain[cy][cx] === LOOK.forest) continue;
-      if (D.arena) {        // the 演武場 arena: the clean dirt tile, turned at random so it does not read as a grid
-        g.save(); g.translate((cx + MARGIN + 0.5) * PX, (cy + MARGIN + 0.5) * PX); g.rotate(((Math.random() * 4) | 0) * Math.PI / 2);
-        if (Math.random() < 0.5) g.scale(-1, 1);
-        g.drawImage(clean, -PX / 2, -PX / 2); g.restore(); continue;
-      }
-      const [sx, sy] = artCell(cx, cy);
-      tg.clearRect(0, 0, PX, PX); tg.drawImage(map, sx * HC, sy * HC, HC, HC, 0, 0, PX, PX);
-      const id = tg.getImageData(0, 0, PX, PX), d = id.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], gg = d[i + 1], b = d[i + 2];
-        if ((gg > r + 18 && gg > b + 8) || sx >= SW - 1) { d[i] = cleanD[i]; d[i + 1] = cleanD[i + 1]; d[i + 2] = cleanD[i + 2]; }
-      }
-      tg.putImageData(id, 0, 0);
-      g.drawImage(tmp, (cx + MARGIN) * PX, (cy + MARGIN) * PX);
-    }
-    // grassy fringe where the path meets the forest
-    for (let cy = -1; cy <= MAP_H; cy++) for (let cx = -1; cx <= MAP_W; cx++) {
-      if (!isForestCell(cx, cy) || isHutCell(cx, cy)) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = cx + dx, ny = cy + dy; if (isForestCell(nx, ny)) continue;
-        for (let k = 0; k < 40; k++) {
-          const t = Math.random(), depth = Math.random() * 14;
-          const px = (cx + MARGIN) * PX + (dx === 0 ? t * PX : dx > 0 ? PX - depth : depth);
-          const py = (cy + MARGIN) * PX + (dy === 0 ? t * PX : dy > 0 ? PX - depth : depth);
-          g.fillStyle = ['#4f8a2a', '#3a6a22', '#6fae3a'][(Math.random() * 3) | 0];
-          const bx = (px >> 1) << 1, by = (py >> 1) << 1; g.fillRect(bx + dx * 4, by + dy * 4, 2, 2); g.fillRect(bx + dx * 6, by + dy * 6 - 2, 2, 2);
-        }
-      }
-    }
-  });
-}
-function leafTexture() {
-  return canvasTex(128, 80, (g) => {
-    const leaf = (x, y, len, ang, c1, c2) => {
-      for (let i = 0; i < len; i++) {
-        const t = i / len, w = Math.max(1, Math.round(Math.sin(t * Math.PI) * 3.2));
-        const px = x + Math.cos(ang) * i * 2, py = y + Math.sin(ang) * i * 2 + t * t * 10;
-        g.fillStyle = c2; g.fillRect(Math.round(px), Math.round(py) - w - 1, 2, w * 2 + 2);
-        g.fillStyle = c1; g.fillRect(Math.round(px), Math.round(py) - w, 2, w * 2);
-      }
-    };
-    const greens = [['#7fcf4a', '#24501a'], ['#5fae3a', '#1a4012'], ['#9fe060', '#2a5a1a'], ['#4f9a32', '#163a10']];
-    for (let k = 0; k < 22; k++) { const [a, b] = greens[k % 4]; leaf(2 + Math.random() * 44, 6 + Math.random() * 50, 12 + Math.random() * 20, -0.4 + Math.random() * 0.7, a, b); }
-  });
-}
-function fernTexture() {
-  return canvasTex(64, 64, (g) => {
-    for (let k = 0; k < 9; k++) {
-      const a = -Math.PI / 2 + (k - 4) * 0.28, len = 16 + Math.random() * 12;
-      for (let i = 0; i < len; i++) {
-        const x = 32 + Math.cos(a) * i * 1.8, y = 62 + Math.sin(a) * i * 1.8 + (i * i) * 0.02 * Math.abs(k - 4);
-        g.fillStyle = i % 3 ? '#4f8f2a' : '#7fbf3a'; g.fillRect(Math.round(x) & ~1, Math.round(y) & ~1, 2, 2);
-        if (i % 3 === 0 && i > 3) { g.fillStyle = '#3a7020'; g.fillRect((Math.round(x) & ~1) - 2, (Math.round(y) & ~1) - 2, 2, 2); g.fillRect((Math.round(x) & ~1) + 2, (Math.round(y) & ~1) - 2, 2, 2); }
-      }
-    }
-  });
-}
-
 // ---------------------------------------------------------------- shader snippets
 const NOISE_GLSL = `
 float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-  return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
-float bayer4(vec2 p){ return fract(52.9829189 * fract(dot(floor(p), vec2(0.06711056, 0.00583715)))); }   // interleaved gradient noise`;
-export const U = { time: { value: 0 }, burnX: { value: 99 }, focus: { value: new THREE.Vector3() }, camPos: { value: new THREE.Vector3() }, wind: { value: 1 } };
-
-// wind sway + "see-through" dither for bamboo (sway also on its shadow depth material; the dither is not, so shadows never shift)
-function patchPlant(mat, opts) {
-  mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, { uTime: U.time, uFocus: U.focus, uCam: U.camPos, uWind: U.wind, uBurnX: U.burnX });
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-      uniform float uTime, uWind; varying vec3 vWP; varying float vH;`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-      vec4 ip = instanceMatrix * vec4(transformed, 1.0);
-      float hgt = ${opts.leaf ? 'ip.y / 4.0' : 'position.y'};
-      float ph = instanceMatrix[3].x * 0.7 + instanceMatrix[3].z * 1.3;
-      float gust = 0.5 + 0.5 * sin(uTime * 0.35 + instanceMatrix[3].x * 0.05);
-      float bend = hgt * hgt * uWind * (0.10 + 0.14 * gust);
-      vec3 sway = vec3(-bend * (1.0 + 0.35 * sin(uTime * 1.7 + ph)), 0.0, bend * 0.45 * sin(uTime * 1.3 + ph * 1.7));
-      vH = position.y;`)
-      .replace('#include <project_vertex>', `
-      vec4 mvPosition = vec4(transformed, 1.0);
-      #ifdef USE_INSTANCING
-        mvPosition = instanceMatrix * mvPosition;
-      #endif
-      mvPosition.xyz += sway;
-      vWP = (modelMatrix * mvPosition).xyz;
-      mvPosition = modelViewMatrix * mvPosition;
-      gl_Position = projectionMatrix * mvPosition;`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      uniform vec3 uFocus, uCam; uniform float uTime, uBurnX; varying vec3 vWP; varying float vH; ${NOISE_GLSL}`)
-      .replace('#include <clipping_planes_fragment>', opts.depth ? '#include <clipping_planes_fragment>' : `#include <clipping_planes_fragment>
-      // fade plants that stand between the camera and what we are looking at
-      vec3 seg = uFocus - uCam; float tt = clamp(dot(vWP - uCam, seg) / dot(seg, seg), 0.0, 1.0);
-      float dd = length(vWP - (uCam + seg * tt));
-      float occl = (1.0 - smoothstep(1.2, 2.6, dd)) * step(tt, 0.97) * smoothstep(0.45, 1.1, vWP.y);
-      if (occl > 0.05 && bayer4(gl_FragCoord.xy) < occl * 0.85) discard;`);
-    if (opts.stalk) sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-      float nodes = fract(vH * 9.0);
-      diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 0.08, nodes)) * mix(1.0, 0.8, smoothstep(0.85, 1.0, nodes));
-      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.15, 1.12, 0.7), smoothstep(0.4, 1.0, vH));`);
-  };
-  mat.customProgramCacheKey = () => (opts.leaf ? 'leaf' : 'stalk') + (opts.depth ? 'd' : '');
-}
+  return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }`;
+export const U = { time: { value: 0 } };
 
 // the scene drawn multisampled, then copied once into the post chain's plain buffers: with MSAA on the composer's own
 // targets every full-screen pass after it wrote and resolved a multisampled buffer too (~10 ms a frame at 2x density)
@@ -241,8 +99,6 @@ export class World {
     });
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(0xb9c7b4, 0.012);
-    this.fireLights = [];
-    this.bambooByCol = new Map(); this.stalks = this.leaves = null;
     this.updaters = [];               // per-frame effects of a set (flames, water, particles)
     this.calm = false;                // true: no ambient dust and leaves (the title's sky view)
     this.shaftMeshes = [];
@@ -262,12 +118,9 @@ export class World {
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
     Object.assign(sun.shadow.camera, { left: -half, right: half, top: half * 0.73, bottom: -half * 0.73, near: 1, far: 140 });
     S.add(sun, sun.target);
-    for (let i = 0; i < 2; i++) { const l = new THREE.PointLight(0xff7a2a, 0, 10, 1.8); l.position.set(40, 1.3, 2 + i * 3.5); S.add(l); this.fireLights.push(l); }
     progress(0.15);
     this.sky(); progress(0.25);
     await this.ground(); progress(0.5);
-    if (LOOK.forest != null) this.bamboo(); progress(0.75);
-    if (LOOK.dress && !D.arena) await LOOK.dress(this);
     this.shafts(); progress(0.85);
     if (!this.composer) this.post(); progress(0.95);
   }
@@ -343,98 +196,10 @@ export class World {
     for (let i = 0; i < p.count; i++) p.setY(i, groundH(p.getX(i), p.getZ(i)));
     geo.computeVertexNormals();
     const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 });
-    mat.onBeforeCompile = sh => {
-      Object.assign(sh.uniforms, { uBurnX: U.burnX, uTime: U.time });
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed,1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-        uniform float uBurnX, uTime; varying vec3 vWP; ${NOISE_GLSL}`)
-        .replace('#include <map_fragment>', `#include <map_fragment>
-        // scorched earth behind the fire wall, with a glowing band of embers at the front
-        float edge = vWP.x - uBurnX + (vn(vWP.xz * 1.7) - 0.5) * 0.6;
-        float burnt = smoothstep(-0.2, 0.25, edge);
-        vec3 ash = mix(vec3(0.05,0.04,0.035), vec3(0.16,0.13,0.11), vn(vWP.xz * 6.0));
-        diffuseColor.rgb = mix(diffuseColor.rgb, ash, burnt);`)
-        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        float glowBand = exp(-pow((edge - 0.35) * 2.2, 2.0)) + 0.5 * burnt * smoothstep(0.86, 0.95, vn(vWP.xz * 9.0 + vec2(uTime * 0.2, 0.0)));
-        totalEmissiveRadiance += vec3(1.0, 0.3, 0.05) * glowBand * (0.6 + 0.4 * vn(vWP.xz * 3.0 + uTime * 1.5)) * 1.4;
-        diffuseColor.rgb *= 1.0 - 0.6 * burnt;`);
-    };
     const m = this.groundMesh = new THREE.Mesh(geo, mat); m.receiveShadow = true; this.scene.add(m);
   }
-  bamboo() {
-    const stalks = [], leaves = [], ferns = [];
-    for (let cy = -MARGIN; cy < MAP_H + 4; cy++) for (let cx = -MARGIN; cx < MAP_W + MARGIN; cx++) {
-      if (!isForestCell(cx, cy) || isHutCell(cx, cy)) continue;
-      const out = Math.max(-cx, cx - (MAP_W - 1), -cy, cy - (MAP_H - 1), 0);   // cells outside the board
-      if (out > 2 && (cx + cy) % 2) continue;                                 // margin: half the cells
-      // distance to the nearest open ground: stalks stay low along the paths so the board reads as a clearing
-      let pd = 9;
-      for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) if (!isForestCell(cx + dx, cy + dy) && !isHutCell(cx + dx, cy + dy)) pd = Math.min(pd, Math.max(Math.abs(dx), Math.abs(dy)));
-      const n = out > 2 ? 2 : 3;
-      for (let i = 0; i < n; i++) {
-        const x = cx + rand(0.08, 0.92), z = cy + rand(0.08, 0.92), y = groundH(x, z) - 0.05;
-        const h = pd <= 1 ? rand(1.5, 2.5) : pd === 2 ? rand(2.2, 3.3) : rand(2.9, 4.4), r = rand(0.022, 0.034);
-        stalks.push({ x, y, z, h, r, lean: rand(-0.09, 0.09), col: cx });
-        const nl = Math.round(h * (out > 2 ? 0.9 : 1.3));                    // fewer, larger leaf sprays
-        for (let k = 0; k < nl; k++) {
-          const f = Math.pow(Math.random(), 0.6), ly = y + h * (0.5 + 0.5 * f);
-          leaves.push({ x: x + rand(-0.12, 0.12), y: ly, z: z + rand(-0.12, 0.12), ry: rand(0, Math.PI * 2), rx: rand(0.15, 0.7), s: rand(1.2, 1.7) * (0.75 + 0.25 * f), col: cx });
-        }
-      }
-      if (Math.random() < 0.55) ferns.push({ x: cx + rand(0.1, 0.9), z: cy + rand(0.1, 0.9), s: rand(0.45, 0.85), col: cx });
-    }
-    const dummy = new THREE.Object3D();
-    // stalks
-    const sGeo = new THREE.CylinderGeometry(0.45, 1.1, 1, 5, 5, true); sGeo.translate(0, 0.5, 0);
-    const sMat = new THREE.MeshStandardMaterial({ color: 0x8fbf4a, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide });
-    patchPlant(sMat, { stalk: 1 });
-    const sm = this.stalks = new THREE.InstancedMesh(sGeo, sMat, stalks.length);
-    sm.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); patchPlant(sm.customDepthMaterial, { stalk: 1, depth: 1 });
-    stalks.forEach((s, i) => {
-      dummy.position.set(s.x, s.y, s.z); dummy.rotation.set(s.lean, 0, s.lean * 0.6); dummy.scale.set(s.r, s.h, s.r); dummy.updateMatrix(); sm.setMatrixAt(i, dummy.matrix);
-      const tint = 0.8 + Math.random() * 0.35; sm.setColorAt(i, new THREE.Color(tint * 0.9, tint, tint * 0.75));
-      if (!this.bambooByCol.has(s.col)) this.bambooByCol.set(s.col, { stalks: [], leaves: [], ferns: [] });
-      this.bambooByCol.get(s.col).stalks.push(i);
-    });
-    sm.castShadow = true; sm.receiveShadow = true; this.scene.add(sm); this.stalkData = stalks;
-    // leaf cards
-    const lGeo = new THREE.PlaneGeometry(1.0, 0.6); lGeo.translate(0.42, 0, 0);
-    const lTex = leafTexture();
-    const lMat = new THREE.MeshStandardMaterial({ map: lTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
-    patchPlant(lMat, { leaf: 1 });
-    const lm = this.leaves = new THREE.InstancedMesh(lGeo, lMat, leaves.length);
-    lm.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: lTex, alphaTest: 0.5 }); patchPlant(lm.customDepthMaterial, { leaf: 1, depth: 1 });
-    leaves.forEach((l, i) => {
-      dummy.position.set(l.x, l.y, l.z); dummy.rotation.set(l.rx, l.ry, rand(-0.5, 0.1)); dummy.scale.setScalar(l.s); dummy.updateMatrix(); lm.setMatrixAt(i, dummy.matrix);
-      const t = 0.75 + Math.random() * 0.4; lm.setColorAt(i, new THREE.Color(t, t, t * 0.9));
-      if (!this.bambooByCol.has(l.col)) this.bambooByCol.set(l.col, { stalks: [], leaves: [], ferns: [] });
-      this.bambooByCol.get(l.col).leaves.push(i);
-    });
-    lm.castShadow = true; lm.receiveShadow = true; this.scene.add(lm); this.leafData = leaves;
-    // ferns: crossed cards
-    const fGeo = new THREE.PlaneGeometry(1, 1); fGeo.translate(0, 0.5, 0);
-    const fGeo2 = fGeo.clone().rotateY(Math.PI / 2); const merged = mergeGeos([fGeo, fGeo2]);
-    const fMat = new THREE.MeshStandardMaterial({ map: fernTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 });
-    patchPlant(fMat, { leaf: 1 });
-    const fm = new THREE.InstancedMesh(merged, fMat, ferns.length);
-    ferns.forEach((f, i) => { dummy.position.set(f.x, groundH(f.x, f.z) - 0.02, f.z); dummy.rotation.set(0, rand(0, 3), 0); dummy.scale.setScalar(f.s); dummy.updateMatrix(); fm.setMatrixAt(i, dummy.matrix); });
-    fm.receiveShadow = true; this.scene.add(fm);
-  }
-  // burning a column: the bamboo there chars down to stumps
-  burnBamboo(col, k) {
-    const b = this.bambooByCol.get(col); if (!b) return;
-    const dummy = new THREE.Object3D(), M = new THREE.Matrix4(), c = new THREE.Color();
-    for (const i of b.stalks) {
-      const s = this.stalkData[i], h = s.h * (1 - k * 0.78);
-      dummy.position.set(s.x, s.y, s.z); dummy.rotation.set(s.lean, 0, s.lean * 0.6); dummy.scale.set(s.r, h, s.r); dummy.updateMatrix(); this.stalks.setMatrixAt(i, dummy.matrix);
-      c.setRGB(0.8 - k * 0.72, 0.85 - k * 0.79, 0.6 - k * 0.56); this.stalks.setColorAt(i, c);
-    }
-    for (const i of b.leaves) { this.leaves.getMatrixAt(i, M); const sc = Math.max(0.0001, 1 - k); const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(); M.decompose(p, q, s); s.setScalar(this.leafData[i].s * sc); M.compose(p, q, s); this.leaves.setMatrixAt(i, M); c.setRGB(1 - k * 0.6, 1 - k * 0.8, 1 - k * 0.9); this.leaves.setColorAt(i, c); }
-    this.stalks.instanceMatrix.needsUpdate = true; this.stalks.instanceColor.needsUpdate = true;
-    this.leaves.instanceMatrix.needsUpdate = true; this.leaves.instanceColor.needsUpdate = true;
-  }
   shafts() {
-    // soft volumetric light shafts slanting down along the sun, over the forest
+    // soft volumetric light shafts slanting down along the sun
     const tex = canvasTex(64, 256, (g, W, H) => {
       const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, 'rgba(255,240,200,0)'); gr.addColorStop(0.5, 'rgba(255,240,200,1)'); gr.addColorStop(1, 'rgba(255,240,200,0)');
       g.fillStyle = gr; g.fillRect(0, 0, W, H);
@@ -509,19 +274,9 @@ export class World {
     this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
     if (this.composer) { this.composer.setSize(w, h); this.grade.uniforms.uRes.value.set(w * this.renderer.getPixelRatio(), h * this.renderer.getPixelRatio()); }
   }
-  setFire(front, burntCount) {      // front: first burnt column (world x)
-    U.burnX.value = front;
-    this.fireFront = front; this.fireOn = burntCount > 0;
-  }
   update(dt, t) {
     U.time.value = t; this.grade.uniforms.uTime.value = t;
     for (const f of this.updaters) f(dt, t);
-    U.camPos.value.copy(this.camera.position);
-    for (const [i, l] of this.fireLights.entries()) {
-      if (!this.fireOn) { l.intensity = 0; continue; }
-      l.position.x = this.fireFront + 0.3; l.position.z = 3 + i * 7.5;
-      l.intensity = 16 * (0.75 + 0.25 * Math.sin(t * 13 + i * 2.1) * Math.sin(t * 7.7 + i));
-    }
     for (const m of this.shaftMeshes) m.material.opacity = m.userData.base * (0.6 + 0.4 * Math.sin(t * 0.4 + m.userData.ph));
   }
   render() {

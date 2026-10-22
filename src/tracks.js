@@ -57,6 +57,16 @@ export function unstall(tr) {
   }
   return out;
 }
+// the original keeps a few sprites fixed on its screen while the camera pans, so they ride along with it; read off the
+// screen as map positions they walk with the pan, where they should stand: scene 32's 張桂芳 drifted 420 px down the map
+// over the scroll at exactly its pace, as if he followed the camera [the user's report]. Over those frames the actor
+// keeps the place it had at the first of them (the pan leaves it behind, at the top of the view): scene, slot, [from, to]
+export const PINNED = { '32': { 10: [30, 300] } };
+export function pinned(S, slot, tr) {
+  const p = (PINNED[S.tag] || {})[slot]; if (!p) return tr;
+  const [f0, f1] = p, ref = tr.filter(q => q.length > 2 && q[0] <= f0).pop() || tr.find(q => q.length > 2); if (!ref) return tr;
+  return tr.map(q => q.length > 2 && q[0] >= f0 && q[0] <= f1 ? [q[0], ref[1], ref[2], ...q.slice(3)] : q);
+}
 export function soften(tr, far, w, cam, loads = []) {   // loads: the frames of map loads (a new map shows no one left from the old)
   tr = unstall(tr);
   if (tr.length < 2) return tr;
@@ -163,7 +173,7 @@ export const parked = (x, y, mm) => !!mm && (x < -48 || y < -48 || x > mm.w * 32
 // shownTracks(S) once, then shownAt(S, T, f) -> [{ slot, x, y, gfx, facing, still, fade }] (map px; fade 0 = offstage)
 export function shownTracks(S) {
   const cam = camOf(S), loads = S.events.filter(e => e.kind === 'map' || e.kind === 'descent').map(e => e.f);
-  return { cam, loads, tracks: Object.fromEntries(Object.entries(S.actors).map(([slot, tr]) => [slot, soften(tr, 24, 5, cam, loads)])) };
+  return { cam, loads, tracks: Object.fromEntries(Object.entries(S.actors).map(([slot, tr]) => [slot, soften(pinned(S, slot, tr), 24, 5, cam, loads)])) };
 }
 export function shownAt(S, T, f) {
   const mm = S.maps[mapKeyOf(S, f)], out = [], cur = T.cur || (T.cur = {});

@@ -44,7 +44,7 @@ export function extractData(rom, log = () => {}) {
   for (const g of base.sheets) files['assets/units/' + g.toString(16).padStart(6, '0') + '.png'] = battles.sheetImage(R, g);
   spellfx.run(R, rom, files, snap); log('spell sprites');
   const act = actions.run(R, {}, base.common, base.battles, { legacy: true });
-  legacy.run(R, rom, files, { actions: { ...act, common: base.common }, b13: base.battles[13], snap }); log('legacy sheets');
+  legacy.run(R, files, { actions: { ...act, common: base.common }, b13: base.battles[13] }); log('legacy sheets');
   says.run(R, files, base.walk, base.battles); ui.run(R, files);
   hd.run(files); log('HD sheets');
   for (const k of Object.keys(files)) if (k.startsWith('research/')) delete files[k];   // (the native cuts' measurements: inputs, not files the game loads)

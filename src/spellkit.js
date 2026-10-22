@@ -113,7 +113,7 @@ export function flameRing(v, p, r, n, size, o) {
   o = o || {};
   for (let i = 0; i < n; i++) {
     const a = rand(0, 6.28), rr = r * Math.sqrt(rand(o.inner || 0.75, 1)), x = p.x + Math.cos(a) * rr, z = p.z + Math.sin(a) * rr;
-    v.flame(x, groundH(x, z) - 0.05, z, { size: size * rand(0.8, 1.3), asp: rand(1.5, 2.1), life: rand(0.45, 0.8), vy: rand(0.05, 0.4), tint: o.tint });
+    v.realFire(x, groundH(x, z) - 0.08, z, { size: size * rand(1.1, 1.6), asp: rand(1.3, 1.7), life: rand(0.55, 0.9), vy: rand(0.05, 0.3), tint: o.tint });   // (real fire, not tongues: the user's call)
   }
 }
 

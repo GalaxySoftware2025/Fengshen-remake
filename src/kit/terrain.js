@@ -189,6 +189,43 @@ function sway(mat, k = 1) {
 // pressed down and parted outward, a little darker, as trodden grass [the user's call]. Read once a frame, by the first
 // grass mesh drawn (up to 16 characters: shown, on the ground, not fading away)
 export const steppers = new Set();
+// footprints in snow (battle 15's 麒麟山; as the sea cave's splashes are made, src/remake/cave.js): at every step (a
+// quarter of a cell) of whoever walks on it a print of a boot is pressed into the snow beside the last, left and right
+// in turn, turned the way the walker goes, with a puff of powder kicked up off the toe; the snow fills them slowly back
+// in: gone 2 s after the step, fading over its second second [the user's call]. Fliers leave none. on(x, z): snow there; at(x, z): its height. Game time throughout
+let PRINT = null;
+function printTex() {
+  if (PRINT) return PRINT;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128; const g = c.getContext('2d');
+  const shape = () => { g.beginPath(); g.ellipse(32, 40, 19, 30, 0, 0, Math.PI * 2); g.moveTo(48, 98); g.ellipse(32, 98, 15, 20, 0, 0, Math.PI * 2); };   // the sole, the heel
+  g.shadowColor = 'rgba(255,255,255,0.9)'; g.shadowBlur = 8; g.fillStyle = 'rgba(52,74,116,0.95)'; shape(); g.fill();   // the hollow, cold blue-grey in shade, a pale pushed-up rim round it
+  g.shadowBlur = 0; const gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, 'rgba(30,48,88,0.75)'); gr.addColorStop(1, 'rgba(30,48,88,0.4)'); g.fillStyle = gr; shape(); g.fill();
+  PRINT = new THREE.CanvasTexture(c); PRINT.colorSpace = THREE.SRGBColorSpace; return PRINT;
+}
+export function footprints(S, on, at) {
+  const geo = new THREE.PlaneGeometry(0.17, 0.3).rotateX(-Math.PI / 2), prints = [], last = new Map(), MAX = 160, G = new THREE.Group(); G.userData.noRange = true; S.add(G);
+  const press = (x, z, ux, uz, side) => {
+    const px = x - uz * 0.09 * side, pz = z + ux * 0.09 * side;   // the stepping foot, beside the line of the walk
+    let p = prints.length >= MAX ? prints.shift() : null;
+    if (!p) { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: printTex(), transparent: true, depthWrite: false, toneMapped: false })); m.renderOrder = 1.2; m.userData.noRange = true; G.add(m); p = { m }; }
+    p.m.position.set(px, at(px, pz) + 0.012, pz); p.m.rotation.set(0, Math.atan2(ux, uz), 0); p.age = 0; p.m.material.opacity = 0.9; prints.push(p);
+    return [px + ux * 0.08, pz + uz * 0.08];
+  };
+  const tick = (dt, t, vfx) => {
+    for (const a of steppers) {
+      if (!a.root.visible || a.root.parent !== S || a.hover > 0.15 || a.dissolve > 0.5 || (a.fade ?? 1) < 0.5) { last.delete(a); continue; }
+      const x = a.pos.x + a.off.x, z = a.pos.z + a.off.y, p = last.get(a);
+      if (!p) { last.set(a, { x, z, go: 0, side: 1 }); continue; }
+      const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); p.x = x; p.z = z;
+      if (d > 0.5 || !on(x, z)) { p.go = 0.2; continue; }
+      if ((p.go += d) >= 0.3) { p.go = 0; p.side = -p.side; const [tx, tz] = press(x, z, dx / d, dz / d, p.side);
+        if (tick.vfx) for (let i = 0; i < 3; i++) tick.vfx.smokePuff(tx, at(tx, tz) + 0.03, tz, { vx: dx / d * 0.2 + (Math.random() - 0.5) * 0.25, vy: 0.15 + Math.random() * 0.2, vz: dz / d * 0.2 + (Math.random() - 0.5) * 0.15, life: 0.5 + Math.random() * 0.3, size: 0.04, size1: 0.12, tint: [0.92, 0.95, 1] }); }
+    }
+    for (const p of prints) { p.age += dt; p.m.material.opacity = 0.9 * Math.max(0, 1 - Math.max(0, p.age - 1)); p.m.visible = p.age < 2; }   // the snow fills them back in
+  };
+  tick.count = () => prints.filter(p => p.age < 2).length;
+  return tick;
+}
 const STEP = { uSteps: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) } };
 let stepFrame = -1;
 function fillSteps(renderer) {
@@ -389,7 +426,7 @@ export function bamboo(pts, o = {}) {
     for (let k = 0; k < n; k++) {
       const cx = x + (Math.random() - 0.5) * 0.35, cz = z + (Math.random() - 0.5) * 0.35, h = hh * (0.75 + Math.random() * 0.4), lean = (Math.random() - 0.5) * 0.12;
       canes.push({ x: cx, y: y - 0.05, z: cz, h, lean, r: 0.8 + Math.random() * 0.5 });
-      for (let s = 0; s < Math.round(h * 1.6); s++) { const f = 0.45 + Math.random() * 0.55; leaves.push({ x: cx + Math.sin(lean) * h * f + (Math.random() - 0.5) * 0.2, y: y + h * f, z: cz + (Math.random() - 0.5) * 0.2, s: 0.5 + Math.random() * 0.45, ry: Math.random() * 6.3 }); }
+      for (let s = 0; s < Math.round(h * 1.6); s++) { const f = 0.45 + Math.random() * 0.55; leaves.push({ x: cx + Math.sin(lean) * h * f + (Math.random() - 0.5) * 0.2, y: y + h * f, z: cz + (Math.random() - 0.5) * 0.2, s: 0.5 + Math.random() * 0.45, ry: Math.random() * 6.3, g: y }); }
     }
   }
   const cm = new THREE.InstancedMesh(caneGeo, caneMat, canes.length), lm = new THREE.InstancedMesh(leafGeo, leafMat, leaves.length), d = new THREE.Object3D(), c = new THREE.Color();
@@ -397,5 +434,16 @@ export function bamboo(pts, o = {}) {
   leaves.forEach((l, i) => { d.position.set(l.x, l.y, l.z); d.rotation.set(0, l.ry, 0); d.scale.setScalar(l.s); d.updateMatrix(); lm.setMatrixAt(i, d.matrix); const t = 0.7 + Math.random() * 0.45; lm.setColorAt(i, c.setRGB(t, t, t * 0.85)); });
   for (const m of [cm, lm]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
   lm.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tx.leaf, alphaTest: 0.45 });
+  // burn(col, k): the canes rooted in column col char down to black stumps and their leaves go, k from 0 to 1 (磻溪's fire:
+  // scene 26, battle 13); the canes' own colours kept to put back (k 0)
+  const cols = new Map(), base = canes.map((_, i) => { cm.getColorAt(i, c); return c.clone(); });
+  canes.forEach((s, i) => { const k = Math.floor(s.x); if (!cols.has(k)) cols.set(k, { canes: [], leaves: [] }); cols.get(k).canes.push(i); });
+  leaves.forEach((l, i) => { const k = Math.floor(l.x); if (!cols.has(k)) cols.set(k, { canes: [], leaves: [] }); cols.get(k).leaves.push(i); });
+  g.userData.burn = (col, k) => {
+    const b = cols.get(col); if (!b) return;
+    for (const i of b.canes) { const s = canes[i]; d.position.set(s.x, s.y, s.z); d.rotation.set(s.lean * 0.6, 0, s.lean); d.scale.set(s.r, s.h * (1 - k * 0.78), s.r); d.updateMatrix(); cm.setMatrixAt(i, d.matrix); cm.setColorAt(i, c.copy(base[i]).lerp(new THREE.Color(0.06, 0.05, 0.04), k)); }
+    for (const i of b.leaves) { const l = leaves[i]; d.position.set(l.x, l.y - (l.y - l.g) * k * 0.78, l.z); d.rotation.set(0, l.ry, 0); d.scale.setScalar(Math.max(1e-4, l.s * (1 - k))); d.updateMatrix(); lm.setMatrixAt(i, d.matrix); }
+    cm.instanceMatrix.needsUpdate = lm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true;
+  };
   return g;
 }

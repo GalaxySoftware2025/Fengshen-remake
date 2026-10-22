@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { rand, groundH } from './world.js';
 import { NOISE } from './vfx.js';
 import { V, ease, basis, swordMesh, pointAlong, bezier, trail, intro, outro, DARK, ticker, facing, yawOf, swirl, arrowMesh, flameRing, LEAF, talismanTex, petalGeo } from './spellkit.js';
+import { iceMaterial, shardGeometry, chunkGeometry, shatter, frost } from './elements.js';
+import { houndRunTex } from './levelup.js';   // (the 哮天犬's gallop; levelup.js imports arrowMesh from here: used only at run time)
 import { SPELLBOOK } from './spellbook.js';
 export { arrowMesh };
 
@@ -152,7 +154,7 @@ async function flameKill(ctx) {
       ball.scale.setScalar(R); ball.position.y = gy + 0.15 + R * 0.75 + Math.sin(t * 9) * 0.03; ball.rotation.y += dt * 1.5;
       if (g > 0) for (let i = 0; i < 2; i++) {   // tongues licking off its surface
         const a = rand(0, 6.28), e = rand(0.1, 1.3), q = V(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e)).multiplyScalar(R * 0.92).add(ball.position);
-        v.flame(q.x, q.y, q.z, { size: R * rand(0.35, 0.55), asp: rand(1.4, 2), life: rand(0.25, 0.45), vy: rand(0.4, 1.2) });
+        v.realFire(q.x, q.y, q.z, { size: R * rand(0.35, 0.55), asp: rand(1.3, 1.7), life: rand(0.25, 0.45), vy: rand(0.4, 1.2) });
       }
       if (Math.random() < 0.6) v.spark(at.x + rand(-0.8, 0.8), gy + rand(0.1, 1.2), at.z + rand(-0.8, 0.8), { vy: rand(1, 2.5), life: rand(0.4, 0.9), size: rand(0.03, 0.06), r: 1, gg: rand(0.5, 0.8), b: 0.2, shape: 1, flicker: 1, ph: rand(0, 9) });
       v.light(ball.position, [1, 0.45, 0.12], 5 + 9 * g + rand(0, 3), 0.06, 6);
@@ -165,7 +167,7 @@ async function flameKill(ctx) {
       v.ring(at, [1, 0.6, 0.2], 3.6, 0.7); v.ring(at, [1, 0.9, 0.6], 2, 0.4);
       v.light(c, [1, 0.5, 0.15], 28, 0.9, 9);
       v.burst(c, { n: 90, speed: 7, cols: [[1, 0.95, 0.6], [1, 0.6, 0.15], [1, 0.35, 0.05]], size: 0.07, life: 1.3, g: 6, shape: 1, flicker: 1 });
-      ticker(v, 0.7, (kk) => { for (let i = 0; i < 2; i++) v.flame(at.x + rand(-0.4, 0.4), gy, at.z + rand(-0.4, 0.4), { size: rand(0.7, 1.05) * (1 - kk * 0.4), asp: rand(2, 2.8), life: rand(0.4, 0.65), vy: rand(2, 3.8) }); });
+      ticker(v, 0.7, (kk) => { for (let i = 0; i < 2; i++) v.realFire(at.x + rand(-0.4, 0.4), gy, at.z + rand(-0.4, 0.4), { size: rand(0.98, 1.47) * (1 - kk * 0.4), asp: rand(1.3, 1.7), life: rand(0.4, 0.65), vy: rand(2, 3.8) }); });
       ctx.hit();
     }
   });
@@ -221,7 +223,7 @@ async function fireOrbs(ctx) {
   await ctx.wait(2300);
   // the five fires join into one column
   v.flash([1, 0.55, 0.25], 0.22); v.shake(0.2, 0.35); v.ring(at, [1, 0.6, 0.2], 3.2, 0.7);
-  ticker(v, 0.8, (k) => { for (let i = 0; i < 5; i++) v.flame(at.x + rand(-0.45, 0.45), at.y, at.z + rand(-0.45, 0.45), { size: rand(0.6, 0.95) * (1 - k * 0.5), asp: rand(2.2, 3.2), life: rand(0.35, 0.6), vy: rand(2.5, 5) }); });
+  ticker(v, 0.8, (k) => { for (let i = 0; i < 5; i++) v.realFire(at.x + rand(-0.45, 0.45), at.y, at.z + rand(-0.45, 0.45), { size: rand(0.84, 1.33) * (1 - k * 0.5), asp: rand(1.3, 1.7), life: rand(0.35, 0.6), vy: rand(2.5, 5) }); });
   v.explode(at.clone().setY(at.y + 0.6), 0.6, { n: 16 });
   ctx.hit(); await ctx.wait(1500); outro(ctx);
 }
@@ -230,9 +232,9 @@ async function iceCrystals(ctx) {
   const col = [0.55, 0.85, 1], v = ctx.vfx, at = ctx.at.clone();
   await intro(ctx, col, { dur: 800, dist: 10, pitch: 0.45 });
   DARK(ctx, 0.35, 0.9, 0.5, 0.2);
-  const iceMat = new THREE.MeshPhongMaterial({ color: 0xbfeaff, emissive: 0x2a7fd0, emissiveIntensity: 0.9, specular: 0xffffff, shininess: 140, flatShading: true, transparent: true, opacity: 0.88 });
+  const iceMat = iceMaterial();   // (src/elements.js)
   const B = basis(ctx), from = at.clone().add(B.right.clone().multiplyScalar(-3.5)).add(V(0, 7, 0)), to = at.clone().setY(at.y + 0.4);
-  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 1), iceMat);
+  const orb = new THREE.Mesh(chunkGeometry(), iceMat); orb.scale.setScalar(0.42);
   const halo = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), new THREE.MeshBasicMaterial({ map: v.glowTex, color: new THREE.Color(0.5, 0.85, 1.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); orb.add(halo);
   const rib = v.ribbon({ col, width: 0.3, n: 22 });
   v.timed(orb, 0.75, (k, dt) => {
@@ -241,20 +243,20 @@ async function iceCrystals(ctx) {
     if (Math.random() < 0.5) v.smokePuff(p.x, p.y, p.z, { life: 0.7, size: 0.25, size1: 0.6, tint: [0.7, 0.85, 1] });
   }, () => rib.end());
   await ctx.wait(750);
-  v.flash([0.7, 0.9, 1], 0.12); v.shake(0.14, 0.25); v.ring(at, [0.8, 0.95, 1], 3, 0.6); v.decal(at, [0.4, 0.7, 1], 1.8, 2.2, { intensity: 0.8 });
+  v.flash([0.7, 0.9, 1], 0.12); v.shake(0.14, 0.25); v.ring(at, [0.8, 0.95, 1], 3, 0.6); v.decal(at, [0.4, 0.7, 1], 1.8, 2.2, { intensity: 0.5 }); frost(v, at, 1.6, 2.6);
   v.burst(to, { n: 60, speed: 6, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 1 });
   for (let i = 0; i < 12; i++) { const a = rand(0, 6.28), s = rand(1.2, 2.4); v.smokePuff(at.x + Math.cos(a) * 0.5, at.y + 0.08, at.z + Math.sin(a) * 0.5, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.2, life: rand(1.2, 1.8), size: 0.3, size1: 0.9, tint: [0.62, 0.78, 0.95] }); }
   for (let i = 0; i < 13; i++) {
     const a = rand(0, 6.28), r = i === 0 ? 0 : rand(0.3, 1.0), h = i === 0 ? 2.0 : rand(0.6, 1.5);
-    const m = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), iceMat); m.scale.set(0.001, 0.001, 0.001);
-    const p = V(at.x + Math.cos(a) * r, groundH(at.x, at.z), at.z + Math.sin(a) * r);
+    const m = new THREE.Mesh(shardGeometry(), iceMat); m.scale.set(0.001, 0.001, 0.001);
+    const p = V(at.x + Math.cos(a) * r, groundH(at.x, at.z) - 0.05, at.z + Math.sin(a) * r);
     m.position.copy(p); m.rotation.set(rand(-0.5, 0.5) * (r > 0 ? 1 : 0.2), rand(0, 6), rand(-0.5, 0.5) * (r > 0 ? 1 : 0.2));
     v.timed(m, 1.5, (k, dt, t) => {
       const d = i * 0.03, g = Math.min(1, Math.max(0, (t - d) / 0.14)), w = (i === 0 ? 0.24 : 0.17);
       m.scale.set(w * g + 0.001, h * g + 0.001, w * g + 0.001);
       if (t > 1.05 && !m.userData.b) { m.userData.b = 1; m.visible = false;
         v.burst(p.clone().setY(p.y + h * 0.5), { n: 20, speed: 4, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 1 });
-        for (let j = 0; j < 4; j++) v.spark(p.x, p.y + h * 0.5, p.z, { vx: rand(-1, 1), vy: rand(0, 1.5), vz: rand(-1, 1), life: 0.9, size: 0.14, size1: 0.01, r: 0.8, gg: 0.95, b: 1, shape: 0 }); }
+        shatter(v, p.clone().setY(p.y + h * 0.5), 5, iceMat, { size: 0.2 }); }
     });
   }
   v.light(at.clone().setY(at.y + 1), col, 10, 1.6, 6);
@@ -262,14 +264,14 @@ async function iceCrystals(ctx) {
   await ctx.wait(1100); v.flash([0.8, 0.95, 1], 0.08); v.shake(0.1, 0.2);
   await ctx.wait(800); outro(ctx);
 }
-// 疾雷: [ROM fx 30] bolts strike and a spiked ball of lightning crackles on the target
+// 疾雷: [ROM fx 30] one bolt strikes the target and a spiked ball of lightning crackles on it
 async function thunder(ctx) {
   const col = [0.7, 0.8, 1], v = ctx.vfx, at = ctx.at.clone();
   await intro(ctx, col, { dur: 800, dist: 11, pitch: 0.34 });
   v.screen.darkTarget = 0.6; v.screen.darkCol.setRGB(0.9, 0.85, 0.6);
   for (let i = 0; i < 26; i++) v.smokePuff(at.x + rand(-3, 3), at.y + rand(6, 7.5), at.z + rand(-3, 3), { vx: rand(-0.3, 0.3), life: 2.8, size: 2.2, size1: 3.4, tint: [0.12, 0.12, 0.17] });
   await ctx.wait(500);
-  for (let s = 0; s < 3; s++) {
+  for (let s = 2; s < 3; s++) {   // one strike, the great one [the user's call: it struck three times]
     const tp = at.clone().add(V(rand(-0.25, 0.25), 0.2, rand(-0.25, 0.25)));
     v.bolt(tp.clone().add(V(rand(-1, 1), 8, rand(-1, 1))), tp, col, 0.28, { width: s === 2 ? 0.16 : 0.08 });
     v.flash([0.8, 0.85, 1], s === 2 ? 0.16 : 0.1); v.light(tp.clone().setY(tp.y + 2), col, 30, 0.25, 10);
@@ -392,27 +394,27 @@ async function dream(ctx) {
   for (let i = 0; i < 6; i++) v.smokePuff(at.x + rand(-1, 1), at.y + rand(0.05, 0.4), at.z + rand(-1, 1), { vy: rand(0.05, 0.15), life: 1.8, size: 0.4, size1: 1.0, tint: [0.95, 0.66, 0.85] });
   ctx.hit(); await ctx.wait(1100); outro(ctx);
 }
-const HOUND_TEX = new THREE.TextureLoader().loadAsync('assets/fx_52.png').then(t => { t.magFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace; return t; });
 async function hound(ctx) {
-  const col = [0.6, 0.85, 1], v = ctx.vfx, F = globalThis.ANIM_DATA.fx[52];
+  const col = [0.6, 0.85, 1], v = ctx.vfx;
   await intro(ctx, col, { dur: 700, dist: 10, pitch: 0.38, yaw: -0.9 });
-  // the spectral hound uses the original 哮天犬 frames, glowing and leaving afterimages
-  const dogRects = [...new Set(F.frames.map(f => f[2] && f[2][0]).filter(i => i != null && F.rects[i][2] > 60 && F.rects[i][2] < 120))].slice(0, 6).map(i => F.rects[i]);
-  const tex = await HOUND_TEX;
-  // solid, in the original's colours, 20% bigger [the user's call; it was an additive blue glow]; its afterimages stay ghostly
-  const mk = ghost => { const t = tex.clone(); t.needsUpdate = true; return new THREE.Mesh(new THREE.PlaneGeometry(3.84, 2.28), ghost
+  // [the user's call: it ran without moving its legs] the original's 哮天犬 is one leaping pose, its outline flickering
+  // (fx 52), slid across; here it gallops: the four strides of the level-up's hound (src/levelup.js) in the original's
+  // colours, the stride kept to the ground it covers, a rise and fall with each one, afterimages behind
+  const tex = houndRunTex(), NF = 4, LEN = 14, DUR = 1.0;
+  const mk = ghost => { const t = tex.clone(); t.needsUpdate = true; return new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.8), ghost
     ? new THREE.MeshBasicMaterial({ map: t, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(0.75, 0.95, 1.25), toneMapped: false, side: THREE.DoubleSide })
-    : new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })); };
-  const setFrame = (m, i) => { const r = dogRects[i % dogRects.length], W = tex.image.width, H = tex.image.height; m.material.map.repeat.set(r[2] / W, r[3] / H); m.material.map.offset.set(r[0] / W, 1 - (r[1] + r[3]) / H); };
-  const start = ctx.at.clone().add(V(7, 0.6, 0)), end = ctx.at.clone().add(V(-7, 0.6, 0)), dog = mk();
-  v.timed(dog, 1.0, (k, dt, t) => {
-    dog.position.copy(start.clone().lerp(end, k)); dog.position.y = groundH(dog.position.x, dog.position.z) + 1.14 + Math.abs(Math.sin(k * 16)) * 0.3;
-    dog.lookAt(ctx.cam.camera.position.x, dog.position.y, ctx.cam.camera.position.z); setFrame(dog, Math.floor(t * 14));
+    : new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, toneMapped: false })); };
+  const setFrame = (m, i) => { m.material.map.offset.x = (((i % NF) + NF) % NF) / NF; };
+  const start = ctx.at.clone().add(V(LEN / 2, 0, 0)), end = ctx.at.clone().add(V(-LEN / 2, 0, 0)), dog = mk(), STRIDE = 1.15;   // (a stride's length: four poses to it)
+  v.timed(dog, DUR, (k, dt, t) => {
+    const run = k * LEN, ph = run / STRIDE, fi = Math.floor(ph * NF);
+    dog.position.copy(start.clone().lerp(end, k)); dog.position.y = groundH(dog.position.x, dog.position.z) + 0.88 + Math.sin(ph * Math.PI * 2) * 0.08;
+    dog.lookAt(ctx.cam.camera.position.x, dog.position.y, ctx.cam.camera.position.z); dog.scale.x = -1; setFrame(dog, fi);   // (it runs left: the poses face right)
     if (!dog.userData.rib) dog.userData.rib = [v.ribbon({ col, width: 0.35, n: 16 }), v.ribbon({ col: [1, 1, 1], width: 0.08, n: 12 })];
-    for (const r of dog.userData.rib) r.push(dog.position.clone().add(V(0.6, 0.1, 0))); if (k > 0.97) for (const r of dog.userData.rib) r.end();
-    if (Math.random() < 0.35) { const ghost = mk(true); ghost.position.copy(dog.position); ghost.quaternion.copy(dog.quaternion); setFrame(ghost, Math.floor(t * 14)); v.timed(ghost, 0.25, k2 => { ghost.material.opacity = 0.18 * (1 - k2); }); }
-    for (let i = 0; i < 3; i++) v.spark(dog.position.x + rand(0.3, 1), dog.position.y + rand(-0.4, 0.3), dog.position.z + rand(-0.3, 0.3), { vx: 4, life: 0.3, size: 0.04, r: 0.8, gg: 0.9, b: 1, shape: 1 });
-    v.smoke(dog.position.x + 0.5, groundH(dog.position.x, dog.position.z) + 0.1, dog.position.z, { vy: 0.3, vx: 0.6, life: 1, size: 0.3, size1: 0.9, r: 0.55, gg: 0.48, b: 0.38, a: 0.35, shape: -1 });
+    for (const r of dog.userData.rib) r.push(dog.position.clone().add(V(0.9, 0.1, 0))); if (k > 0.97) for (const r of dog.userData.rib) r.end();
+    if (Math.random() < 0.35) { const ghost = mk(true); ghost.position.copy(dog.position); ghost.quaternion.copy(dog.quaternion); ghost.scale.x = -1; setFrame(ghost, fi); v.timed(ghost, 0.25, k2 => { ghost.material.opacity = 0.18 * (1 - k2); }); }
+    if (fi % 2 === 0 && Math.random() < 0.6) v.smoke(dog.position.x + 0.3, groundH(dog.position.x, dog.position.z) + 0.05, dog.position.z, { vy: 0.3, vx: 0.8, life: 0.9, size: 0.25, size1: 0.8, r: 0.55, gg: 0.48, b: 0.38, a: 0.35, shape: -1 });   // (dust off the paws as they strike)
+    for (let i = 0; i < 2; i++) v.spark(dog.position.x + rand(0.4, 1.2), dog.position.y + rand(-0.4, 0.3), dog.position.z + rand(-0.3, 0.3), { vx: 4, life: 0.3, size: 0.04, r: 1, gg: 0.9, b: 0.45, shape: 1 });
   });
   await ctx.wait(500);
   // the bite: claw slashes across the target and a howl ring
@@ -457,31 +459,35 @@ async function dragon(ctx) {
     const whisk = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.004, 0.9, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.8, 2), toneMapped: false }));
     whisk.position.set(sgn * 0.25, -0.05, 0.55); whisk.rotation.set(0.4, 0, sgn * 1.2); head.add(whisk);
   }
-  const path = t => {
-    if (t < 0.72) { const a = t * 13, r = 2.6 - t * 1.7; return V(ctx.at.x + Math.cos(a) * r, ctx.at.y + 0.6 + t * 7, ctx.at.z + Math.sin(a) * r); }
-    const top = V(ctx.at.x + Math.cos(9.36) * 1.38, ctx.at.y + 5.64, ctx.at.z + Math.sin(9.36) * 1.38), f = (t - 0.72) / 0.28;
-    return top.lerp(ctx.at.clone().setY(ctx.at.y + 0.1), f * f);
+  // [the user's call] the dragon bursts up out of the ground under the target and spirals up into the storm, not down
+  // onto it: out of the earth through the target, round it in a widening coil, away into the clouds
+  const g0 = groundH(ctx.at.x, ctx.at.z);
+  const path = t => { const a = t * 11 + 1.2, r = 0.15 + Math.min(1, t * 1.6) * 2.3, y = g0 - 1.4 + t * 11.5; return V(ctx.at.x + Math.cos(a) * r, y, ctx.at.z + Math.sin(a) * r * 0.8); };
+  let erupted = false;
+  const erupt = () => {   // the ground bursts open where it comes through: a spiralling geyser of water round the target
+    erupted = true; const base = ctx.at.clone().setY(g0);
+    v.impact(ctx.at, col, 1.6); v.flash([0.7, 0.85, 1], 0.25); v.shake(0.25, 0.4); v.hitstop = 0.08;
+    swirl(v, base, [0.15, 0.45, 1], 1.0, 0.85, 6.5, 1.8, { speed: 3, twist: 6, foam: [0.85, 0.95, 1], intensity: 1.3 });
+    swirl(v, base, [0.4, 0.75, 1], 0.6, 0.55, 7, 1.8, { speed: -5, twist: 3, intensity: 0.8 });
+    for (let i = 0; i < 30; i++) { const a = rand(0, 6.28), s = rand(1.5, 3.5); v.smokePuff(ctx.at.x + Math.cos(a) * 0.9, g0 + 0.1, ctx.at.z + Math.sin(a) * 0.9, { vx: Math.cos(a) * s, vy: rand(0.6, 2), vz: Math.sin(a) * s, drag: 2, life: rand(1, 1.8), size: 0.5, size1: 1.4, tint: [0.7, 0.85, 1] }); }
+    for (let i = 0; i < 160; i++) { const a = rand(0, 6.28), s = rand(2, 7); v.spark(ctx.at.x, g0 + 0.3, ctx.at.z, { vx: Math.cos(a) * s * 0.5, vy: rand(3, 9), vz: Math.sin(a) * s * 0.5, g: 14, life: rand(0.8, 1.4), size: rand(0.04, 0.08), r: 0.7, gg: 0.9, b: 1, shape: 1 }); }
+    v.ring(ctx.at, [0.6, 0.85, 1], 3.5, 1); v.ring(ctx.at, [1, 1, 1], 2, 0.6);
   };
-  v.timed(body, 2.7, (k, dt, t) => {
+  v.timed(body, 3.0, (k, dt, t) => {
     mat.uniforms.uT.value = t;
-    const lead = Math.min(1.25, t / 2.15);
-    for (let i = 0; i < N; i++) pts[i] = path(Math.max(0, Math.min(1, lead - i * 0.0085)));
+    const lead = Math.min(1.35, t / 2.2);
+    for (let i = 0; i < N; i++) pts[i] = path(Math.max(0, Math.min(1.3, lead - i * 0.0085)));
     const curve = new THREE.CatmullRomCurve3(pts.slice().reverse());
     body.geometry.dispose(); body.geometry = new THREE.TubeGeometry(curve, 120, 0.24, 10, false);
-    const hp = pts[0], nx = path(Math.min(1, lead + 0.01)); head.position.copy(hp); head.lookAt(nx); head.visible = lead < 1;
-    body.visible = lead - (N - 1) * 0.0085 < 1;
-    if (head.visible) { v.light(hp, col, 35, 0.06, 8); for (let i = 0; i < 3; i++) { const q = pts[(Math.random() * N) | 0]; v.spark(q.x + rand(-0.2, 0.2), q.y + rand(-0.2, 0.2), q.z + rand(-0.2, 0.2), { vy: rand(-1, 0.2), g: 4, life: 0.6, size: 0.05, r: 0.7, gg: 0.9, b: 1, shape: 1 }); } }
+    const hp = pts[0], nx = path(Math.min(1.3, lead + 0.01)); head.position.copy(hp); head.lookAt(nx); head.visible = lead < 1.15 && hp.y > g0 - 0.3;
+    body.visible = lead - (N - 1) * 0.0085 < 1.15;
+    if (!erupted && hp.y > g0 - 0.2) erupt();
+    if (head.visible) { v.light(hp, col, 35, 0.06, 8); for (let i = 0; i < 3; i++) { const q = pts[(Math.random() * N) | 0]; if (q.y > g0) v.spark(q.x + rand(-0.2, 0.2), q.y + rand(-0.2, 0.2), q.z + rand(-0.2, 0.2), { vy: rand(-1, 0.2), g: 4, life: 0.6, size: rand(0.04, 0.07), r: 0.6, gg: 0.85, b: 1, shape: 1 }); } }
   });
-  v.timed(head, 2.7, () => {});
-  await ctx.wait(2150);
-  v.impact(ctx.at, col, 1.6); v.flash([0.7, 0.85, 1], 0.25);
-  // [ROM fx 53] the dragon's dive raises a spiralling column of water around the target
-  swirl(v, ctx.at.clone().setY(groundH(ctx.at.x, ctx.at.z)), [0.15, 0.45, 1], 1.0, 0.85, 6.5, 1.8, { speed: 3, twist: 6, foam: [0.85, 0.95, 1], intensity: 1.3 });
-  swirl(v, ctx.at.clone().setY(groundH(ctx.at.x, ctx.at.z)), [0.4, 0.75, 1], 0.6, 0.55, 7, 1.8, { speed: -5, twist: 3, intensity: 0.8 });
-  for (let i = 0; i < 30; i++) { const a = rand(0, 6.28), s = rand(1.5, 3.5); v.smokePuff(ctx.at.x + Math.cos(a) * 0.9, ctx.at.y + 0.1, ctx.at.z + Math.sin(a) * 0.9, { vx: Math.cos(a) * s, vy: rand(0.6, 2), vz: Math.sin(a) * s, drag: 2, life: rand(0.9, 1.5), size: 0.45, size1: 1.2, tint: [0.82, 0.92, 1] }); }
-  for (let i = 0; i < 160; i++) { const a = rand(0, 6.28), s = rand(2, 7); v.spark(ctx.at.x, ctx.at.y + 0.3, ctx.at.z, { vx: Math.cos(a) * s * 0.5, vy: rand(3, 9), vz: Math.sin(a) * s * 0.5, g: 14, life: rand(0.8, 1.4), size: rand(0.04, 0.08), r: 0.75, gg: 0.9, b: 1, shape: 1, floor: ctx.at.y + 0.02 }); }
-  v.ring(ctx.at, [0.6, 0.85, 1], 3.5, 1); v.ring(ctx.at, [1, 1, 1], 2, 0.6);
-  ctx.hit(); await ctx.wait(1300); outro(ctx);
+  v.timed(head, 3.0, () => {});
+  await ctx.wait(700);
+  ctx.hit(); await ctx.wait(2100);
+  outro(ctx);
 }
 // ---------------------------------------------------------------- dispatch
 const SCRIPT = {

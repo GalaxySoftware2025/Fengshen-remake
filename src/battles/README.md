@@ -26,7 +26,7 @@ A default export. Functions get `E`, the battle engine (`src/battle.js`): `cam`,
 
 | field | does |
 |---|---|
-| `look` | `{ set }`: the battle plays on a remade set (`src/remake/`, battle 1: the valley; its `openChest(x, y)` opens the chest model), or `{ mapSD, mapHD?, hdCell?, forest?, clear?(cx, cy), dress?(world) }`: the map art, the terrain code drawn as a bamboo forest, cells kept clear of it, and props built into the world. Default: the generated map art, flat. |
+| `look` | `{ set }`: the battle plays on a remade set (`src/remake/`, battle 1: the valley; its `openChest(x, y)` opens the chest model), or `{ mapSD }`: the original map art, painted flat. Default: the generated map art, flat. |
 | `sprites` | extra sprite keys to preload (a unit that changes sprite later) |
 | `lore`, `winText`, `loseText` | the brief screen; defaults to the ROM condition text |
 | `stage(E)` | after the units are placed (磻溪: the forest already on fire) |

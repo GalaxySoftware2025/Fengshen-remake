@@ -41,7 +41,7 @@ export function upscale(img, tw = 32, th = 32, clampEdges = false) {
   }
   return out;
 }
-const HD = [/^assets\/units\/[0-9a-f]{6}\.png$/, /^assets\/units\/act\/[^/]+\.png$/, /^assets\/items\/[^/]+\.png$/, /^assets\/spells\/[^/]+\.png$/, /^assets\/fx\/(summon_\d+|guanyin|skull)\.png$/];
+const HD = [/^assets\/units\/[0-9a-f]{6}\.png$/, /^assets\/units\/act\/[^/]+\.png$/, /^assets\/units\/die\/[^/]+\.png$/, /^assets\/items\/[^/]+\.png$/, /^assets\/spells\/[^/]+\.png$/, /^assets\/fx\/(summon_\d+|guanyin|skull)\.png$/];
 // every sprite sheet among files gets its HD sheet beside it, in hd/
 export function run(files) {
   for (const p of Object.keys(files)) if (HD.some(r => r.test(p)) && typeof files[p] === 'object' && files[p].channels === 4) {

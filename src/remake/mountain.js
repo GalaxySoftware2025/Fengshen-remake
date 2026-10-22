@@ -12,12 +12,11 @@
 import * as THREE from 'three';
 import * as T from '../kit/tex.js';
 import { mats, chest } from '../kit/parts.js';
-import { readLayout, Land, CL, grass, stones, shrubs, windTick } from '../kit/terrain.js';
+import { readLayout, Land, CL, grass, stones, shrubs, windTick, footprints } from '../kit/terrain.js';
 import { trees, mouth, sprigTex } from './seacave.js';
 import { flowerSpots, flowers } from './grassland.js';
 import { D, G } from '../rules.js';
 
-const ROCKY = new Set([0xd86c24, 0x484824, 0x906c00, 0xfcfc90, 0x242424, 0x486cb4, 0x6c48b4]);
 const V = {
   '0f0fdc': {
     w: 32, h: 25, art: 'assets/maps/0f0fdc.png', snow: false, start: [6, 20],   // (battle 12's deploy: where the way up begins)
@@ -159,6 +158,10 @@ function setFor(key) {
     S.add(stones(land.scatter(CL.rock, 6, (x, z) => [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]].every(([a, b]) => !walk(Math.floor(x + a), Math.floor(z + b)))), rockM, { size: 0.3 }));   // the ridges as heaps of boulders (kept off the cells a unit can reach: over their edge they stood in them)
     if (v.flowers) S.add(flowers((await flowerSpots(v.art, v.flowers)).filter(f => open(f.x, f.z)), (x, z) => land.at(x, z)));
     E.world.updaters.push((dt, t) => windTick(t));
+    if (v.snow) {   // footprints in the snow where anyone walks [the user's call; as battle 10's splashes]
+      const fp = footprints(S, (x, z) => walk(Math.floor(x), Math.floor(z)), (x, z) => land.at(x, z)); fp.vfx = E.vfx;
+      E.world.updaters.push(fp); if (window.__remake) window.__remake.footprints = fp;
+    }
   }
   function openChest(x, y) {
     const g = chestG.get(x + ',' + y), S = world && world.scene; if (!S) return;

@@ -79,7 +79,7 @@
     list.innerHTML = '';
     const has = id => document.getElementById(id).checked;
     const flags = ['auto', 'test', 'qa', 'free'].filter(has).map(f => '&' + f).join('');
-    if (tab === 'arena') {   // 演武場: the open arena on 磻溪's data, no win or loss (its own toolbar)
+    if (tab === 'arena') {   // 演武場: the open arena, its own board and set (src/battles/arena.js), no win or loss (its own toolbar)
       const g0 = head('演武場');
       const ar = document.createElement('a'); ar.className = 'b'; ar.href = '../index.html#arena' + (has('qa') ? '&qa' : '');
       ar.innerHTML = `<div class="t"><span class="n">∞</span><span class="name">演武場</span><span class="st">練習</span></div>

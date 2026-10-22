@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { groundH, rand } from './world.js';
 import { tex } from './actors.js';
 import { arrowMesh } from './spells.js';
+import { swordMesh } from './spellkit.js';
 import { world, vfx, cam, ui, anim, wait, V } from './battle.js';
 
 const LV = {
@@ -28,7 +29,7 @@ export function card(map, w, h, o = {}) {
 }
 export const face = (m, flip = 1, rz = 0) => { m.quaternion.copy(world.camera.quaternion); if (rz) m.rotateZ(rz); m.scale.x = Math.abs(m.scale.x) * flip; };
 // tapered segments joined with round joints (limbs, necks, tails of the drawn beasts)
-function limb(g, pts, ws, col) {
+export function limb(g, pts, ws, col) {
   g.fillStyle = col;
   for (let i = 0; i < pts.length - 1; i++) {
     const [x0, y0] = pts[i], [x1, y1] = pts[i + 1], dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, w0 = ws[i] / 2, w1 = ws[i + 1] / 2;
@@ -38,7 +39,7 @@ function limb(g, pts, ws, col) {
   }
 }
 // frames drawn flat one by one, then laid on a strip with one soft glow round each outline
-function glowStrip(fw, fh, n, glow, draw) {
+export function glowStrip(fw, fh, n, glow, draw) {
   return canvasTex(fw * n, fh, g => {
     const one = document.createElement('canvas'); one.width = fw; one.height = fh; const o = one.getContext('2d');
     g.shadowColor = glow; g.shadowBlur = 10;
@@ -50,7 +51,7 @@ function glowStrip(fw, fh, n, glow, draw) {
 // spin and flutter down round her (petal meshes, not square particles: the user's call)
 const FLOWER_COLS = [[1, 0.45, 0.7], [1, 0.18, 0.35], [1, 0.8, 0.2], [1, 0.95, 0.85], [0.7, 0.4, 1], [0.35, 0.7, 1], [1, 0.9, 0.55]];
 let PETAL_TEX = null, BLOSSOM_TEX = null;
-function petalTex() {   // a cherry petal: notched tip, white heart blushing to the edge (tinted by the material)
+export function petalTex() {   // a cherry petal: notched tip, white heart blushing to the edge (tinted by the material)
   const c = document.createElement('canvas'); c.width = 64; c.height = 96; const g = c.getContext('2d');
   const path = () => { g.beginPath(); g.moveTo(32, 92); g.bezierCurveTo(4, 70, 2, 26, 20, 8); g.lineTo(32, 18); g.lineTo(44, 8); g.bezierCurveTo(62, 26, 60, 70, 32, 92); g.closePath(); };
   const gr = g.createRadialGradient(32, 80, 2, 32, 50, 48); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.45, '#f4f4f4'); gr.addColorStop(1, '#b8b8b8');
@@ -58,7 +59,7 @@ function petalTex() {   // a cherry petal: notched tip, white heart blushing to 
   g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 1.5; for (const dx of [-8, 0, 8]) { g.beginPath(); g.moveTo(32, 86); g.quadraticCurveTo(32 + dx * 0.6, 50, 32 + dx, 22); g.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-function blossomTex() {   // a five-petalled blossom with a gold heart
+export function blossomTex() {   // a five-petalled blossom with a gold heart
   const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
   g.translate(64, 64);
   for (let i = 0; i < 5; i++) {
@@ -101,7 +102,7 @@ function flowerRain(q, P) {
 }
 // 哪吒's level-up pieces: lotus petals, the wind-fire wheels, the red sash (cloth, not light), the golden ring
 let LOTUS_TEX = null;
-function lotusTex() {   // a lotus petal: broad, pointed, white at the base flushing to deep pink at the tip
+export function lotusTex() {   // a lotus petal: broad, pointed, white at the base flushing to deep pink at the tip
   const c = document.createElement('canvas'); c.width = 64; c.height = 128; const g = c.getContext('2d');
   const path = () => { g.beginPath(); g.moveTo(32, 126); g.bezierCurveTo(2, 108, 0, 44, 32, 2); g.bezierCurveTo(64, 44, 62, 108, 32, 126); g.closePath(); };
   const gr = g.createLinearGradient(0, 126, 0, 2); gr.addColorStop(0, '#fff8f4'); gr.addColorStop(0.45, '#ffd2df'); gr.addColorStop(0.8, '#ff86ad'); gr.addColorStop(1, '#f2477e');
@@ -110,7 +111,7 @@ function lotusTex() {   // a lotus petal: broad, pointed, white at the base flus
   g.strokeStyle = 'rgba(200,40,90,0.5)'; g.lineWidth = 2; path(); g.stroke();
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-function lotusBloom(P) {   // two rings of petals round his feet, closed as a bud; open(k) unfolds them, scatter() flings them off
+export function lotusBloom(P) {   // two rings of petals round his feet, closed as a bud; open(k) unfolds them, scatter() flings them off
   LOTUS_TEX = LOTUS_TEX || lotusTex();
   const root = new THREE.Group(), petals = [];
   root.position.set(P.x, P.y + 0.03, P.z);
@@ -140,7 +141,7 @@ function lotusBloom(P) {   // two rings of petals round his feet, closed as a bu
       const it = vfx.items.find(i => i.mesh === root); if (it) it.life = 0;
     },
   };
-  bloom.open(0); return bloom;
+  bloom.open(0); bloom.root = root; return bloom;
 }
 export function fireWheel() {   // a 風火輪: a red-gold rim on six spokes, spun about its axle; flames are added along the rim each frame
   const g = new THREE.Group(), spin = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.3, 0.05), transparent: true, toneMapped: false });
@@ -149,7 +150,7 @@ export function fireWheel() {   // a 風火輪: a red-gold rim on six spokes, sp
   for (let i = 0; i < 3; i++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.02, 0.012), hub); sp.rotation.z = i / 3 * Math.PI; spin.add(sp); }
   g.add(spin); g.spin = spin; g.mats = [mat, hub]; g.renderOrder = 6; return g;
 }
-function clothStrip(o) {   // a camera-facing strip of cloth drawn through the last n points (vfx.ribbon is additive light; this is a solid sash)
+export function clothStrip(o) {   // a camera-facing strip of cloth drawn through the last n points (vfx.ribbon is additive light; this is a solid sash)
   const N = o.n, pts = [], pos = new Float32Array(N * 6), uv = new Float32Array(N * 4), g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2).setUsage(THREE.DynamicDrawUsage));
   const idx = []; for (let i = 0; i < N - 1; i++) { const j = i * 2; idx.push(j, j + 1, j + 2, j + 1, j + 3, j + 2); } g.setIndex(idx);
@@ -207,7 +208,7 @@ const HOUND_POSES = [
   { S: [150, 68], P: [100, 100], arch: 0, fn: [[154, 88], [156, 105], [162, 120]], ff: [[148, 88], [148, 105], [153, 120]],  // sitting up
     hn: [[124, 102], [104, 117], [130, 120]], hf: [[120, 104], [100, 118], [124, 121]], head: [168, 32], nose: [196, 38], tail: [[60, 116], [40, 110]], sit: 1 },
 ];
-function drawHound(g, F) {
+function drawHound(g, F, pal = HOUND_SILVER) {
   const limb = (pts, ws, col) => {   // tapered segments joined with round joints
     g.fillStyle = col;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -217,14 +218,14 @@ function drawHound(g, F) {
     }
   };
   const paw = ([x, y], col) => { g.fillStyle = col; g.beginPath(); g.ellipse(x + 3, y - 2, 6, 3.5, 0, 0, 6.28); g.fill(); };
-  const body = g.createLinearGradient(0, 30, 0, 120); body.addColorStop(0, '#ffffff'); body.addColorStop(1, '#c4d2ee');
-  const far = '#97a9cf', [S, P] = [F.S, F.P], T0 = [P[0] - 14, P[1] - 4];
+  const body = g.createLinearGradient(0, 30, 0, 120); body.addColorStop(0, pal.top); body.addColorStop(1, pal.under);
+  const far = pal.far, [S, P] = [F.S, F.P], T0 = [P[0] - 14, P[1] - 4];
   // far legs, behind the body
   limb([[F.S[0] - 2, F.S[1] + 10], ...F.ff], [12, 8, 5, 4], far); paw(F.ff[2], far);
   limb([P, ...F.hf], [16, 10, 6, 4], far); paw(F.hf[2], far);
   g.fillStyle = body;
   // spirit wisps streaming back off the back and tail (not when sitting)
-  if (!F.sit) { g.strokeStyle = 'rgba(190,215,255,0.55)'; g.lineCap = 'round'; for (const [y, w] of [[-6, 4], [4, 3]]) { g.lineWidth = w; g.beginPath(); g.moveTo(S[0] - 20, S[1] - 6 + y); g.bezierCurveTo(S[0] - 70, S[1] - 20 + y, P[0] - 50, P[1] + 4 + y, P[0] - 90, P[1] - 14 + y); g.stroke(); } }
+  if (!F.sit) { g.strokeStyle = pal.wisp; g.lineCap = 'round'; for (const [y, w] of [[-6, 4], [4, 3]]) { g.lineWidth = w; g.beginPath(); g.moveTo(S[0] - 20, S[1] - 6 + y); g.bezierCurveTo(S[0] - 70, S[1] - 20 + y, P[0] - 50, P[1] + 4 + y, P[0] - 90, P[1] - 14 + y); g.stroke(); } }
   // tail
   limb([T0, ...F.tail], [7, 4, 2], body);
   // body: rump, the back's curve up to the withers, a deep chest, the waist tucked up under the loin
@@ -253,7 +254,19 @@ function drawHound(g, F) {
   limb([[S[0] - 2, S[1] + 10], ...F.fn], [14, 9, 6, 5], body); paw(F.fn[2], body);
   limb([[P[0], P[1] + 2], ...F.hn], [18, 11, 7, 5], body); paw(F.hn[2], body);
 }
-function houndTex() {   // each frame drawn flat, then laid on the strip with one soft blue glow round its outline
+// the hound's colours: the level-up's silver spirit, and the 哮天犬 spell's as the original paints it (fx 52: a blue-white
+// body shaded deep blue, the outline flickering gold)
+const HOUND_SILVER = { top: '#ffffff', under: '#c4d2ee', far: '#97a9cf', wisp: 'rgba(190,215,255,0.55)' };
+const HOUND_SPELL = { top: '#a8d4ff', under: '#2458c0', far: '#173c88', wisp: 'rgba(255,226,90,0.55)' };
+// the spell's hound: the four gallop poses (HOUND_POSES 0-3) in the original's colours, a gold rim round each
+export function houndRunTex() {
+  const n = 4, c = document.createElement('canvas'); c.width = 256 * n; c.height = 128; const g = c.getContext('2d');
+  const one = document.createElement('canvas'); one.width = 256; one.height = 128; const o = one.getContext('2d');
+  g.shadowColor = 'rgba(255,214,60,0.95)'; g.shadowBlur = 5;
+  for (let i = 0; i < n; i++) { o.clearRect(0, 0, 256, 128); drawHound(o, HOUND_POSES[i], HOUND_SPELL); g.drawImage(one, i * 256, 0); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(1 / n, 1); return t;
+}
+export function houndTex() {   // each frame drawn flat, then laid on the strip with one soft blue glow round its outline
   const n = HOUND_POSES.length, c = document.createElement('canvas'); c.width = 256 * n; c.height = 128; const g = c.getContext('2d');
   const one = document.createElement('canvas'); one.width = 256; one.height = 128; const o = one.getContext('2d');
   g.shadowColor = 'rgba(140,190,255,0.95)'; g.shadowBlur = 9;
@@ -378,123 +391,181 @@ async function nezhaLevel(a, P) {
 }
 
 // ---------------------------------------------------------------- 林雲: the young hunter of 昌平村, quick and brash
-// facing us, three quick cuts leave arcs of blue sword light before him; a last cut straight down sends a blue crescent
-// of sword wind racing off across the ground
-function crescentTex() { return canvasTex(128, 128, g => {
-  const gr = g.createRadialGradient(64, 64, 30, 64, 64, 62); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.7, 'rgba(200,235,255,0.95)'); gr.addColorStop(0.85, '#ffffff'); gr.addColorStop(1, 'rgba(160,210,255,0)');
-  g.fillStyle = gr; g.beginPath(); g.arc(64, 64, 62, -2.4, -0.74); g.arc(82, 82, 50, -0.74, -2.4, true); g.closePath(); g.fill(); }); }
+// [the user's call: redesigned, a signature like the others'] his sword arts (御劍術, 萬劍訣): eight spirit swords rise out of
+// the ground in a ring round him, points up, and turn; they spin up into a vortex and fly together over him into one great
+// sword of blue light, which plunges into the ground beside him: a shockwave, and it breaks into motes
 async function linLevel(a, P) {
-  const { right, toCam } = axes(), BLUE = [0.15, 0.45, 1];
-  const c0 = P.clone().addScaledVector(toCam, 0.35);   // the cuts are made before him, facing us
-  const slash = (from, to, bow) => {   // a swept arc of blue sword light: a deep blue glow round a pale core
-    const glow = vfx.ribbon({ col: BLUE, width: 0.16, n: 18, fade: 0.45 }), core = vfx.ribbon({ col: [0.6, 0.85, 1], width: 0.045, n: 18, fade: 0.35 });
-    return anim(0.14, k => { const q = from.clone().lerp(to, k).addScaledVector(toCam, Math.sin(k * Math.PI) * bow); glow.push(q); core.push(q); }).then(() => { glow.end(); core.end(); });
-  };
-  const at = (x, y) => c0.clone().addScaledVector(right, x).setY(P.y + y);
-  const aura = (n) => { for (let i = 0; i < n; i++) { const t = rand(0, 6.28), r = rand(0.25, 0.5); vfx.spark(P.x + Math.cos(t) * r, P.y + rand(0, 0.3), P.z + Math.sin(t) * r, { vy: rand(0.8, 1.6), life: rand(0.5, 0.8), size: rand(0.04, 0.07), r: 0.35, gg: 0.65, b: 1, shape: 0 }); } };
+  const { right, toCam } = axes(), BLUE = [0.3, 0.65, 1], N = 8, R0 = 0.95;
   a.u.facing = 'down'; LV.guard(a);
-  vfx.decal(P, BLUE, 0.9, 3.2, { intensity: 0.5 }); aura(12); await wait(250);
-  // three quick cuts, all before him: across, down to the left, up to the right
-  for (const [from, to] of [[at(-0.6, 0.6), at(0.6, 0.55)], [at(0.5, 1.0), at(-0.55, 0.15)], [at(-0.5, 0.15), at(0.55, 1.0)]]) {
-    LV.atk(a, 0); await wait(50); LV.atk(a, 1);
-    slash(from, to, 0.25); vfx.light(c0.clone().setY(P.y + 0.6), [0.4, 0.65, 1], 6, 0.25, 4);
-    vfx.burst(to, { n: 10, speed: 1.8, cols: [[0.85, 0.95, 1], [0.3, 0.6, 1]], size: 0.045, life: 0.4, g: 0, shape: 0 }); aura(4);
-    await wait(110); LV.atk(a, 2); await wait(120);
-  }
-  // the last cut, straight down: a blue crescent of sword wind races away over the ground
-  LV.atk(a, 0); await wait(140); LV.atk(a, 1); await wait(60); LV.atk(a, 2);
-  vfx.shake(0.1, 0.2); vfx.ring(P, [0.3, 0.6, 1], 1.6, 0.45, { intensity: 1 }); vfx.light(c0.clone().setY(P.y + 0.5), [0.4, 0.65, 1], 10, 0.4, 5);
-  const wave = card(once('crescent', crescentTex), 1.8, 1.8, { add: true, col: [0.45, 0.8, 1.8] }), edges = [-1, 1].map(() => vfx.ribbon({ col: BLUE, width: 0.07, n: 16 }));
-  const start = P.clone().addScaledVector(toCam, 0.5);
-  await anim(0.55, (k, dt = 1 / 60) => {
-    const q = start.clone().addScaledVector(toCam, k * 3.4); q.y = groundH(q.x, q.z) + 0.55;
-    wave.position.copy(q); face(wave, 1, -Math.PI * 0.25); wave.scale.setScalar(0.8 + k * 0.5); wave.material.opacity = 1 - k * k;
-    edges.forEach((e, j) => e.push(q.clone().addScaledVector(right, (j ? 1 : -1) * 0.6 * (0.8 + k * 0.5)).setY(groundH(q.x, q.z) + 0.08)));
-    if (Math.random() < dt * 50) { const g = q.clone().setY(groundH(q.x, q.z) + 0.03).addScaledVector(right, rand(-0.4, 0.4)); vfx.smokePuff(g.x, g.y, g.z, { vy: rand(0.3, 0.8), life: 0.6, size: 0.12, size1: 0.35, tint: [0.62, 0.56, 0.45] }); vfx.spark(g.x, g.y + 0.05, g.z, { vy: rand(0.6, 1.4), life: 0.4, size: 0.045, r: 0.35, gg: 0.65, b: 1, shape: 0 }); }
+  vfx.decal(P, BLUE, 1.2, 3.6, { intensity: 0.45 }); vfx.light(P.clone().setY(P.y + 0.8), [0.5, 0.75, 1], 6, 3.4, 4);
+  const swords = Array.from({ length: N }, (_, i) => { const m = swordMesh(BLUE, 0.85); vfx.timed(m, 1e9, () => {}); m.userData.a = i / N * Math.PI * 2; return m; });
+  const place = (m, ang, r, y, tilt) => { m.position.set(P.x + Math.cos(ang) * r, y, P.z + Math.sin(ang) * r * 0.85); m.rotation.set(0, -ang, tilt); };
+  // 1. they rise out of the ground round him, points up, one after another, and turn
+  let spin = 0;
+  await anim(0.9, (k, dt = 1 / 60) => { spin += dt * 1.2;
+    swords.forEach((m, i) => { const ki = Math.min(1, Math.max(0, (k - i * 0.06) / 0.4)), e = 1 - Math.pow(1 - ki, 3);
+      place(m, m.userData.a + spin, R0, P.y - 1.1 + e * 1.15, 0); m.visible = ki > 0;
+      if (ki > 0 && ki < 0.5 && Math.random() < 0.5) { const q = m.position; vfx.smokePuff(q.x, P.y + 0.05, q.z, { vy: 0.4, life: 0.6, size: 0.08, size1: 0.25, tint: [0.62, 0.55, 0.46] }); } });
   });
-  drop(wave); edges.forEach(e => e.end());
-  vfx.burst(a.chest().addScaledVector(toCam, 0.3), { n: 12, speed: 1, cols: [[0.85, 0.95, 1], [0.3, 0.6, 1]], size: 0.045, life: 0.45, g: 0, shape: 0 }); aura(10);   // the blade gleams blue as he holds the cut
-  await wait(500);
+  // 2. a vortex: faster and faster, rising, drawing in to a point over his head
+  const trails = swords.map(() => vfx.ribbon({ col: BLUE, width: 0.06, n: 12, fade: 0.3 })), top = P.clone().setY(P.y + 2.6);
+  await anim(0.75, (k, dt = 1 / 60) => { spin += dt * (2 + k * 12);
+    swords.forEach((m, i) => { const r = R0 * (1 - k * 0.92), y = P.y + 0.05 + k * k * 2.4; place(m, m.userData.a + spin, r, y, -0.5 * k); trails[i].push(m.position.clone().setY(y + 0.6)); });
+    if (Math.random() < 0.6) vfx.spark(P.x + rand(-0.5, 0.5), P.y + rand(0.3, 2.4), P.z + rand(-0.3, 0.3), { vx: 0, vy: 0, seek: { x: top.x, y: top.y, z: top.z, k: 5 }, life: 0.5, size: rand(0.03, 0.05), r: 0.7, gg: 0.88, b: 1, shape: 1 });
+  });
+  trails.forEach(t => t.end());
+  for (const m of swords) drop(m);
+  // 3. one great sword of light forms over him, point down, and moves over the ground beside him (a sword that tall before
+  // him would cover him, seen from above)
+  vfx.flash([0.7, 0.85, 1], 0.12); vfx.burst(top, { n: 26, speed: 2.4, cols: [[1, 1, 1], [0.55, 0.8, 1]], size: 0.05, life: 0.5, g: 0, shape: 1 });
+  const big = swordMesh([0.45, 0.75, 1], 2.6); vfx.timed(big, 1e9, () => {}); big.rotation.set(Math.PI, 0, 0);
+  const at = P.clone().addScaledVector(right, 1.15).addScaledVector(toCam, 0.35); at.y = groundH(at.x, at.z);
+  const over = at.clone().setY(top.y + 0.9);
+  LV.atk(a, 0);
+  await anim(0.35, k => { const e = 1 - Math.pow(1 - k, 3); big.position.copy(top).add(V(0, 0.9, 0)).lerp(over, e); big.scale.setScalar(2.6 * (0.3 + 0.7 * e)); });
+  await wait(150);
+  // 4. it plunges into the ground
+  LV.atk(a, 1);
+  const from = big.position.clone(), to = at.clone().setY(at.y + 2.6 * 1.24 - 0.5);   // (the blade's tip a little into the ground)
+  await anim(0.16, k => { big.position.copy(from).lerp(to, k * k); });
+  LV.atk(a, 2);
+  vfx.shake(0.22, 0.4); vfx.flash([0.75, 0.9, 1], 0.2); vfx.hitstop = 0.06; vfx.light(at.clone().setY(at.y + 0.6), [0.5, 0.75, 1], 18, 0.6, 7);
+  for (const [d, r] of [[0, 2.6], [110, 1.8]]) later(() => vfx.ring(at, [0.55, 0.8, 1], r, 0.55, { intensity: 0.9 }), d);
+  vfx.decal(at, [0.35, 0.6, 1], 1, 1.2, { intensity: 0.6 });
+  for (let i = 0; i < 16; i++) { const t = i / 16 * 6.28, sp = rand(1.8, 2.8); vfx.smokePuff(at.x, at.y + 0.06, at.z, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: 0.25, drag: 2.5, life: 0.9, size: 0.2, size1: 0.6, tint: [0.62, 0.55, 0.46] }); }
+  vfx.burst(at.clone().setY(at.y + 0.2), { n: 30, speed: 3.2, cols: [[1, 1, 1], [0.55, 0.8, 1]], size: 0.05, life: 0.6, g: 5, up: 0.6, shape: 1 });
+  await wait(450);
+  // 5. it breaks into motes that drift up; he stands in his guard
+  LV.guard(a);
+  await anim(0.6, k => { big.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = (o.material.userData.o0 ??= o.material.opacity) * (1 - k); } });
+    for (let i = 0; i < 3; i++) { const q = big.localToWorld(V(rand(-0.05, 0.05), rand(0, 1.2), 0)); vfx.spark(q.x, q.y, q.z, { vy: rand(0.5, 1.2), vx: rand(-0.2, 0.2), life: 1, size: rand(0.03, 0.05), r: 0.7, gg: 0.88, b: 1, shape: 1 }); } });
+  drop(big);
+  await wait(400);
 }
 
 // ---------------------------------------------------------------- 黃飛虎: 武成王, the flying tiger
-// war-fire gathers round the general; a golden tiger leaps out of it over his head, lands before him and roars: the roar
-// a shockwave that blows the dust flat; he raises his bow in salute
-const TIGER_POSES = [   // side on, facing right, 256x128, paws on y 120: the leap, stretched out; the landing, gathered
-  { S: [158, 60], P: [84, 62], fn: [[176, 74], [200, 82], [222, 84]], ff: [[170, 78], [192, 88], [212, 94]], hn: [[70, 82], [46, 94], [22, 98]], hf: [[76, 84], [54, 98], [32, 104]], head: [192, 46], tail: [[40, 50], [18, 36], [10, 18]], mouth: 0 },
-  { S: [156, 66], P: [86, 64], fn: [[166, 88], [170, 106], [178, 120]], ff: [[160, 88], [160, 106], [166, 120]], hn: [[100, 86], [86, 104], [96, 120]], hf: [[94, 86], [76, 104], [82, 120]], head: [186, 54], tail: [[44, 58], [20, 46], [12, 26]], mouth: 1 },
-];
-function drawTiger(g, F) {
-  const coat = g.createLinearGradient(0, 30, 0, 120); coat.addColorStop(0, '#ffe08a'); coat.addColorStop(0.5, '#ff9e1e'); coat.addColorStop(1, '#d0600e');
-  const far = '#c87a26', stripe = 'rgba(90,40,10,0.85)', [S, P] = [F.S, F.P];
-  limb(g, [[S[0] - 4, S[1] + 10], ...F.ff], [22, 15, 11, 10], far); limb(g, [P, ...F.hf], [26, 16, 11, 10], far);
-  limb(g, [[P[0] - 14, P[1] - 6], ...F.tail], [10, 8, 7, 6], coat);
-  g.fillStyle = coat; g.beginPath(); g.moveTo(P[0] - 22, P[1] - 4);   // a heavy barrel of a body
-  g.quadraticCurveTo((S[0] + P[0]) / 2, Math.min(S[1], P[1]) - 22, S[0] + 8, S[1] - 14);
-  g.quadraticCurveTo(S[0] + 30, S[1] + 4, S[0] + 10, S[1] + 28);
-  g.quadraticCurveTo((S[0] + P[0]) / 2, Math.max(S[1], P[1]) + 30, P[0] - 10, P[1] + 22);
-  g.quadraticCurveTo(P[0] - 30, P[1] + 10, P[0] - 22, P[1] - 4); g.fill();
-  g.strokeStyle = stripe; g.lineCap = 'round'; g.lineWidth = 4;   // stripes across the back and haunch
-  for (let i = 0; i < 6; i++) { const x = P[0] - 10 + i * (S[0] - P[0] + 10) / 6, y = (S[1] + P[1]) / 2 - 18 + Math.abs(i - 2.5) * 2; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x - 6, y + 12, x - 2, y + 22); g.stroke(); }
-  const H = F.head; limb(g, [[S[0] + 6, S[1] - 2], [H[0] - 8, H[1] + 4]], [36, 28], coat);
-  g.fillStyle = coat; g.beginPath(); g.ellipse(H[0], H[1], 19, 16, 0, 0, 6.28); g.fill();   // the broad head
-  g.beginPath(); g.ellipse(H[0] + 16, H[1] + 6, 11, 9, 0, 0, 6.28); g.fill();               // muzzle
-  for (const dx of [-12, 2]) { g.beginPath(); g.arc(H[0] + dx, H[1] - 14, 6, 0, 6.28); g.fill(); }   // round ears
-  g.strokeStyle = stripe; g.lineWidth = 3; for (const dx of [-8, -2, 4]) { g.beginPath(); g.moveTo(H[0] + dx, H[1] - 14); g.lineTo(H[0] + dx + 2, H[1] - 6); g.stroke(); }
-  g.fillStyle = '#3a1806'; g.beginPath(); g.arc(H[0] + 8, H[1] - 3, 2.6, 0, 6.28); g.fill(); g.beginPath(); g.arc(H[0] + 26, H[1] + 2, 3, 0, 6.28); g.fill();
-  if (F.mouth) { g.fillStyle = '#7a1e0a'; g.beginPath(); g.moveTo(H[0] + 8, H[1] + 10); g.lineTo(H[0] + 28, H[1] + 10); g.lineTo(H[0] + 14, H[1] + 22); g.closePath(); g.fill();
-    g.fillStyle = '#fff'; g.beginPath(); g.moveTo(H[0] + 22, H[1] + 10); g.lineTo(H[0] + 24, H[1] + 16); g.lineTo(H[0] + 26, H[1] + 10); g.fill(); }
-  limb(g, [[S[0] - 2, S[1] + 12], ...F.fn], [24, 17, 12, 11], coat); limb(g, [[P[0], P[1] + 2], ...F.hn], [28, 18, 12, 11], coat);
+// the tiger head-on, lunging at us (256x256): the broad striped head with its white ruff and open roaring jaws, the two
+// forepaws thrown out wide with their claws spread, the shoulders behind; roar: the jaws wide open
+export function drawTigerFront(g, roar) {
+  const gold = g.createRadialGradient(128, 96, 10, 128, 120, 150); gold.addColorStop(0, '#ffe7a0'); gold.addColorStop(0.45, '#ffaa28'); gold.addColorStop(1, '#c85a0c');
+  const stripe = 'rgba(70,28,6,0.9)', white = '#fff6e4';
+  // the forepaws: out and forward to either side, big at the ends (nearest us), claws spread
+  for (const s of [-1, 1]) {
+    limb(g, [[128 + s * 34, 150], [128 + s * 74, 176], [128 + s * 100, 214]], [44, 34, 30], gold);
+    g.fillStyle = gold; g.beginPath(); g.ellipse(128 + s * 104, 222, 26, 20, s * 0.3, 0, 6.28); g.fill();
+    g.strokeStyle = stripe; g.lineWidth = 4; for (const t of [0.3, 0.55]) { const x = 128 + s * (34 + 66 * t), y = 150 + 64 * t; g.beginPath(); g.moveTo(x - 14, y - 6); g.lineTo(x + 10, y + 8); g.stroke(); }
+    g.fillStyle = '#fffaf0'; for (let c = -2; c <= 2; c++) { const x = 128 + s * 104 + c * 9, y = 238; g.beginPath(); g.moveTo(x - 3, y - 4); g.lineTo(x + 3, y - 4); g.lineTo(x + s * 2, y + 12); g.closePath(); g.fill(); }
+  }
+  // shoulders behind the head
+  g.fillStyle = gold; g.beginPath(); g.ellipse(128, 150, 70, 40, 0, 0, 6.28); g.fill();
+  // the head: a ruff of white fur round it, the face, round ears
+  g.fillStyle = white; g.beginPath(); for (let i = 0; i < 24; i++) { const a = i / 24 * 6.28, r = i % 2 ? 66 : 76; g.lineTo(128 + Math.cos(a) * r, 104 + Math.sin(a) * r * 0.9); } g.closePath(); g.fill();
+  for (const s of [-1, 1]) { g.fillStyle = gold; g.beginPath(); g.arc(128 + s * 44, 52, 17, 0, 6.28); g.fill(); g.fillStyle = '#3a1806'; g.beginPath(); g.arc(128 + s * 44, 54, 8, 0, 6.28); g.fill(); }
+  g.fillStyle = gold; g.beginPath(); g.ellipse(128, 100, 56, 54, 0, 0, 6.28); g.fill();
+  // the 王 mark and the stripes of the brow and cheeks
+  g.strokeStyle = stripe; g.lineCap = 'round'; g.lineWidth = 5;
+  for (const y of [58, 68, 78]) { g.beginPath(); g.moveTo(116, y); g.lineTo(140, y); g.stroke(); } g.beginPath(); g.moveTo(128, 56); g.lineTo(128, 80); g.stroke();
+  for (const s of [-1, 1]) for (const [y, l] of [[96, 26], [108, 30], [120, 24]]) { g.beginPath(); g.moveTo(128 + s * 56, y); g.quadraticCurveTo(128 + s * (56 - l * 0.6), y + 4, 128 + s * (56 - l), y + 10); g.stroke(); }
+  // eyes: fierce, amber with dark slits, a white glint
+  for (const s of [-1, 1]) { g.fillStyle = '#ffd040'; g.beginPath(); g.ellipse(128 + s * 22, 91, 10, 4.5, s * -0.45, 0, 6.28); g.fill();
+    g.fillStyle = '#1a0a02'; g.beginPath(); g.ellipse(128 + s * 22, 91, 2, 4, 0, 0, 6.28); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(128 + s * 24, 89, 1.3, 0, 6.28); g.fill();
+    g.strokeStyle = '#2a1004'; g.lineWidth = 4; g.beginPath(); g.moveTo(128 + s * 6, 84); g.lineTo(128 + s * 36, 82); g.stroke(); }   // brows drawn down: a scowl
+  // the muzzle, nose and jaws
+  g.fillStyle = white; g.beginPath(); g.ellipse(128, 122, 30, 20, 0, 0, 6.28); g.fill();
+  g.fillStyle = '#5a2a14'; g.beginPath(); g.moveTo(118, 108); g.lineTo(138, 108); g.lineTo(128, 118); g.closePath(); g.fill();
+  const jaw = roar ? 30 : 12;
+  g.fillStyle = '#6a1408'; g.beginPath(); g.moveTo(106, 124); g.quadraticCurveTo(128, 124 + jaw * 1.6, 150, 124); g.quadraticCurveTo(128, 128, 106, 124); g.fill();
+  g.fillStyle = '#a82a22'; g.beginPath(); g.ellipse(128, 124 + jaw * 1.05, 8, jaw * 0.18 + 1, 0, 0, 6.28); g.fill();   // the tongue, low in the jaw
+  g.fillStyle = '#fffaf0'; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(128 + s * 16, 124); g.lineTo(128 + s * 11, 124); g.lineTo(128 + s * 14, 124 + 10 + jaw * 0.2); g.fill();
+    g.beginPath(); g.moveTo(128 + s * 15, 124 + jaw * 1.2); g.lineTo(128 + s * 10, 124 + jaw * 1.2); g.lineTo(128 + s * 13, 116 + jaw * 1.1); g.fill(); }
+  g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 1.5; for (const s of [-1, 1]) for (const dy of [-4, 2, 8]) { g.beginPath(); g.moveTo(128 + s * 22, 120 + dy * 0.3); g.lineTo(128 + s * 54, 114 + dy); g.stroke(); }   // whiskers
 }
+// 黃飛虎's level-up [the user's call: the tiger comes out of his body, to the front]: war-fire climbs round him and a gold
+// light gathers in his chest; the spirit tiger bursts out of it head-on, lunging at us, growing as it comes, and roars
+// with the screen shaking; it breaks into gold embers and he stands in his guard
 async function huangLevel(a, P) {
   const { right, toCam } = axes();
   a.u.facing = 'down'; LV.guard(a);
-  // war-fire: low golden flames climb round him
-  await anim(0.6, k => { for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.35, 0.65); vfx.flame(P.x + Math.cos(t) * r, P.y, P.z + Math.sin(t) * r, { size: rand(0.2, 0.32) * (0.5 + k), asp: 2, life: 0.45, vy: 0.9, tint: [1, 0.9, 0.5] }); } });
-  // the tiger springs from behind him, over his head, and lands before him
-  const tiger = card(once('tiger', () => glowStrip(256, 128, 2, 'rgba(255,190,70,0.95)', (g, i) => drawTiger(g, TIGER_POSES[i]))), 1.5, 0.75);
-  const from = P.clone().addScaledVector(toCam, -1.2).addScaledVector(right, -0.8), to = P.clone().addScaledVector(toCam, 0.8).addScaledVector(right, 0.6);
-  const flip = to.clone().sub(from).dot(right) < 0 ? -1 : 1;
-  await anim(0.7, (k, dt = 1 / 60) => {
-    const q = from.clone().lerp(to, k); q.y = P.y + 0.36 + Math.sin(k * Math.PI) * 1.6;
-    tiger.position.copy(q); tiger.material.map.offset.x = k < 0.85 ? 0 : 0.5; face(tiger, flip, (0.5 - k) * 0.6 * flip); tiger.material.opacity = Math.min(1, k * 6);
-    if (Math.random() < dt * 40) vfx.spark(q.x + rand(-0.4, 0.4), q.y + rand(-0.2, 0.2), q.z, { vy: rand(-0.2, 0.3), life: 0.5, size: rand(0.04, 0.06), r: 1, gg: 0.8, b: 0.35, shape: 0 });
+  // war-fire: low golden flames climb round him, the light gathering in his chest
+  vfx.light(a.chest(), [1, 0.75, 0.3], 6, 1.2, 4);
+  await anim(0.7, k => { for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.35, 0.65); vfx.realFire(P.x + Math.cos(t) * r, P.y - 0.05, P.z + Math.sin(t) * r, { size: rand(0.3, 0.45) * (0.5 + k), asp: 1.5, life: 0.6, vy: 0.5 }); }
+    a.flash = 0.45 * k; const c = a.chest(); vfx.spark(c.x + rand(-0.5, 0.5), c.y + rand(-0.4, 0.6), c.z, { vx: 0, vy: 0, seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.45, size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.4, shape: 1 }); });
+  // the tiger bursts out of his chest, lunging at the camera, growing as it comes
+  const map = once('tigerFront', () => glowStrip(256, 256, 2, 'rgba(255,190,70,0.95)', (g, i) => drawTigerFront(g, i === 1))).clone(); map.needsUpdate = true; map.repeat.set(0.5, 1);
+  const tiger = card(map, 1, 1, { order: 9.5, col: [1.15, 1.05, 0.9] }); tiger.material.depthTest = false;   // (a spirit: a little see-through)
+  const c0 = a.chest(), cp = world.camera.position, toward = cp.clone().sub(c0).normalize(), dist = cp.distanceTo(c0);
+  vfx.flash([1, 0.8, 0.4], 0.15); vfx.burst(c0, { n: 30, speed: 2.5, cols: [[1, 0.95, 0.7], [1, 0.7, 0.25]], size: 0.05, life: 0.5, g: 0, shape: 1 });
+  a.flash = 0;
+  await anim(0.55, k => {
+    const e = 1 - Math.pow(1 - k, 3); tiger.position.copy(c0).addScaledVector(toward, e * dist * 0.25).add(V(0, e * 0.25, 0));
+    face(tiger); tiger.scale.setScalar(0.3 + e * 1.5); tiger.material.opacity = 0.88 * Math.min(1, k * 4); map.offset.x = k > 0.7 ? 0.5 : 0;
+    if (Math.random() < 0.8) vfx.spark(tiger.position.x + rand(-0.6, 0.6), tiger.position.y + rand(-0.5, 0.5), tiger.position.z, { vy: rand(-0.3, 0.4), life: 0.5, size: rand(0.04, 0.06), r: 1, gg: 0.8, b: 0.35, shape: 1 });
   });
   // the roar
-  LV.atk(a, 1);
-  const land = to.clone().setY(groundH(to.x, to.z));
-  vfx.shake(0.2, 0.4); vfx.flash([1, 0.85, 0.5], 0.18); vfx.light(land.clone().setY(land.y + 0.6), [1, 0.8, 0.4], 14, 0.6, 6);
-  for (const [d, r] of [[0, 2.6], [120, 2], [240, 1.5]]) later(() => vfx.ring(land, [1, 0.8, 0.35], r, 0.6, { intensity: 0.8 }), d);
-  for (let i = 0; i < 18; i++) { const t = i / 18 * 6.28, sp = rand(2.2, 3.2); vfx.smokePuff(land.x, land.y + 0.08, land.z, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: 0.2, drag: 2.5, life: 0.9, size: 0.25, size1: 0.7, tint: [0.62, 0.55, 0.42] }); }
-  await anim(0.5, k => { tiger.scale.set(flip * (1 + k * 0.5), 1 + k * 0.5, 1); tiger.material.opacity = 1 - k; tiger.position.y += 0.004; });
+  map.offset.x = 0.5; LV.atk(a, 1);
+  vfx.shake(0.28, 0.5); vfx.flash([1, 0.85, 0.5], 0.2); vfx.light(tiger.position.clone(), [1, 0.8, 0.4], 16, 0.6, 7);
+  for (const [d, r] of [[0, 2.8], [120, 2.1], [240, 1.5]]) later(() => vfx.ring(tiger.position, [1, 0.8, 0.35], r, 0.6, { vertical: true, yaw: cam.yaw, y: tiger.position.y, intensity: 0.7 }), d);
+  for (let i = 0; i < 18; i++) { const t = i / 18 * 6.28, sp = rand(2.2, 3.2); vfx.smokePuff(P.x, P.y + 0.08, P.z, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: 0.2, drag: 2.5, life: 0.9, size: 0.25, size1: 0.7, tint: [0.62, 0.5, 0.36] }); }
+  await anim(0.5, k => { tiger.scale.setScalar(1.8 + Math.sin(k * 30) * 0.03); face(tiger); });
+  // it breaks into gold embers
+  const tp = tiger.position.clone();
+  for (let i = 0; i < 50; i++) vfx.spark(tp.x + rand(-0.7, 0.7), tp.y + rand(-0.6, 0.6), tp.z + rand(-0.3, 0.3), { vx: rand(-1, 1), vy: rand(-0.2, 1.4), vz: rand(-0.5, 0.5), life: rand(0.6, 1.2), size: rand(0.04, 0.07), r: 1, gg: rand(0.7, 0.9), b: 0.35, shape: 1, flicker: 1, ph: rand(0, 6) });
+  await anim(0.4, k => { tiger.scale.setScalar(1.8 + k * 0.4); tiger.material.opacity = 0.88 * (1 - k); face(tiger); });
   drop(tiger);
-  LV.atk(a, 0); await wait(120); LV.atk(a, 1);
-  vfx.burst(a.head().add(V(0, 0.2, 0)), { n: 18, speed: 1.8, cols: [[1, 0.95, 0.7], [1, 0.75, 0.3]], size: 0.05, life: 0.6, g: 0.5, shape: 0 });
+  LV.guard(a);
   await wait(600);
 }
 
 // ---------------------------------------------------------------- 姬發: the prince of Zhou, 鳳鳴岐山
 // the phoenix whose cry on Mount Qi foretold Zhou's rise is born out of his breast and spirals up round him trailing its
 // long tail and golden feathers, then soars away, a ring of gold spreading at his feet
-function drawPhoenix(g, up) {
-  const gold = g.createLinearGradient(0, 10, 0, 110); gold.addColorStop(0, '#fff6c0'); gold.addColorStop(0.5, '#ffb52e'); gold.addColorStop(1, '#ff4a1c');
-  g.strokeStyle = gold; g.lineCap = 'round';
-  for (const [dy, w, len] of [[-8, 5, 1], [2, 6, 1.1], [12, 4, 0.9]]) {   // three long tail plumes, each ending in an eye
-    g.lineWidth = w; g.beginPath(); g.moveTo(96, 64); g.bezierCurveTo(70, 64 + dy, 40, 80 + dy * 2, 10 + (1 - len) * 40, 60 + dy * 3); g.stroke();
-    g.fillStyle = '#ff5a20'; g.beginPath(); g.ellipse(10 + (1 - len) * 40, 60 + dy * 3, 7, 5, 0, 0, 6.28); g.fill(); g.fillStyle = '#4ad0ff'; g.beginPath(); g.arc(10 + (1 - len) * 40, 60 + dy * 3, 2.5, 0, 6.28); g.fill();
+export function drawPhoenix(g, up) {
+  // a 鳳 seen side on, facing right, 256x128 [the user's call: a finer bird]: a long S of a neck under a crest of three
+  // curling plumes, a hooked beak; wings of layered feathers (a fan of broad primaries, gold to orange to a crimson edge,
+  // coverts over their roots); a train of five streaming plumes, each ending in an eye of blue ringed with gold
+  const featherGrad = (x0, y0, x1, y1) => { const gr = g.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, '#fff3b0'); gr.addColorStop(0.45, '#ffb43a'); gr.addColorStop(0.8, '#ff5a1e'); gr.addColorStop(1, '#c8102a'); return gr; };
+  const feather = (x0, y0, x1, y1, w, bend) => {   // a vane from (x0, y0) to its tip, w wide at the root, bent to one side
+    const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, mx = (x0 + x1) / 2 + nx * bend, my = (y0 + y1) / 2 + ny * bend;
+    g.fillStyle = featherGrad(x0, y0, x1, y1); g.beginPath(); g.moveTo(x0 + nx * w, y0 + ny * w);
+    g.quadraticCurveTo(mx + nx * w * 0.9, my + ny * w * 0.9, x1, y1); g.quadraticCurveTo(mx - nx * w * 0.7, my - ny * w * 0.7, x0 - nx * w, y0 - ny * w); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,248,220,0.6)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(mx, my, x1, y1); g.stroke();   // the shaft
+  };
+  // the train: five plumes streaming back and down from the rump, each ending in an eye
+  const R = [110, 66];
+  [[-18, 0.0, 1.0], [-8, 0.5, 1.05], [2, 1.0, 0.95], [12, 1.5, 0.85], [22, 2.0, 0.75]].forEach(([dy, ph, len]) => {
+    const ex = R[0] - 100 * len, ey = R[1] + 18 + dy + Math.sin(ph + (up ? 0.6 : 0)) * 6;
+    const gr = g.createLinearGradient(R[0], R[1], ex, ey); gr.addColorStop(0, '#ffcf5a'); gr.addColorStop(0.6, '#ff7a2a'); gr.addColorStop(1, '#d42a1e');
+    g.strokeStyle = gr; g.lineCap = 'round'; g.lineWidth = 3.2; g.beginPath(); g.moveTo(R[0], R[1]); g.bezierCurveTo(R[0] - 40, R[1] + dy * 0.3, ex + 40, ey - 18, ex, ey); g.stroke();
+    g.lineWidth = 1; g.strokeStyle = 'rgba(255,190,90,0.7)'; for (let t = 0.3; t < 0.95; t += 0.09) { const x = R[0] + (ex - R[0]) * t, y = R[1] + (ey - R[1]) * t + Math.sin(t * 3) * 3; g.beginPath(); g.moveTo(x, y); g.lineTo(x - 4, y - 5); g.moveTo(x, y); g.lineTo(x - 4, y + 5); g.stroke(); }   // barbs
+    g.fillStyle = '#ffd24a'; g.beginPath(); g.ellipse(ex, ey, 7, 5, 0.3, 0, 6.28); g.fill();   // the eye
+    g.fillStyle = '#1a8ad8'; g.beginPath(); g.ellipse(ex, ey, 4.2, 3, 0.3, 0, 6.28); g.fill(); g.fillStyle = '#0a2a5a'; g.beginPath(); g.arc(ex + 0.5, ey, 1.6, 0, 6.28); g.fill();
+  });
+  const wing = (back) => {   // a fan: broad primaries from the front (the longest) round to the back, coverts layered over their roots
+    const sx = back ? 140 : 134, sy = back ? 55 : 60, N = 8, L = back ? 44 : 50;
+    const [aF, aB] = up ? [-1.42, -2.55] : [1.2, 2.35];
+    for (let i = N - 1; i >= 0; i--) { const f = i / (N - 1), ang = aF + (aB - aF) * f, len = L * (1 - 0.42 * f), rx = sx - f * 24, ry = sy + f * 3;
+      feather(rx, ry, rx + Math.cos(ang) * len, ry + Math.sin(ang) * len, 6.5 - f * 2, (up ? -1 : 1) * 3); }
+    for (let i = N - 2; i >= 0; i--) { const f = i / (N - 2), ang = aF + (aB - aF) * f, len = L * 0.5 * (1 - 0.3 * f), rx = sx - f * 22, ry = sy + f * 3;   // the coverts
+      const gr = g.createLinearGradient(rx, ry, rx + Math.cos(ang) * len, ry + Math.sin(ang) * len); gr.addColorStop(0, '#fff2b8'); gr.addColorStop(1, '#ffa634');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(rx + Math.cos(ang) * len * 0.5, ry + Math.sin(ang) * len * 0.5, len * 0.55, 6.5, ang, 0, 6.28); g.fill(); }
+  };
+  g.globalAlpha = 0.8; wing(true); g.globalAlpha = 1;
+  const bodyG = g.createLinearGradient(100, 50, 150, 80); bodyG.addColorStop(0, '#ff9a2a'); bodyG.addColorStop(0.5, '#ffd25a'); bodyG.addColorStop(1, '#fff0b0');
+  g.fillStyle = bodyG; g.beginPath(); g.moveTo(104, 68); g.bezierCurveTo(112, 50, 140, 46, 156, 56); g.bezierCurveTo(160, 64, 146, 78, 124, 78); g.bezierCurveTo(112, 78, 104, 74, 104, 68); g.fill();
+  // the neck, an S up to the head
+  g.strokeStyle = bodyG; g.lineCap = 'round'; g.lineWidth = 11; g.beginPath(); g.moveTo(150, 58); g.bezierCurveTo(166, 50, 160, 34, 176, 28); g.stroke();
+  g.lineWidth = 8; g.beginPath(); g.moveTo(170, 30); g.lineTo(182, 26); g.stroke();
+  g.fillStyle = '#fff0b8'; g.beginPath(); g.ellipse(184, 25, 8, 6.5, -0.2, 0, 6.28); g.fill();   // the head
+  g.fillStyle = '#ffd040'; g.beginPath(); g.moveTo(190, 22); g.quadraticCurveTo(202, 23, 204, 30); g.quadraticCurveTo(198, 27, 190, 29); g.fill();   // the hooked beak
+  g.fillStyle = '#c8102a'; g.beginPath(); g.moveTo(186, 30); g.quadraticCurveTo(184, 38, 180, 40); g.quadraticCurveTo(182, 33, 182, 29); g.fill();   // the wattle
+  g.fillStyle = '#3a0a04'; g.beginPath(); g.arc(187, 23.5, 1.9, 0, 6.28); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(187.6, 23, 0.6, 0, 6.28); g.fill();
+  for (const [dx, h, c] of [[-4, 20, '#ff5a1e'], [0, 24, '#ffb43a'], [4, 17, '#ff7a2a']]) {   // the crest: three curling plumes, a bead at each tip
+    g.strokeStyle = c; g.lineWidth = 2; g.beginPath(); g.moveTo(182 + dx * 0.3, 19); g.bezierCurveTo(178 + dx, 8, 170 + dx, 19 - h * 0.6, 166 + dx, 19 - h); g.stroke();
+    g.fillStyle = '#ffe070'; g.beginPath(); g.arc(166 + dx, 19 - h, 2.2, 0, 6.28); g.fill();
   }
-  g.fillStyle = gold;
-  const wing = (back) => { g.beginPath(); g.moveTo(120, 60);   // a wing of fanned feathers, raised or swept down
-    const tipY = up ? 6 : 104, tipX = back ? 84 : 112;
-    g.quadraticCurveTo(tipX - 20, up ? 30 : 88, tipX - 10, tipY); g.lineTo(tipX + 2, tipY + (up ? 10 : -10)); g.lineTo(tipX + 10, tipY + (up ? 4 : -4)); g.lineTo(tipX + 18, tipY + (up ? 14 : -14)); g.quadraticCurveTo(150, 54, 136, 62); g.fill(); };
-  g.globalAlpha = 0.75; wing(true); g.globalAlpha = 1;
-  g.beginPath(); g.ellipse(124, 64, 26, 12, -0.1, 0, 6.28); g.fill();                         // body
-  limb(g, [[140, 58], [156, 44], [170, 36]], [14, 9, 8], gold);                                 // neck
-  g.beginPath(); g.ellipse(174, 34, 9, 7, 0, 0, 6.28); g.fill();                                // head
-  g.fillStyle = '#ffe070'; g.beginPath(); g.moveTo(182, 32); g.lineTo(196, 36); g.lineTo(182, 38); g.fill();   // beak
-  g.strokeStyle = '#ff6a2a'; g.lineWidth = 3; for (const a of [-2.3, -2.0, -1.7]) { g.beginPath(); g.moveTo(170, 28); g.lineTo(170 + Math.cos(a) * 18, 28 + Math.sin(a) * 18); g.stroke(); }   // crest
-  g.fillStyle = '#5a1606'; g.beginPath(); g.arc(177, 32, 1.8, 0, 6.28); g.fill();
-  g.fillStyle = gold; wing(false);
+  g.strokeStyle = 'rgba(255,240,200,0.55)'; g.lineWidth = 0.8;   // a few strokes of breast feathers
+  for (let i = 0; i < 9; i++) { const x = 120 + i * 4, y = 64 + Math.sin(i) * 3; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 3, y + 4, x + 1, y + 8); g.stroke(); }
+  wing(false);
 }
 async function jifaLevel(a, P) {
   const { right } = axes();
@@ -613,7 +684,7 @@ function goldLotusTex() { return canvasTex(128, 96, g => {
   for (const a of [-1.25, -0.62, 0.62, 1.25]) petal(a, 50, 16, '#ffaa10');   // the front row, wider open
   petal(0, 46, 14, '#ffd860');
 }); }
-function bannerTex() { return canvasTex(128, 176, g => {   // apricot-yellow silk, a dark trim, the eight trigrams round a taiji, tassels below
+export function bannerTex() { return canvasTex(128, 176, g => {   // apricot-yellow silk, a dark trim, the eight trigrams round a taiji, tassels below
   g.fillStyle = '#f2b23a'; g.fillRect(0, 0, 128, 160); g.strokeStyle = '#a8601a'; g.lineWidth = 8; g.strokeRect(4, 4, 120, 152);
   g.save(); g.translate(64, 78);
   g.fillStyle = '#fff4dc'; g.beginPath(); g.arc(0, 0, 22, 0, 6.28); g.fill();
@@ -734,7 +805,7 @@ async function tuLevel(a, P) {
 // ---------------------------------------------------------------- 小龍女: the sea dragon king's gentle daughter
 // water rings rise round her; a slender blue dragon breaks from the ground, spirals up round her, curls back down and
 // becomes its pearl, glowing over her head, and a soft glittering rain falls
-function dragonHeadTex() { return canvasTex(160, 96, g => {   // side on, facing right
+export function dragonHeadTex() { return canvasTex(160, 96, g => {   // side on, facing right
   g.shadowColor = 'rgba(120,200,255,0.9)'; g.shadowBlur = 8;
   const scale = g.createLinearGradient(0, 20, 0, 80); scale.addColorStop(0, '#bff0ff'); scale.addColorStop(1, '#2a7ad8');
   g.strokeStyle = '#e8fbff'; g.lineWidth = 4; g.lineCap = 'round';
@@ -841,7 +912,7 @@ export const LEVEL_POSE = {
   // gold beam sweeps the field (nothing is hidden from it), 哮天犬 bounds out of the mist and runs round him, and he
   // finishes with one clean sweep of the three-pointed blade
   p2: (a, P) => yangLevel(a, P),
-  // 黃飛虎: 武成王, the flying tiger: a golden tiger leaps over him and roars (huangLevel)
+  // 黃飛虎: 武成王, the flying tiger: a spirit tiger bursts out of his chest at us and roars (huangLevel)
   p3: (a, P) => huangLevel(a, P),
   // 哪吒: the lotus child [the user's call: from his story]: a lotus opens under him (太乙真人 remade him from lotus after he gave
   // his life back to his parents), the 風火輪 flare at his feet and lift him spinning in his red 混天綾, he flings the 乾坤圈

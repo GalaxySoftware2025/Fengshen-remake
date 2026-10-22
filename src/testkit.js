@@ -5,28 +5,19 @@
 //    a popup beside it (kill, 1 HP, a level, Lv 99, remove).
 //  - #arena: 演武場, a small open arena with a fixed camera for trying out heroes, enemies and spells: click any hero to
 //    select it, move and act; heroes may hit empty tiles. When every hero has acted (or 結束回合), the demons close in
-//    and fight back. No win or loss. It plays on 磻溪's data and look, swapped for the arena below.
+//    and fight back. No win or loss. Its own board and set (src/battles/arena.js, src/remake/arena.js).
 // Toolbar actions queue up and run at safe points, so they never cut an animation.
 import * as R from './rules.js';
 import { PG, ui, world, vfx, bank, cam, actors, actorOf, syncActors, placeActor, killAnim, flinch, levelUpAnim, anim,
   tileCenter, project, input, push, playerTurn, aiTurn, opts } from './battle.js';
 import * as E from './battle.js';
 import { hero } from './party.js';
+import { attackTypes } from './battles/arena.js';
 const { D, G } = R;
 const $ = id => document.getElementById(id);
 
-// the arena: swaps the 32x14 valley for a small open clearing before the world is built. Each arena cell borrows the
-// ground art of an interior path cell of the original map, so it keeps the same look.
-export function arena(D) {
-  const W = 11, H = 8, T = D.terrain;
-  const open = (x, y) => T[y] && T[y][x] === 0 && x < 30;
-  const src = [];
-  for (let y = 0; y < D.mapH; y++) for (let x = 0; x < 30; x++) if (open(x, y) && open(x + 1, y) && open(x - 1, y) && open(x, y + 1) && open(x, y - 1)) src.push([x, y]);
-  D.arena = true; D.mapW = W; D.mapH = H;
-  D.terrain = Array.from({ length: H }, () => Array(W).fill(0));
-  D.terrain[1][5] = D.terrain[6][5] = 2;            // two bamboo clumps for a little cover
-  D.artSrc = D.terrain.map((r, y) => r.map((_, x) => src[(x * 7 + y * 13) % src.length]));
-}
+// the arena's field (src/battles/arena.js record: its own 11 x 8 board, src/remake/arena.js its set)
+export function arena(D) { attackTypes(D); }
 
 // the arena's spawn cells and wave; in a battle, heroes come in on its deploy cells and enemies where theirs started
 Object.assign(PG, {
@@ -155,8 +146,7 @@ export function pgSetup() {
 // the arena: an empty field, the camera fixed over it, the first wave
 export function arenaSetup() {
   document.body.classList.add('arena');
-  Object.assign(G, { units: [], round: 0, fireCol: 99, burnt: new Set(), terrain: D.terrain.map(r => r.slice()), over: null, triggerFired: true });
-  vfx.fire.cols.clear(); world.setFire(99, 0);
+  Object.assign(G, { units: [], round: 0, terrain: D.terrain.map(r => r.slice()), over: null, triggerFired: true });
   // fixed camera over the whole arena: attacks and spells may still pan, and always come back here
   const home = tileCenter((R.MAP_W - 1) / 2 - 0.8, (R.MAP_H - 1) / 2 + 0.5), rel = cam.release.bind(cam);
   cam.focus = () => {}; cam.release = () => rel(home); cam.release(); cam.snap();

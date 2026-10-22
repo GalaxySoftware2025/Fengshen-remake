@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { rand, groundH } from './world.js';
 import { NOISE } from './vfx.js';
+import { iceMaterial, shardGeometry, chunkGeometry, shatter, frost } from './elements.js';
 import { V, ease, basis, swordMesh, pointAlong, bezier, intro, outro, DARK, ticker, facing, yawOf, swirl, arrowMesh, flameRing, talismanTex, petalGeo } from './spellkit.js';
 
 // ---------------------------------------------------------------- shared pieces
@@ -86,23 +87,23 @@ function dustBurst(v, p, s, tint) {
   for (let i = 0; i < 16 * s; i++) v.spark(p.x + rand(-0.3, 0.3), p.y + 0.1, p.z + rand(-0.3, 0.3), { vx: rand(-2.5, 2.5) * s, vy: rand(2, 5) * s, vz: rand(-2.5, 2.5) * s, g: 12, life: rand(0.6, 1.1), size: rand(0.05, 0.09), r: 0.42, gg: 0.36, b: 0.28, a: 1, shape: 1, floor: p.y + 0.03 });
 }
 // ice: faceted crystal material and a cluster of crystals that bursts up out of the ground and shatters at `hold`
-const ICE = () => new THREE.MeshPhongMaterial({ color: 0xbfeaff, emissive: 0x2a7fd0, emissiveIntensity: 0.9, specular: 0xffffff, shininess: 140, flatShading: true, transparent: true, opacity: 0.88 });
+const ICE = () => iceMaterial();   // (src/elements.js: ice that looks through itself, facets, cracks; not a flat-shaded blue)
 const ICE_COLS = [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]];
 function crystals(v, P, n, scale, hold, mat) {
   mat = mat || ICE();
   for (let i = 0; i < n; i++) {
     const a = rand(0, 6.28), r = i === 0 ? 0 : rand(0.2, 0.75) * scale, h = (i === 0 ? 1.7 : rand(0.5, 1.3)) * scale;
-    const m = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), mat); m.scale.setScalar(0.001);
-    const p = V(P.x + Math.cos(a) * r, groundH(P.x, P.z), P.z + Math.sin(a) * r);
+    const m = new THREE.Mesh(shardGeometry(), mat); m.scale.setScalar(0.001);   // (a hexagonal crystal, foot on the ground)
+    const p = V(P.x + Math.cos(a) * r, groundH(P.x, P.z) - 0.05, P.z + Math.sin(a) * r);
     m.position.copy(p); m.rotation.set(rand(-0.5, 0.5) * (r > 0 ? 1 : 0.2), rand(0, 6), rand(-0.5, 0.5) * (r > 0 ? 1 : 0.2));
     v.timed(m, hold + 0.1, (k, dt, t) => {
       const g = Math.min(1, Math.max(0, (t - i * 0.03) / 0.14)), w = (i === 0 ? 0.22 : 0.15) * scale;
       m.scale.set(w * g + 0.001, h * g + 0.001, w * g + 0.001);
       if (t > hold && !m.userData.b) { m.userData.b = 1; m.visible = false;
-        v.burst(p.clone().setY(p.y + h * 0.5), { n: 14, speed: 3.5, cols: ICE_COLS, size: 0.06, life: 0.8, g: 9, shape: 1 }); }
+        v.burst(p.clone().setY(p.y + h * 0.5), { n: 10, speed: 3, cols: ICE_COLS, size: 0.04, life: 0.6, g: 9, shape: 1 }); shatter(v, p.clone().setY(p.y + h * 0.5), 5, mat, { size: 0.16 * scale + 0.06 }); }
     });
   }
-  v.burst(P.clone().setY(P.y + 0.2), { n: 24, speed: 4, cols: ICE_COLS, size: 0.06, life: 0.7, g: 8, shape: 1 });
+  v.burst(P.clone().setY(P.y + 0.2), { n: 16, speed: 3.5, cols: ICE_COLS, size: 0.045, life: 0.6, g: 8, shape: 1 }); frost(v, P, 0.9 * scale + 0.3, hold + 1.2);
   for (let i = 0; i < 6; i++) { const a = rand(0, 6.28), s = rand(1, 2); v.smokePuff(P.x, P.y + 0.08, P.z, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.4, life: rand(1, 1.5), size: 0.25, size1: 0.8, tint: [0.62, 0.78, 0.95] }); }
 }
 // lightning: a strike from the sky onto p, with its splash
@@ -489,7 +490,7 @@ async function inferno(ctx) {
   await intro(ctx, FIRE, { dur: 800, dist: 13, pitch: 0.48 });
   DARK(ctx, 0.55, 0.25, 0.6, 0.85);
   for (const c of cells) v.decal(c, [1, 0.3, 0.05], 0.8, 3.2, { flicker: true, intensity: 0.8 });
-  ticker(v, 3, (k) => { if (Math.random() < 0.6) { const c = cells[(Math.random() * cells.length) | 0]; v.flame(c.x + rand(-0.3, 0.3), c.y - 0.05, c.z + rand(-0.3, 0.3), { size: rand(0.75, 1.05) * (k < 0.85 ? 1 : (1 - k) * 6), asp: rand(1.4, 1.9), life: rand(0.5, 0.8), vy: rand(0.2, 0.6) }); } });
+  ticker(v, 3, (k) => { if (Math.random() < 0.6) { const c = cells[(Math.random() * cells.length) | 0]; v.realFire(c.x + rand(-0.3, 0.3), c.y - 0.05, c.z + rand(-0.3, 0.3), { size: rand(1.05, 1.47) * (k < 0.85 ? 1 : (1 - k) * 6), asp: rand(1.3, 1.7), life: rand(0.5, 0.8), vy: rand(0.2, 0.6) }); } });
   v.light(c0.clone().setY(c0.y + 1.5), FIRE, 30, 3, 12);
   await ctx.wait(500);
   for (let w = 0; w < 3; w++) {
@@ -508,15 +509,15 @@ async function skyFire(ctx) {
   await intro(ctx, FIRE, { dur: 800, dist: 12, pitch: 0.42 });
   DARK(ctx, 0.75, 0.95, 0.8, 0.55);
   const from = at.clone().setY(at.y + 10), tg = at.clone().setY(at.y + 0.3), ball = v.fireball(0.4, { heat: 1.3 }), tail = v.ribbon({ col: FIRE, width: 0.35, n: 22 });
-  v.timed(ball, 0.9, (k, dt, t) => { ball.userData.mat.uniforms.uT.value = t; ball.position.copy(from).lerp(tg, k * k); tail.push(ball.position); v.flame(ball.position.x, ball.position.y, ball.position.z, { size: 0.5, asp: 1.8, life: 0.3, vy: 1 }); v.light(ball.position, FIRE, 20, 0.06, 8); }, () => { tail.end(); ball.visible = false; });
+  v.timed(ball, 0.9, (k, dt, t) => { ball.userData.mat.uniforms.uT.value = t; ball.position.copy(from).lerp(tg, k * k); tail.push(ball.position); v.realFire(ball.position.x, ball.position.y, ball.position.z, { size: 0.70, asp: 1.5, life: 0.3, vy: 1 }); v.light(ball.position, FIRE, 20, 0.06, 8); }, () => { tail.end(); ball.visible = false; });
   await ctx.wait(900);
   v.flash([1, 1, 1], 0.7); v.shake(0.25, 0.4); v.hitstop = 0.1; v.explode(tg, 0.8, { n: 24 }); glowTargets(ctx, 1, 0.8);
-  for (let i = 0; i < 80; i++) later(i * 18, () => v.spark(at.x + rand(-3, 3), at.y + rand(3, 5), at.z + rand(-3, 3), { vy: -rand(2, 4), g: 2, life: 1.2, size: rand(0.06, 0.12), r: 1, gg: rand(0.7, 0.95), b: 0.5, shape: 0, flicker: 1, ph: rand(0, 9), floor: at.y + 0.05 }));
+  for (let i = 0; i < 80; i++) later(i * 18, () => v.spark(at.x + rand(-3, 3), at.y + rand(3, 5), at.z + rand(-3, 3), { vy: -rand(2, 4), g: 2, life: 1.2, size: rand(0.06, 0.12), r: 1, gg: rand(0.7, 0.95), b: 0.5, shape: 1, flicker: 1, ph: rand(0, 9), floor: at.y + 0.05 }));
   ctx.hit();
   // the prairie fire: a ring of flames running outwards, leaving the ground burning
   ticker(v, 1.6, (k) => {
     const r = 0.5 + k * 3.2;
-    for (let i = 0; i < 6; i++) { const ang = rand(0, 6.28), x = at.x + Math.cos(ang) * r, z = at.z + Math.sin(ang) * r; v.flame(x, groundH(x, z) - 0.05, z, { size: rand(0.4, 0.7) * (1 - k * 0.3), asp: 2, life: rand(0.4, 0.7), vy: 0.4 }); }
+    for (let i = 0; i < 6; i++) { const ang = rand(0, 6.28), x = at.x + Math.cos(ang) * r, z = at.z + Math.sin(ang) * r; v.realFire(x, groundH(x, z) - 0.05, z, { size: rand(0.56, 0.98) * (1 - k * 0.3), asp: 1.5, life: rand(0.4, 0.7), vy: 0.4 }); }
     if (Math.random() < 0.3) { const ang = rand(0, 6.28), x = at.x + Math.cos(ang) * r * 0.7, z = at.z + Math.sin(ang) * r * 0.7; v.decal(V(x, 0, z), [1, 0.3, 0.05], 0.5, 1.5, { flicker: true, intensity: 0.6 }); }
   });
   v.ring(at, FIRE, 7, 1.6, { intensity: 1 });
@@ -532,13 +533,13 @@ async function iceSplit(ctx) {
   await intro(ctx, ICEC, { dur: 700, dist: 10.5, pitch: 0.46 });
   DARK(ctx, 0.35, 0.9, 0.5, 0.2);
   const hub = at.clone().setY(at.y + 2.2);
-  for (let i = 0; i < 40; i++) later(i * 15, () => { const p = hub.clone().add(V(rand(-1.5, 1.5), rand(-1, 1.5), rand(-1.5, 1.5))); v.spark(p.x, p.y, p.z, { seek: { x: hub.x, y: hub.y, z: hub.z, k: 5 }, life: 0.6, size: rand(0.06, 0.12), r: 0.85, gg: 0.95, b: 1, shape: 0, flicker: 1, ph: rand(0, 9) }); });
-  const big = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1), mat); big.position.copy(hub); big.scale.setScalar(0.01);
-  v.timed(big, 1.0, (k, dt) => { big.scale.setScalar(0.01 + ease(Math.min(1, k * 1.4))); big.rotation.y += dt * 2; big.rotation.x += dt; });
+  for (let i = 0; i < 40; i++) later(i * 15, () => { const p = hub.clone().add(V(rand(-1.5, 1.5), rand(-1, 1.5), rand(-1.5, 1.5))); v.spark(p.x, p.y, p.z, { seek: { x: hub.x, y: hub.y, z: hub.z, k: 5 }, life: 0.6, size: rand(0.06, 0.12), r: 0.85, gg: 0.95, b: 1, shape: 1, flicker: 1, ph: rand(0, 9) }); });
+  const big = new THREE.Mesh(chunkGeometry(), mat); big.position.copy(hub); big.scale.setScalar(0.01);
+  v.timed(big, 1.0, (k, dt) => { big.scale.setScalar(0.01 + 0.5 * ease(Math.min(1, k * 1.4))); big.rotation.y += dt * 2; big.rotation.x += dt; });
   await ctx.wait(1000);
   v.flash([0.8, 0.95, 1], 0.12); v.burst(hub, { n: 30, speed: 3, cols: ICE_COLS, size: 0.06, life: 0.6, g: 0 });
   cells.forEach((c, i) => {
-    const o = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 1), mat), tg = c.clone().setY(c.y + 0.3), rib = v.ribbon({ col: ICEC, width: 0.14, n: 16 });
+    const o = new THREE.Mesh(chunkGeometry(), mat); o.scale.setScalar(0.28); const tg = c.clone().setY(c.y + 0.3), rib = v.ribbon({ col: ICEC, width: 0.14, n: 16 });
     v.timed(o, 0.45, (k, dt) => { o.position.copy(bezier(hub, hub.clone().lerp(tg, 0.5).add(V(0, 0.8, 0)), tg, k * k)); o.rotation.y += dt * 6; rib.push(o.position); }, () => { rib.end(); o.visible = false; crystals(v, c, 6, 0.8, 0.9, mat); v.ring(c, ICEC, 1.2, 0.4); v.shake(0.06, 0.1); });
   });
   await ctx.wait(500); glowTargets(ctx, 0.8);
@@ -552,7 +553,7 @@ async function blizzard(ctx) {
   DARK(ctx, 0.7, 1, 0.7, 0.35);
   const B = basis(ctx), wind = B.right.clone().multiplyScalar(-5);
   ticker(v, 3, (k) => {
-    for (let i = 0; i < 14; i++) v.spark(c0.x + rand(-6, 6) - wind.x * 0.4, c0.y + rand(0.2, 5), c0.z + rand(-6, 6) - wind.z * 0.4, { vx: wind.x * rand(0.8, 1.3), vy: -rand(0.8, 1.6), vz: wind.z * rand(0.8, 1.3) + rand(-0.5, 0.5), life: rand(0.8, 1.4), size: rand(0.05, 0.11), r: 0.92, gg: 0.96, b: 1, a: 0.9, shape: 0, wob: 1.5, ph: rand(0, 6) });
+    for (let i = 0; i < 14; i++) v.spark(c0.x + rand(-6, 6) - wind.x * 0.4, c0.y + rand(0.2, 5), c0.z + rand(-6, 6) - wind.z * 0.4, { vx: wind.x * rand(0.8, 1.3), vy: -rand(0.8, 1.6), vz: wind.z * rand(0.8, 1.3) + rand(-0.5, 0.5), life: rand(0.8, 1.4), size: rand(0.05, 0.11), r: 0.92, gg: 0.96, b: 1, a: 0.9, shape: 1, wob: 1.5, ph: rand(0, 6) });
     if (Math.random() < 0.18) v.smokePuff(c0.x + rand(-4, 4), c0.y + rand(0.3, 1.2), c0.z + rand(-4, 4), { vx: wind.x * 0.5, vz: wind.z * 0.5, life: 1.4, size: 0.7, size1: 1.6, tint: [0.8, 0.9, 1] });
   });
   await ctx.wait(800);
@@ -570,18 +571,18 @@ async function iceAvalanche(ctx) {
   await intro(ctx, ICEC, { dur: 800, dist: 10.5, pitch: 0.38 });
   DARK(ctx, 0.65, 1, 0.75, 0.4);
   for (let i = 0; i < 5; i++) later(i * 300, () => {
-    const r = rand(0.35, 0.55), m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), mat), off = V(rand(-0.35, 0.35), 0, rand(-0.35, 0.35));
+    const r = rand(0.35, 0.55), m = new THREE.Mesh(chunkGeometry(), mat); m.scale.setScalar(r); const off = V(rand(-0.35, 0.35), 0, rand(-0.35, 0.35));
     lob(v, m, at.clone().add(off).add(V(rand(-2, 2), 8, rand(-1, 1))), at.clone().add(off).setY(at.y + r * 0.6), 0, 0.42, (p) => {
       v.burst(p, { n: 34, speed: 5, cols: ICE_COLS, size: 0.07, life: 0.8, g: 9 }); v.shake(0.1, 0.15); v.flash([0.8, 0.9, 1], 0.08); v.ring(at, ICEC, 1.6, 0.35); glowTargets(ctx, 0.6, 0.3);
-      for (let j = 0; j < 5; j++) { const sh = new THREE.Mesh(new THREE.TetrahedronGeometry(rand(0.07, 0.14)), mat), d = V(rand(-1.2, 1.2), 0, rand(-1.2, 1.2)); lob(v, sh, p, at.clone().add(d), rand(0.6, 1.2), 0.5); }
+      shatter(v, p, 7, mat, { size: 0.2, speed: 2.6 }); frost(v, at, 1.2, 2.4);
     }, { fall: true });
   });
   await ctx.wait(1700);
   // the block: an ice prism closing over the target
-  const block = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 1.9, 6), mat); block.position.copy(at).setY(at.y + 0.95);
-  v.timed(block, 1.1, (k, dt, t) => { const g = Math.min(1, t / 0.18); block.scale.set(1, g, 1); block.position.y = at.y + 0.95 * g; if (t > 0.95) block.scale.setScalar(1 + (t - 0.95) * 2); },
+  const block = new THREE.Mesh(shardGeometry(6, 0.22), mat); block.position.copy(at).setY(at.y - 0.05);   // (a great crystal closing over the target)
+  v.timed(block, 1.1, (k, dt, t) => { const g = Math.min(1, t / 0.18), sw = t > 0.95 ? 1 + (t - 0.95) * 2 : 1; block.scale.set(0.72 * sw, 2.1 * g * sw + 0.001, 0.72 * sw); },
     () => { v.burst(at.clone().setY(at.y + 0.9), { n: 120, speed: 7, cols: ICE_COLS, size: 0.08, life: 1.1, g: 9 }); v.flash([0.9, 0.97, 1], 0.45); v.shake(0.22, 0.35); v.hitstop = 0.12;
-      for (let j = 0; j < 10; j++) { const sh = new THREE.Mesh(new THREE.TetrahedronGeometry(rand(0.1, 0.22)), mat), d = V(rand(-2, 2), 0, rand(-2, 2)); lob(v, sh, at.clone().setY(at.y + rand(0.3, 1.6)), at.clone().add(d), rand(0.8, 1.6), 0.7); } });
+      shatter(v, at.clone().setY(at.y + 0.9), 16, mat, { size: 0.3, speed: 3.4 }); frost(v, at, 1.8, 2.6); });
   v.decal(at, [0.5, 0.75, 1], 1.4, 2, { intensity: 0.8 });
   ticker(v, 1.1, () => { for (const a of tgts(ctx)) a.flash = 0.35; }, () => { for (const a of tgts(ctx)) a.flash = 0; });
   await ctx.wait(1150); ctx.hit(); await ctx.wait(1000); outro(ctx);

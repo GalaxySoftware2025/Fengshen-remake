@@ -14,6 +14,7 @@ import { campScene, slotList } from './camp.js';
 import * as Scene from './scene.js';
 import { dress } from './sets.js';
 import { pgSetup, pgLoop, arena, arenaSetup } from './testkit.js';
+import * as Arena from './battles/arena.js';
 import titleSet, { W as TITLE_W, H as TITLE_H } from './remake/title.js';
 import { petals } from './ui.js';
 import * as Audio from './audio.js';
@@ -34,9 +35,9 @@ async function battleData(n) {
 }
 // load battle n's rules and data with this party, and build its world
 async function openBattle(n, party) {
-  const B = await battleData(n);
-  FX = await fxOf(n);
-  R.loadBattle(B, party || defaultParty(globalThis.COMMON, B), await rulesOf(n), opts.arena ? arena : null);
+  const B = opts.arena ? Arena.record(await battleData(Arena.FOES_FROM)) : await battleData(n);   // the 演武場: its own record and set
+  FX = opts.arena ? { look: Arena.look } : await fxOf(n);
+  R.loadBattle(B, party || defaultParty(globalThis.COMMON, B), opts.arena ? null : await rulesOf(n), opts.arena ? arena : null);
   setScreen('loading'); const fill = $('l-fill'); fill.style.width = '0%';
   await E.loadWorld(FX, p => { fill.style.width = (p * 100) + '%'; });
   if (FX.look && FX.look.set) { await dress(E, FX.look.set); E.measureLight(); }   // a battle on a remade set (src/remake): its pieces, particles and lights
@@ -66,7 +67,7 @@ const clickOnce = el => new Promise(res => el.addEventListener('click', res, { o
 // a battle without its own staging: the scene's pre-battle lines over the map, then its name (DESIGN §7: name only)
 async function intro() {
   if (FX.intro) return FX.intro(E);   // the camera stays on the heroes (no swing out over the map first: the user's call)
-  if (direct && !told) for (const l of D.intro) await E.ui.say(l.text, l.who || null);   // in the campaign (and after story()) the scene has just played them
+  if (direct && !told) for (const l of D.intro) await E.speak(l.text, l.who);   // in the campaign (and after story()) the scene has just played them
   E.cam.release(tileCenter(...D.deploy[0]));
   await E.ui.banner(D.name, '', 1700);
 }
@@ -74,7 +75,7 @@ async function endScene(res) {
   E.ui.show('hud', false);
   if (res.win) {
     if (FX.victory) await FX.victory(E);
-    else { await E.ui.banner('戰役勝利', D.name, 1600); if (direct) for (const l of D.outro) await E.ui.say(l.text, l.who || null); }   // the campaign plays the outro as a scene
+    else { await E.ui.banner('戰役勝利', D.name, 1600); if (direct) for (const l of D.outro) await E.speak(l.text, l.who); }   // the campaign plays the outro as a scene
     if (!direct) return;   // the campaign goes straight on to the scene's outro: the banner has said it (no second victory screen, whose 點擊重新開始 does not apply)
     const end = FX.end || { title: '戰役勝利', sub: '—— 待續 ——' };
     $('end-title').textContent = end.title; $('end-sub').textContent = end.sub;
@@ -230,7 +231,7 @@ async function story(n) {
   return true;
 }
 async function single() {
-  const n = opts.arena ? 13 : +((location.hash.match(/battle=(\d+)/) || [])[1] || 13);
+  const n = opts.arena ? 'arena' : +((location.hash.match(/battle=(\d+)/) || [])[1] || 13);
   await openBattle(n);
   if (opts.arena) { setScreen(null); pgSetup(); arenaSetup(); return pgLoop(); }
   if (/sandbox/.test(location.hash)) {   // debug: staged battle without the turn flow
