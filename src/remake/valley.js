@@ -41,6 +41,7 @@ function cart(Mt) {   // the supply wagon, shafts to the west: plank bed on an a
   g.add(box(dark, 0.18, 0.24, -0.44, 0.26, 0.3, 0.44));                                        // axle
   const prop = box(dark, -0.6, 0, -0.03, -0.55, 0.3, 0.03); g.add(prop);                       // the prop under the front
   g.position.set(CART.x, land.at(CART.x, CART.z), CART.z); g.rotation.y = 0.06; g.scale.set(1, 1, 0.8);
+  g.userData.standIn = 1;   // (a sprite's model, moving with the scene: tools/qa/sets.js leaves it out of what actors stand in)
   return shade(g);
 }
 

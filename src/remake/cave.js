@@ -290,7 +290,8 @@ function setFor(fixedKey) {
     const spireM = T.material(T.seaRock(0x46545c, 'caveSpire'), { color: 0xffffff, vertexColors: true }, [0.6, 0.6]);   // (seaSpire colours each spire)
     const pebM = T.material(T.rock(0x5a6468, 'cavePebble', 0.2), { color: 0xe8eef0, roughness: 0.5 }, [0.5, 0.5]);
     loneCells = [];
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (lone(x, y)) { S.add(seaSpire(spireM, x + 0.5, y + 0.55, land.at(x + 0.5, y + 0.5), 0.9, x * 3 + y * 5)); loneCells.push([x, y]); }
+    const chestAt = new Set((D.rooms && G.chests ? G.chests : D.chests || []).map(c => c.x + ',' + c.y));   // (no spire on a chest's cell: it stood in the open chest)
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (lone(x, y) && !chestAt.has(x + ',' + y)) { S.add(seaSpire(spireM, x + 0.5, y + 0.55, land.at(x + 0.5, y + 0.5), 0.9, x * 3 + y * 5)); loneCells.push([x, y]); }
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (tc(x, y) === 3 || tc(x, y) === 4) S.add(tunnel(rockM, x + 0.5, y + 0.5, land.at(x + 0.5, y + 0.5), voidSide(tc, x, y)));
     // the art's steps where a ledge is drawn and not climbed: flat stone slabs set in the floor
     const slab = T.material(T.bricks(0x2a6a66, 2, 'caveSlab'), {}, [1, 1]);

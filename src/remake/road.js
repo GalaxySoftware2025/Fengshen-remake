@@ -135,7 +135,66 @@ function possess(E, ev, clock) {
   };
   E.world.updaters.push(tick);
 }
-function native(E, ev, clock) { if (ev.name === 'possess') possess(E, ev, clock); }
+// ---------------------------------------------------------------- the night darkens to deep red (0x21732, prologue f1965-1995)
+// The original takes the map's palette lines a step down a channel each, four times (f1966, 1967, 1981, 1995): its orange
+// road goes deep red and the rock black, the sprites untouched; the map's own colours come back under the fox army's
+// white (f2237-2259). Here the moon, the sky light and the fog dim and redden by the same steps, and the cast is lifted
+// to stay as it was. All by the scene's clock.
+const RED = new THREE.Color(1, 0.2, 0.1), DEEP = new THREE.Color(0.09, 0.012, 0.008);
+function redden(E, ev, clock) {
+  const S = E.world.scene, lights = [];
+  S.traverse(o => { if (o.isLight && !o.isPointLight && !o.isSpotLight) lights.push([o, o.intensity, o.color.clone(), o.groundColor ? o.groundColor.clone() : null]); });   // (the torches keep their own flicker)
+  const fog = S.fog ? S.fog.color.clone() : null, bg = S.background && S.background.isColor ? S.background.clone() : null, env = S.environmentIntensity ?? 1;
+  const level = t => {
+    if (t < ev.f) return 0;
+    let k = ev.steps.filter(f => t >= f).length / ev.steps.length;
+    if (ev.until) { const [a, b] = ev.until; if (t >= a) k *= Math.max(0, 1 - (t - a) / (b - a)); }
+    return k;
+  };
+  const apply = k => {
+    for (const [l, i, c, g] of lights) { l.intensity = i * (1 - 0.78 * k); l.color.copy(c).lerp(RED, 0.7 * k); if (g) l.groundColor.copy(g).lerp(DEEP, k); }
+    if (fog) S.fog.color.copy(fog).lerp(DEEP, k); if (bg) S.background.copy(bg).lerp(DEEP, k);
+    S.environmentIntensity = env * (1 - 0.8 * k);
+    for (const a of E.actors.values()) a.glow = 1 + 1.5 * k;
+  };
+  const tick = () => {
+    const t = clock(), k = level(t); apply(k);
+    if (t < ev.f - 2 || (ev.until && t > ev.until[1] + 2)) { apply(0); E.world.updaters.splice(E.world.updaters.indexOf(tick), 1); }
+  };
+  E.world.updaters.push(tick);
+}
+
+// ---------------------------------------------------------------- the fox's army (0x278E, prologue f2207-2259)
+// Two ranks of eight of the 戰將's sheet charge in from where the two 戰將 stand, each a leader and seven a frame behind
+// him, 10 px a frame from f2210 (rank one down a third of its run, rank two up a sixth: a '>' across the road), gone at
+// the white; the palette rises to white every third frame from f2222, holds at f2237-2240 and comes back by f2259.
+// Remade [design]: dust behind every runner.
+function army(E, ev, clock) {
+  const S = E.world.scene, men = [], sprite = spriteKey(parseInt(ev.sheet, 16));
+  for (let r = 0; r < ev.ranks.length; r++) for (let j = 0; j < ev.n; j++) {
+    const unit = { side: 'npc', name: '', sprite, x: 0, y: 0, facing: 'right', alive: true, done: false, slot: 'army', status: {}, buf: {} };
+    const a = new Actor(E.bank, unit, S); a.walking = true; a.walkMs = 90; a.root.visible = false; men.push({ a, r, j });
+  }
+  let last = -1;
+  const done = () => { E.world.updaters.splice(E.world.updaters.indexOf(tick), 1); for (const m of men) m.a.dispose(S); };
+  const tick = () => {
+    const t = clock();
+    if (t < ev.f - 1 || t > ev.white[3] + 4) { done(); return; }
+    const live = last >= 0 && t - last < 6; last = t;
+    for (const { a, r, j } of men) {
+      const on = t >= ev.appear + j && t < ev.end; a.hidden = !on; a.root.visible = on; if (!on) continue;
+      const run = ev.speed * Math.max(0, t - j - ev.run), [x0, y0, slope] = ev.ranks[r], x = (x0 + run) / 32 + 0.5, z = (y0 + run * slope) / 32 + 0.5;
+      a.pos.set(x, land ? land.at(x, z) : 0, z);
+      a.update(E.gameT, E.world.camera, E.cam.yaw, E.cam.pitch);
+      if (live && run > 0 && Math.random() < 0.35) E.vfx.smokePuff(x - 0.35, a.pos.y + 0.04, z + (Math.random() - 0.5) * 0.3, { vy: 0.2, life: 0.5, size: 0.18, size1: 0.42, tint: [0.2, 0.1, 0.07] });
+    }
+    // the white: up in six steps, held, down in eight (the original's), as a smooth flash
+    const [w0, w1, w2, w3] = ev.white, k = t < w0 ? 0 : t < w1 ? ((t - w0) / (w1 - w0)) ** 2 : t < w2 ? 1 : t < w3 ? 1 - (t - w2) / (w3 - w2) : 0;   // (a channel step every third frame: slow to lift at first)
+    if (k > 0) { E.vfx.screen.flash = Math.max(E.vfx.screen.flash, k * 0.88); E.vfx.screen.flashCol.setRGB(0.92, 0.94, 1); }
+  };
+  E.world.updaters.push(tick);
+}
+function native(E, ev, clock) { if (ev.name === 'possess') possess(E, ev, clock); else if (ev.name === 'redden') redden(E, ev, clock); else if (ev.name === 'army') army(E, ev, clock); }
 
 export default {
   build, native, ground: (x, z) => land ? land.at(x, z) : 0, particles: 'fireflies',

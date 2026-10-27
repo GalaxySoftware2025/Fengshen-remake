@@ -1,5 +1,5 @@
 // The cartridge's text and scene scripts (ports of tools/rom/dec2.py and scenes.py): glyph strings, the dialogue table,
-// and a walk over the 65 scene scripts with each line's text resolved.
+// and a walk over the 66 scene scripts with each line's text resolved.
 import GLYPHS from './glyphs.js';
 
 const M = {};
@@ -37,9 +37,9 @@ export const SIZE = { 0: 4, 1: 4, 2: 2, 3: 8, 4: 6, 5: 8, 6: 4, 7: 6, 8: 4, 9: 2
   49: 6, 50: 6, 51: 16, 52: 6, 53: 4, 54: 12, 55: 6, 56: 4, 57: 2 };
 export const NAME = { 35: 'join', 42: 'join2', 30: 'herotoactor', 13: 'mapptr', 19: 'setline', 0: 'map', 4: 'say', 10: 'battle', 15: 'wait', 21: 'actor', 22: 'walk', 20: 'place', 23: 'hook', 56: 'music' };
 export const tables = R => ({
-  SCENES: Array.from({ length: 65 }, (_, i) => R.L(0x1396 + 4 * i)),
-  CHAPTER: R.list(0x31f6, 65),                                     // scene -> chapter index
-  HEADERS: Array.from({ length: 65 }, (_, i) => R.L(0x1f0a + 4 * i)),   // battle header per scene, 0x582e = none
+  SCENES: Array.from({ length: 66 }, (_, i) => R.L(0x1396 + 4 * i)),   // (66: scene 65, the epilogue at 0x49F4, played with text block 7; it ends with FFFD, the reset at 0x51A)
+  CHAPTER: R.list(0x31f6, 66),                                     // scene -> chapter index
+  HEADERS: Array.from({ length: 66 }, (_, i) => i < 65 ? R.L(0x1f0a + 4 * i) : 0x582e),   // (the table holds 65: the epilogue has no battle)   // battle header per scene, 0x582e = none
 });
 // the dialogue: table 0x100370[chapter][speaker][n]
 export function message(R, chapter, speaker, idx) {

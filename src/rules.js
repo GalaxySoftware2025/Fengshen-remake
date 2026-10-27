@@ -1,9 +1,10 @@
 // 封神英傑傳 — battle rules, shared by the 3D remake and the headless tests.
-// Everything marked [ROM] was read out of the original 68000 code (see ../fengshen-panxi/README.md);
+// Everything marked [ROM] was read out of the original 68000 code (see research/panxi-notes.md);
 // [design] marks reconstructions. No rendering here: the battle flow (battle.js) calls a presenter.
 // The battle being played is loaded with loadBattle(): the shared tables (data/common.js), that battle's generated data
 // (data/battles/NN.js), the party, and the battle's rule hooks (src/battles/NN-*.js) for whatever is unique to it.
 import { spriteKey } from './sprites.js';
+import * as EA from './enemyai.js';
 export const D = {};                  // the loaded battle: COMMON tables + BATTLES[n] + party (+ what its hooks add)
 export let MAP_W = 0, MAP_H = 0;
 export let H = {};                    // the loaded battle's rule hooks (see src/battles/README.md)
@@ -31,7 +32,7 @@ export function physicalAttack(a, d) {           // [ROM] 0xF8C2
   const diff = clamp(a.lv - d.lv, -4, 4) + 4;
   const miss = rand128() < D.missTable[diff];
   const crit = rand128() < D.critTable[diff];
-  let dmg = a.atk + (a.buf.atk || 0) - (d.df + (d.buf.df || 0));
+  let dmg = statOf(a, 'atk') - statOf(d, 'df');
   if (dmg <= 0) dmg = 1;
   if (crit) dmg *= 2;
   if (PHYS_IMMUNE.includes(d.moveType)) dmg = 0;
@@ -49,6 +50,56 @@ export function selfDestruct(u) {
     if (t) hits.push({ t, dmg: Math.max(1, u.atk - t.df) });
   }
   return hits;
+}
+// attack, defence and speed as they stand: the record's own, moved by a timed change [ROM: the change is written into the
+// record, kept within 0-255, and given back when its timer runs out (status +0..+5 at ff30fa + 10 * slot)]
+export const statOf = (u, k) => clamp(u[k] + ((u.buf && u.buf[k]) || 0), 0, 255);
+// a timed change [ROM 0x31964]: the stats move by `by`, and `turns` status ticks later (the unit's own turns) the change is
+// given back; a new one on a stat already changed first gives the old one back [0x3199C]
+export function timedBuff(u, stats, by, turns) {
+  u.bufT ||= {};
+  for (const k of stats) { u.buf[k] = clamp(u[k] + by, 0, 255) - u[k]; u.bufT[k] = turns; }
+}
+// what a unit holds: its items, and an enemy's drop (the spawn loader puts it in the first held slot, +0x12 [0x13344])
+export const held = u => u.drop != null ? u.items.concat([u.drop]) : u.items;
+export const holds = (u, id) => held(u).includes(id);
+const CHARM = 0x1c;   // 硃砂符印: no sleep from 迴夢 or 迷魂香 [0x324C4], no sleep or poison from a blow [0xFD26]
+
+// a unit's turn begins [ROM 0x1E8E6, 0x1E8EC; after the battle's turn hook and the dormant check]. First what it holds
+// [0x1A52C]: each 龍涎珠 (26, stat 12) gives back 3 HP and each 紫綾仙衣 (27, stat 13) 3 MP, every copy on its own and
+// to anyone holding it (the 青龍 lock is only on handing it over), shown even when nothing was gained. Then the status
+// tick [0x1A87C], in its order: the timed changes (at 0, given back), seal (封: counts down, so 3 is two sealed turns),
+// sleep (眠: counts down; the remake's count is the ROM's less one, the turns still to sleep through: the ROM's 3 is the
+// remake's 2), poison (毒: its strength off HP every turn, never wearing off, and it can kill [0x1A9D0]: no experience,
+// no drop). Returns what happened, in order, and whether the unit sleeps through this turn [0x1E93A].
+export function turnStart(u) {
+  const ev = [];
+  for (const id of held(u)) {
+    const it = D.items[id]; if (!it || (it.stat !== 12 && it.stat !== 13)) continue;
+    const k = it.stat === 12 ? 'hp' : 'mp', gain = Math.max(0, Math.min(it.pow, u['m' + k] - u[k]));
+    u[k] += gain; ev.push({ kind: 'regen', [k]: gain });
+  }
+  if (u.bufT) for (const k of ['atk', 'df', 'spd']) if (u.bufT[k] && !--u.bufT[k]) { delete u.buf[k]; ev.push({ kind: 'buffEnd', stat: k }); }
+  if (u.status.seal) { u.status.seal--; ev.push({ kind: 'seal' }); }
+  const asleep = u.status.sleep > 0; if (asleep) { u.status.sleep--; ev.push({ kind: 'sleep' }); }
+  if (u.status.poison) {
+    const dmg = Math.min(u.hp, u.status.poison); u.hp -= dmg; ev.push({ kind: 'poison', dmg });
+    if (!u.hp) { u.alive = false; ev.push({ kind: 'died' }); }
+  }
+  return { ev, asleep: asleep && u.alive };
+}
+// after a blow, landed or not [ROM 0xEEB0]: a sleeper is woken (it acts on its next turn); then, if it landed, a unit
+// of move type 4 or 10 may put the target to sleep and one of 5 or 11 may poison it [0xFCEE]: the chance by the level
+// difference, 10/128 at four below to 90/128 at four above [table 0xF8B8], the strength its record's +3B (aip[7]: sleep
+// counts, poison's damage a turn); 硃砂符印 keeps both off. Returns the status put on, if any.
+const RIDER_CHANCE = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+export function afterBlow(a, d, r) {
+  if (d.status.sleep) d.status.sleep = 0;
+  if (r.miss || d.hp <= 0 || ![4, 5, 10, 11].includes(a.moveType) || holds(d, CHARM)) return null;
+  if (!(rand128() < RIDER_CHANCE[clamp(a.lv - d.lv, -4, 4) + 4])) return null;
+  const v = aiP(a, 0x3b);
+  if (a.moveType === 4 || a.moveType === 10) { d.status.sleep = Math.max(0, v - 1); return 'sleep'; }
+  d.status.poison = v; return 'poison';
 }
 export const spellPower = (caster, sp) => sp.pow + (caster.side === 'player' ? (caster.atk >> 2) : 0);   // [ROM] 0x21022
 export function expFor(a, d, killed) {           // [ROM] 0x12372
@@ -81,14 +132,17 @@ export const allies = u => G.units.filter(v => v.alive && v.side === u.side);
 export const inMap = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
 export const cost = (u, x, y) => D.costs[u.moveType][G.terrain[y][x]];
 
-// movement range [ROM 0xB3BA]: flood fill with per-movetype terrain costs; enemies block, allies can be passed
+// movement range [ROM 0xB3B6]: the cells of the ROM's own reach list (src/enemyai.js reachList: a depth-first walk that
+// misses now and then a cell a cheaper way would reach, as the original's does), each with its cheapest way there
+// through them for the walk (the remake's; prev)
 export function reach(u) {
+  const allowed = new Set(EA.reachList(u).map(([x, y]) => key(x, y)));
   const out = new Map(); out.set(key(u.x, u.y), { x: u.x, y: u.y, c: 0, prev: null, stop: true });
   const q = [[u.x, u.y]];
   while (q.length) {
     const [x, y] = q.shift(); const cur = out.get(key(x, y));
     for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-      const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue;
+      const nx = x + dx, ny = y + dy; if (!inMap(nx, ny) || !allowed.has(key(nx, ny))) continue;
       const c = cur.c + cost(u, nx, ny); if (c > u.move) continue;
       const o = unitAt(nx, ny);
       if (o && o.side !== u.side) continue;
@@ -105,43 +159,72 @@ export const areaCells = (tx, ty, area) => area ? diamond(area, true).map(([dx, 
 // where a spell or item may be cast in a regular game: on someone it is for, a foe for harm, the caster's side for help
 // (never an empty cell, nor a phantom off the map) [the user's call; the test toolbar keeps every cell in range]
 export const castCells = (u, cells, harm) => cells.filter(([x, y]) => { const t = unitAt(x, y); return t && !t.away && (harm ? foes(u).includes(t) : t.side === u.side); });
-export function faceTo(u, x, y) {
-  const dx = x - u.x, dy = y - u.y;
-  if (Math.abs(dx) >= Math.abs(dy) && dx) u.facing = dx > 0 ? 'right' : 'left';
-  else if (dy) u.facing = dy > 0 ? 'down' : 'up';
-}
+export function faceTo(u, x, y) { if (x !== u.x || y !== u.y) u.facing = EA.faceRule(u, x, y); }   // [ROM 0x1FF58; move type 9 never turns, 0x787A]
 
 // ---------------------------------------------------------------- effects [ROM tables]
+// the status roll [ROM 0x32422]: a seal, sleep or poison cast lands unless the roll (0-127) comes under 10 x (9 down to
+// 1) by the level difference [table 0xF8A6]: 38/128 at four levels below the target, 78/128 level, 118/128 four above.
+// The timed changes have no roll; no move type is immune to a status (the immune list is for damage only, 0x21354).
+const statusLands = (c, t) => rand128() >= 10 * (9 - (clamp(c.lv - t.lv, -4, 4) + 4));
+const RESIST = { text: '失效', resist: true, exp: 10 };   // [0x322AC: 「失效」 floats off the target; the caster still gains]
+// a status put on by a cast [0x323E6, 0x37C9C]: overwrites what was there. Sleep: the remake counts the turns still to
+// sleep through, the ROM's value less one (its tick comes first); 硃砂符印 keeps a sleep cast off [0x324C4]
+function putStatus(c, t, k, v) {
+  if (!statusLands(c, t) || (k === 'sleep' && holds(t, CHARM))) return RESIST;
+  t.status[k] = k === 'sleep' ? v - 1 : v; return { text: { seal: '封法', sleep: '睡眠', poison: '中毒' }[k], status: k, exp: 10 };
+}
+// a timed change from a cast or an item [ROM 0x311BA up, 0x31964 down]: the pow word is the timer (high byte) and the
+// amount (low byte), on attack and defence
+function powChange(t, pow, sign) { timedBuff(t, ['atk', 'df'], sign * (pow & 0xff), pow >> 8); return { text: sign > 0 ? '攻防↑' : '攻防↓', exp: 10 }; }
+const heal = (hp, mp) => t => { const h = Math.min(hp, t.mhp - t.hp), m = Math.min(mp, t.mmp - t.mp); t.hp += h; t.mp += m; return h || !mp ? { heal: h, exp: 10 } : { text: '法力 +' + m, exp: 10 }; };
+const cure = k => t => { if (k) t.status[k] = 0; return { text: k ? '解除' : '無變化', exp: 10 }; };
+// a spell's effect [ROM: each spell's routine, its entry +8]. Damage: pow + a fourth of the caster's attack (heroes'
+// side), the target's defence not counted. Help and status casts give the caster a flat 10 experience [0x12460].
 export function spellEffect(caster, sp) {
-  if (sp.kind === 12) {
-    if (sp.pow > 0 && sp.pow < 1000) return { kind: 12, apply: t => { const h = Math.min(sp.pow, t.mhp - t.hp); t.hp += h; return { heal: h, exp: h }; } };
-    return { kind: 12, apply: t => { t.status = { sleep: 0, seal: 0, poison: 0 }; return { text: '淨化', exp: 5 }; } };
-  }
-  if (sp.id === 0x33) return { kind: 13, apply: t => { t.status.sleep = 2; return { text: '睡眠', status: 'sleep' }; } };   // 迴夢
-  if (sp.id === 0x32) return { kind: 13, apply: t => { t.status.seal = 3; return { text: '封法', status: 'seal' }; } };    // 封魔符
+  const id = sp.id;
+  if (id === 43) return { kind: 3 };                                         // 還魂咒: a fallen hero back (revive)
+  if (id === 44) return { kind: 12, apply: cure('poison') };                 // 靈血咒: poison only [0x28B4E]
+  if (id === 45) return { kind: 12, apply: cure(null) };                     // 淨衣咒: clears 麻痺, which nothing in the game sets [0x28B72]
+  if (id === 46 || id === 47) return { kind: 12, apply: t => powChange(t, sp.pow, 1) };    // 金剛咒, 真元護體: +15 for 4
+  if (id === 48 || id === 49) return { kind: 13, apply: t => powChange(t, sp.pow, -1) };   // 金剛破, 真元歸天: -6 for 3
+  if (id === 50) return { kind: 13, apply: t => putStatus(caster, t, 'seal', sp.pow) };    // 封魔符
+  if (id === 51) return { kind: 13, apply: t => putStatus(caster, t, 'sleep', sp.pow) };   // 迴夢
+  if (sp.kind === 12) return { kind: 12, apply: heal(sp.pow, 0) };           // 歸元 .. 觀音下凡: HP (凝神 too: HP, not MP)
   return { kind: 13, apply: () => ({ dmg: spellPower(caster, sp) }) };
 }
+// an item's effect [ROM: each item's routine, its entry +0xA]; every use gives the user a flat 10 experience but the
+// damage items' (by level, as a blow's)
 export function itemEffect(user, it) {
   const id = it.id, p = it.pow;
-  const heal = (hp, mp) => t => { const h = Math.min(hp, t.mhp - t.hp), m = Math.min(mp, t.mmp - t.mp); t.hp += h; t.mp += m; return h ? { heal: h, exp: 5 } : { text: '法力 +' + m, exp: 5 }; };
   switch (true) {
-    case id <= 3: return { kind: 12, apply: heal(id === 3 ? 999 : p, 0) };
+    case id <= 3: return { kind: 12, apply: heal(p, 0) };                    // 15, 25, 40, 300 [0x3838C]
     case id <= 5: return { kind: 12, apply: heal(0, p) };
-    case id === 6: return { kind: 12, apply: heal(30, 30) };
-    case id >= 8 && id <= 0x0a: return { kind: 12, apply: t => { t.status = { sleep: 0, seal: 0, poison: 0 }; return { text: '解毒', exp: 3 }; } };
+    case id === 6: return { kind: 12, apply: heal(p, p) };                   // 瑤池蟠桃: 35 each (its line says 30) [0x37A70]
+    case id === 7: return { kind: 3 };                                       // 玄天聖水: as 還魂咒 [0x28300]
+    case id === 8: return { kind: 12, apply: cure('poison') };               // 柴胡草
+    case id === 9: return { kind: 12, apply: cure(null) };                   // 逸仙草: 麻痺 only, so not seal [0x26F50]
+    case id === 0x0a: return { kind: 13, apply: cure(null) };                // 銅鑼鈸: used up, nothing changes [0x37B3E]
     case id >= 0x0b && id <= 0x0d: return { kind: 13, apply: () => ({ dmg: spellPower(user, it) }) };
-    case id === 0x0e: return { kind: 13, apply: t => { t.status.poison = 3; return { text: '中毒', status: 'poison' }; } };
-    case id === 0x0f: return { kind: 13, apply: t => { t.status.sleep = 2; return { text: '睡眠', status: 'sleep' }; } };
-    case id === 0x10: return { kind: 13, apply: t => { t.buf.atk = (t.buf.atk || 0) - 3; t.buf.df = (t.buf.df || 0) - 3; return { text: '攻防↓' }; } };
-    case id === 0x11: return { kind: 13, apply: t => { t.status.seal = 3; return { text: '封法', status: 'seal' }; } };
-    case id === 0x1d: return { kind: 12, apply: t => { t.atk += 3; return { text: '攻擊 +3', exp: 0 }; } };
-    case id === 0x1e: return { kind: 12, apply: t => { t.df += 3; return { text: '防禦 +3', exp: 0 }; } };
-    case id === 0x1f: return { kind: 12, apply: t => { t.move += 1; return { text: '移動 +1', exp: 0 }; } };
-    case id === 0x20: return { kind: 12, apply: t => { t.spd += 5; return { text: '速度 +5', exp: 0 }; } };
-    case id === 0x22: return { kind: 12, apply: t => { t.buf.atk = (t.buf.atk || 0) + 2; return { text: '攻擊 +2', exp: 0 }; } };
-    case id === 0x23: return { kind: 12, apply: t => { t.buf.df = (t.buf.df || 0) + 2; return { text: '防禦 +2', exp: 0 }; } };
+    case id === 0x0e: return { kind: 13, apply: t => putStatus(user, t, 'poison', p) };    // 奇毒草: 3 a turn (硃砂符印 no help)
+    case id === 0x0f: return { kind: 13, apply: t => putStatus(user, t, 'sleep', p) };     // 迷魂香
+    case id === 0x10: return { kind: 13, apply: t => powChange(t, p, -1) };                // 鎖骨釘: -6 for 2
+    case id === 0x11: return { kind: 13, apply: t => putStatus(user, t, 'seal', p) };      // 封咒法符
+    case id === 0x1d: return { kind: 12, apply: t => { t.atk = Math.min(255, t.atk + 3); return { text: '攻擊 +3', exp: 10 }; } };   // [0x37D1E]
+    case id === 0x1e: return { kind: 12, apply: t => { t.df = Math.min(255, t.df + 3); return { text: '防禦 +3', exp: 10 }; } };
+    case id === 0x1f: return { kind: 12, apply: t => { t.move = Math.min(255, t.move + 1); return { text: '移動 +1', exp: 10 }; } };
+    case id === 0x20: return { kind: 12, apply: t => { t.spd = Math.min(255, t.spd + 5); return { text: '速度 +5', exp: 10 }; } };
+    // 龍蛇膽, 護元金丹: +2 for 3, nothing while their own change runs (the item still used) [0x37E56, 0x37F16]
+    case id === 0x22: return { kind: 12, apply: t => { if (!(t.bufT && t.bufT.atk)) timedBuff(t, ['atk'], 2, 3); return { text: '攻擊 +2', exp: 10 }; } };
+    case id === 0x23: return { kind: 12, apply: t => { if (!(t.bufT && t.bufT.df)) timedBuff(t, ['df'], 2, 3); return { text: '防禦 +2', exp: 10 }; } };
     default: return null;
   }
+}
+// a fallen hero back [ROM 0x28300, 還魂咒 and 玄天聖水]: picked from the fallen of the heroes' slots 0-9, on the cell
+// chosen, at half its HP, its statuses cleared
+export const fallen = () => G.units.filter(u => !u.alive && u.side === 'player' && u.slot != null && u.slot < 10);
+export function raise(u, x, y) {
+  Object.assign(u, { alive: true, x, y, hp: Math.max(1, u.mhp >> 1), status: { sleep: 0, seal: 0, poison: 0 }, buf: {}, bufT: {} });
+  return { heal: u.hp, exp: 10 };
 }
 // level-up [ROM 0x12B24] with the per-character growth tables (0x3BBEE: a row of 6 bytes a level, hp mp atk df spd and a
 // spell learnt); returns what changed. As the original does it: each gain is the next row's byte less this row's, as a
@@ -289,9 +372,10 @@ export function enterRoom(k, back = false) {
 }
 // a guest on the heroes' side (battles 6 and 7's 文王, side 'player', guest): no one commands him, his turn is his AI's
 export const heroes = () => players().filter(u => !u.guest);
-export const turnOrder = () => G.units.filter(u => u.alive && u.side !== 'npc').sort((a, b) => b.spd - a.spd);   // [ROM]
+export const turnOrder = () => G.units.filter(u => u.alive && u.side !== 'npc').sort((a, b) => statOf(b, 'spd') - statOf(a, 'spd'));   // [ROM]
 
-// ---------------------------------------------------------------- enemy AI [design]
+// ---------------------------------------------------------------- AI (the enemies' turn: src/enemyai.js; here the hooks'
+// wake-ups, the special AIs and the heroes' autopilot [design])
 function distanceField(u, targets) {
   const dist = new Map(), q = [];
   for (const t of targets) for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
@@ -316,8 +400,7 @@ export function setAiP(u, k, v) {
   u.aip[k - 0x34] = v; if (k === 0x34) u.aggro = v;
 }
 // dormant enemies [ROM 0x1E804, 0x1EA0C]: AI 7, and AI 8 (the same, after the camera has shown it), wake when a hero is
-// within the record's +34 range; the AI becomes the record's +35 (0, chase the nearest hero, in the battles ported so
-// far) and +34 takes +36. A battle's hook can wake them earlier (ai = 0).
+// within the record's +34 range; the AI becomes the record's +35 and +34 takes +36. A battle's hook can wake them earlier (ai = 0).
 export const dormant = u => u.side === 'enemy' && (u.ai === 7 || u.ai === 8);
 export function wakes(u) {
   if (dormant(u)) {
@@ -401,16 +484,7 @@ export function takeDrop(u, dead) {
   const id = dead.drop; dead.drop = null;
   const it = give(u, id); return it ? { id, it } : null;
 }
-// AI 9 [ROM 0x1EE96]: go to the cell (+34, +35), attacking nothing on the way; there, the AI becomes +37 and +34-36
-// take +38-3A (battle 2: the escort falls back to it and waits, dormant, for the hero to come near)
-// AI 10 [ROM 0x1EFB0]: guard a zone: with a hero within +38 the AI becomes +39 (+34, +35 take +3A, +3B) and the unit
-// acts on it at once; else it walks to a random free cell within +36 / +37 of (+34, +35) (battle 2's leader paces)
-// AI 0x80+ [ROM 0x1BE90]: a caster's; with nothing to cast (no spell or the MP) it takes the AI in +34 for good
-function toward(u, r, x, y) {   // the reachable stop nearest (x, y) by walking cost, or where it stands
-  const df = distanceField(u, [{ x, y }]); let bc = null, bd = Infinity;
-  for (const c of r.values()) { if (!c.stop) continue; const d = c.x === x && c.y === y ? -1 : df.has(key(c.x, c.y)) ? df.get(key(c.x, c.y)) : 999; if (d < bd || (d === bd && c.c < bc.c)) { bd = d; bc = c; } }
-  return bc || r.get(key(u.x, u.y));
-}
+// (the enemies' AI 9, 10 and the casters: src/enemyai.js)
 // the heroes' side's AI 9 [ROM 0x1DEE6, from the player turn at 0xA2C]: a guest goes to the cell (+34, +35) if a path
 // leads there (walking it as below), and at it waits; with no path he follows the units listed at +36 (battle 6: 林雲, 燕蓉, 楊戩, by slot): for
 // the first one alive, the four cells around them, behind first (by the way they face: table 0x1DE72), the first free,
@@ -505,74 +579,60 @@ function summoner(u, r) {
   }
   return stay;
 }
+// AI 0x0B [ROM 0x1F1C2, from the enemy AI at 0x1ECEA]: hunt a class (battle 22: 文王 and 伯邑考). The first unit of the
+// heroes' side (slots 0-9) still standing whose class is +34 is the quarry: of the cells round it (an archer, move type 1,
+// the twenty of 0x111C6 at two and three cells; else the twenty-four of 0x11268, nearest first), the first that is its
+// own cell (it acts where it stands) or free and walkable with a path to it (0xBFE0, cost up to 50) is the target; it
+// walks that path as far as its reach goes and strikes what stands next to it (0x1FD1E, the regular strike after a move).
+// With no such cell it acts this turn by the AI in +35; with the quarry gone, +35 becomes its AI for good [0x1F2F8].
+const HUNT_BOW = [[0, 2], [-1, 1], [1, 1], [-1, -1], [1, -1], [-2, 0], [2, 0], [0, -2], [0, 3], [-1, 2], [1, 2], [-2, 1], [2, 1], [-3, 0], [3, 0], [-2, -1], [2, -1], [-1, -2], [1, -2], [0, -3]];
+const HUNT_RING = RING.concat([[-1, -2], [1, -2], [-2, -1], [2, -1], [-2, 1], [2, 1], [-1, 2], [1, 2], [0, -3], [0, 3], [-3, 0], [3, 0]]);
+function hunt(u, r) {
+  const q = G.units.find(v => v.alive && !v.away && v.slot != null && v.slot < 10 && v.cid === aiP(u, 0x34));
+  if (!q) { u.ai = aiP(u, 0x35); return null; }
+  for (const [dx, dy] of u.moveType === 1 ? HUNT_BOW : HUNT_RING) {
+    const x = q.x + dx, y = q.y + dy; let cell = null;
+    if (x === u.x && y === u.y) cell = r.get(key(u.x, u.y));
+    else {
+      if (!inMap(x, y) || unitAt(x, y) || cost(u, x, y) >= 127) continue;
+      const p = guestPath(u, x, y); if (!p) continue;
+      cell = r.get(key(u.x, u.y)); for (const [px, py] of p.slice(1)) { const c = r.get(key(px, py)); if (!c || !c.stop) break; cell = c; }
+    }
+    const facing = EA.faceRule(Object.assign({}, u, { x: cell.x, y: cell.y }), q.x, q.y), target = EA.strikeTarget(u, cell.x, cell.y, facing);
+    return { cell, kind: target ? 'attack' : 'wait', target, facing, r };
+  }
+  u.huntFallback = true; return null;   // (this turn by +35: planAction reads it)
+}
 function aiScript(u, r) {
   if (u.side === 'player' && u.guest && u.ai === 9) return guestPlan(u, r);
+  if (u.side === 'player' && u.guest && u.ai === 10) return EA.berserk(u);   // (battle 24's 小龍女: src/enemyai.js berserk)
   if (u.side !== 'enemy') return null;
-  if (u.ai === 10) {
-    if (players().some(p => manhattan(p, u) <= aiP(u, 0x38))) { u.ai = aiP(u, 0x39); setAiP(u, 0x34, aiP(u, 0x3a)); setAiP(u, 0x35, aiP(u, 0x3b)); }
-    else {
-      const cx = aiP(u, 0x34), cy = aiP(u, 0x35), dx = aiP(u, 0x36), dy = aiP(u, 0x37);
-      for (let tries = 0; tries < 40; tries++) {
-        const x = dx ? Math.max(0, cx - dx) + rand128() % (dx * 2 + 1) : cx, y = dy ? Math.max(0, cy - dy) + rand128() % (dy * 2 + 1) : cy;
-        if (!inMap(x, y) || cost(u, x, y) >= 127) continue;
-        const o = unitAt(x, y); if (o && o !== u) continue;
-        return { cell: toward(u, r, x, y), kind: 'wait', r };
-      }
-      return { cell: r.get(key(u.x, u.y)), kind: 'wait', r };
-    }
-  }
+  if (u.ai === 0x0b) { const h = hunt(u, r); if (h) return h; if (u.huntFallback) { u.huntFallback = false; return EA.turn(u, aiP(u, 0x35)); } }
   if (u.ai === 0x82 && u.summon) return summoner(u, r);
   if (u.ai === 0x83 && u.summon) return phantom(u, r);
-  if (u.ai >= 0x80 && !u.spells.some(i => D.spells[i] && D.spells[i].mp <= u.mp)) u.ai = aiP(u, 0x34);
-  if (u.ai === 9) {
-    const gx = aiP(u, 0x34), gy = aiP(u, 0x35), cell = toward(u, r, gx, gy);
-    if (cell.x === gx && cell.y === gy) { u.ai = aiP(u, 0x37); setAiP(u, 0x34, aiP(u, 0x38)); setAiP(u, 0x35, aiP(u, 0x39)); setAiP(u, 0x36, aiP(u, 0x3a)); }
-    return { cell, kind: 'wait', r };
-  }
-  return null;
+  return EA.turn(u);   // the rest as the ROM's (src/enemyai.js)
 }
 export function planAction(u, opts) {
   const r = reach(u), scripted = aiScript(u, r); if (scripted) return scripted;
   const stops = [...r.values()].filter(c => c.stop);
   const targets = foes(u);
   const heal = u.spells.map(i => D.spells[i]).find(sp => sp.kind === 12 && sp.pow > 0 && sp.mp <= u.mp);
-  // heals: an enemy only as a healer, AI 0x81 [ROM 0x1C016]; the regular AIs (0-8, the table at 0x1ED0E) only move and
-  // strike (battle 5's archers carry 歸元 but heal only once a beat makes them 0x81)
-  if (heal && !u.status.seal && (u.side !== 'enemy' || u.ai === 0x81)) {
+  if (heal && !u.status.seal) {
     const hurtAllies = allies(u).filter(a => a.mhp - a.hp >= 10);
     for (const c of stops) for (const a of hurtAllies) if (cellsInShape(c.x, c.y, heal.range).some(([x, y]) => x === a.x && y === a.y)) return { cell: c, kind: 'spell', sp: heal, at: [a.x, a.y], r };
   }
-  // the caster [ROM 0x1BE90]: AI 0x80-0x84 with its first spell and the MP for it: with a hero in its reach it casts,
-  // but a third of the time (0x84: never) fights this turn by the AI in +34; with none in reach it closes in without
-  // striking (0x1BF54). 0x81 heals (above) or fights by +34 [ROM 0x1C016]; with no MP left aiScript set +34 for good.
-  if (u.side === 'enemy' && u.ai >= 0x80 && u.ai !== 0x81 && u.ai !== 0x85 && !u.status.seal) {
-    const sp = D.spells[u.spells[0]];
-    if (sp && sp.kind === 13 && sp.mp <= u.mp) {
-      let cast = null;
-      for (const c of stops) for (const [x, y] of cellsInShape(c.x, c.y, sp.range)) {
-        const t = targets.find(v => v.x === x && v.y === y); if (!t) continue;
-        const score = (spellPower(u, sp) >= t.hp ? 1000 : 0) - t.hp - c.c;
-        if (!cast || score > cast.score) cast = { cell: c, kind: 'spell', sp, at: [t.x, t.y], score, r };
-      }
-      if (!cast && targets.length) { const df = distanceField(u, targets); let bc = null, bd = Infinity;
-        for (const c of stops) { const d = df.has(key(c.x, c.y)) ? df.get(key(c.x, c.y)) : 999; if (d < bd || (d === bd && c.c < bc.c)) { bd = d; bc = c; } }
-        return { cell: bc || r.get(key(u.x, u.y)), kind: 'wait', r }; }
-      if (cast && (u.ai === 0x84 || rand128() % 3)) return cast;
-    }
-  }
-  // AI 6 [ROM 0x20386]: the heroes ranked by HP (record +26), not by distance as AI 0: it goes for the weakest
-  const effAi = u.ai >= 0x80 ? aiP(u, 0x34) : u.ai, weakFirst = u.side === 'enemy' && effAi === 6;
+  // (the enemies plan in src/enemyai.js: this is the heroes' autopilot, the test toolbar's and the sim's)
   let best = null;
   for (const c of stops) for (const [x, y] of cellsInShape(c.x, c.y, u.rangeShape)) {
     const t = targets.find(v => v.x === x && v.y === y); if (!t) continue;
     const dmg = Math.max(1, u.atk - t.df);
-    const score = (dmg >= t.hp ? 1000 : 0) + (weakFirst ? -t.hp * 3 : (t.cid === HERO_CID ? 40 : 0) - t.hp) - c.c;
+    const score = (dmg >= t.hp ? 1000 : 0) + (t.cid === HERO_CID ? 40 : 0) - t.hp - c.c;
     if (!best || score > best.score) best = { cell: c, kind: 'attack', target: t, score, r };
   }
   const goal = opts && opts.rescue && u.side === 'player' && u.moveType === 3 && H.goal ? H.goal(G) : null;   // sim option: fliers head for the battle's goal
   if (best && !goal) return best;
   if (!targets.length && !goal) return { cell: r.get(key(u.x, u.y)), kind: 'wait', r };
-  const df = distanceField(u, goal || (weakFirst ? [targets.reduce((a, b) => b.hp < a.hp ? b : a)] : targets));
+  const df = distanceField(u, goal || targets);
   let bc = null, bd = Infinity;
   for (const c of stops) { const d = df.has(key(c.x, c.y)) ? df.get(key(c.x, c.y)) : 999; if (d < bd || (d === bd && c.c < bc.c)) { bd = d; bc = c; } }
   return { cell: bc || r.get(key(u.x, u.y)), kind: 'wait', r };

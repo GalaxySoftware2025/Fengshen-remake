@@ -9,6 +9,6 @@ export function byRoom(sets) {
     openChest: (x, y) => now().openChest && now().openChest(x, y),
     ground: (x, z) => now().ground(x, z),
     get mood() { return now().mood; }, get particles() { return now().particles; },
-    get props() { return now().props || []; }, get slopes() { return now().slopes || []; },
+    get props() { return now().props || []; }, get slopes() { return now().slopes || []; }, get keepFloor() { return !!now().keepFloor; },
   };
 }

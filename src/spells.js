@@ -2,13 +2,14 @@
 //   ctx.vfx, ctx.cam, ctx.caster (Actor), ctx.targets (Actors), ctx.at (Vector3 on the ground), ctx.wait(ms),
 //   ctx.hit(i) shows the result on target i (all when omitted), ctx.pose(kind) drives the caster's sprite pose.
 import * as THREE from 'three';
-import { rand, groundH } from './world.js';
+import { rand, effectH } from './world.js';
 import { NOISE } from './vfx.js';
-import { V, ease, basis, swordMesh, pointAlong, bezier, trail, intro, outro, DARK, ticker, facing, yawOf, swirl, arrowMesh, flameRing, LEAF, talismanTex, petalGeo } from './spellkit.js';
+import { V, ease, basis, swordMesh, pointAlong, bezier, trail, intro, outro, DARK, ticker, cueAt, facing, yawOf, swirl, arrowMesh, flameRing, LEAF, talismanTex, petalGeo } from './spellkit.js';
 import { iceMaterial, shardGeometry, chunkGeometry, shatter, frost } from './elements.js';
-import { houndRunTex } from './levelup.js';   // (the 哮天犬's gallop; levelup.js imports arrowMesh from here: used only at run time)
-import { SPELLBOOK } from './spellbook.js';
+import { SPELLBOOK, PAL, energyStreak, beastSprite } from './spellbook.js';
 export { arrowMesh };
+// fn after ms on the game clock (ctx.wait: not setTimeout, which runs off the fast-forward and the stepped video)
+const later = (ctx, ms, fn) => { ctx.wait(ms).then(fn); };
 
 // ---------------------------------------------------------------- archetypes
 async function flyingSwords(ctx, n) {
@@ -38,6 +39,7 @@ async function flyingSwords(ctx, n) {
 }
 async function giantSword(ctx) {
   const col = [0.5, 0.9, 1], v = ctx.vfx;
+  cueAt(ctx, 0.97);   // (the original's sound as the sword appears over him, 0.97 s after the cast begins; over at 2.8 s)
   await intro(ctx, col, { dur: 900, dist: 11, pitch: 0.38 });
   DARK(ctx, 0.45, 0.9, 0.7, 0.45);
   v.runeCircle(ctx.at, col, 2.4, 2.4, { spin: 0.6, intensity: 2 });
@@ -51,7 +53,7 @@ async function giantSword(ctx) {
       s.userData.hit = 1; for (const [, r] of ribs) r.end();
       v.impact(ctx.at, col, 1.5); v.ring(ctx.at, col, 4, 0.8, { intensity: 1.2 }); v.decal(ctx.at, col, 2.2, 1.6, { intensity: 0.7 });
       for (let i = 0; i < 8; i++) { const a = i / 8 * 6.28, p2 = ctx.at.clone().add(V(Math.cos(a) * 1.4, 0, Math.sin(a) * 1.4)); const sm = swordMesh(col, 1.1); sm.position.copy(p2).setY(p2.y - 1.2);
-        v.timed(sm, 1.1, (k2) => { sm.position.y = groundH(p2.x, p2.z) - 1.2 + Math.min(1, k2 * 4) * 1.3; sm.rotation.y = a; if (k2 > 0.8) sm.scale.setScalar(1.1 * (1 - (k2 - 0.8) * 5)); });
+        v.timed(sm, 1.1, (k2) => { sm.position.y = effectH(p2.x, p2.z) - 1.2 + Math.min(1, k2 * 4) * 1.3; sm.rotation.y = a; if (k2 > 0.8) sm.scale.setScalar(1.1 * (1 - (k2 - 0.8) * 5)); });
         v.burst(p2.clone().setY(p2.y + 0.1), { n: 8, speed: 2.5, col: [0.55, 0.45, 0.35], size: 0.06, life: 0.8, g: 9, shape: 1 }); }
       for (let i = 0; i < 26; i++) { const a = rand(0, 6.28), sp = rand(1.5, 4); v.smokePuff(ctx.at.x, ctx.at.y + 0.15, ctx.at.z, { vx: Math.cos(a) * sp, vy: rand(0.2, 0.9), vz: Math.sin(a) * sp, drag: 2.2, life: rand(1.4, 2.2), size: 0.5, size1: 1.6, tint: [0.5, 0.45, 0.38] }); }
       for (let i = 0; i < 40; i++) v.spark(ctx.at.x + rand(-0.4, 0.4), ctx.at.y + 0.1, ctx.at.z + rand(-0.4, 0.4), { vx: rand(-3, 3), vy: rand(2, 5), vz: rand(-3, 3), g: 12, life: rand(0.6, 1.1), size: rand(0.05, 0.1), r: 0.45, gg: 0.38, b: 0.3, a: 1, shape: 1, floor: ctx.at.y + 0.03 });
@@ -60,31 +62,44 @@ async function giantSword(ctx) {
   });
   await ctx.wait(800); ctx.hit(); await ctx.wait(1200); outro(ctx);
 }
-async function swordRain(ctx, n, col) {
+// [ROM fx 4, 5] swords fly up from him into a circle in the sky, then rain down round the target, the
+// first landing on the original's sound (F s after the cast begins); they stand in the ground until the effect is over (E)
+async function swordRain(ctx, n, col, F, E) {
   const v = ctx.vfx;
   await intro(ctx, col, { dur: 850, dist: 11, pitch: 0.45 });
-  const sky = ctx.at.clone().add(V(0, 6.5, 0));
-  const disc = v.runeCircle(sky, col, 2.6, 2.6, { spin: 1.4, intensity: 1.8 }); disc.position.y = sky.y;
-  v.light(sky, col, 40, 2.4, 12);
+  const sky = ctx.at.clone().add(V(0, 6.5, 0)), L = Math.max(2.6, E - ctx.now() - 0.2);
+  const disc = v.runeCircle(sky, col, 2.6, L, { spin: 1.4, intensity: 1.8 }); disc.position.y = sky.y;
+  v.light(sky, col, 40, L, 12);
+  // the swords rise from him into the circle, as the original's do while it gathers
+  const c = ctx.caster.chest(), rise = Math.max(0.3, F - 0.5 - ctx.now());
+  for (let i = 0; i < Math.min(n, 8); i++) {
+    const s = swordMesh(col, 0.6), rib = v.ribbon({ col, width: 0.05, n: 10 }), d = i * rise / 8, to = sky.clone().add(V(rand(-1.4, 1.4), rand(-0.3, 0.3), rand(-1.4, 1.4)));
+    v.timed(s, d + 0.5, (k, dt, t) => { if (t < d) { s.visible = false; return; } s.visible = true; const f = Math.min(1, (t - d) / 0.5), p = c.clone().lerp(to, ease(f)); s.position.copy(p); pointAlong(s, V(0, -1, 0)); rib.push(p); if (f >= 1) { s.visible = false; rib.end(); v.burst(to, { n: 8, speed: 1.5, col, size: 0.05, life: 0.4, g: 0 }); } });
+  }
+  await ctx.until(F - 0.22);   // (a sword falls in 0.22 s: the first lands on the sound)
+  const T = ctx.now(), life = Math.max(1.6, E - 0.1 - T);
   for (let i = 0; i < n; i++) {
-    const land = ctx.at.clone().add(V(rand(-1.2, 1.2), 0, rand(-1.2, 1.2))); land.y = groundH(land.x, land.z);
+    const land = ctx.at.clone().add(V(rand(-1.2, 1.2), 0, rand(-1.2, 1.2))); land.y = effectH(land.x, land.z);
     const st = V(land.x + rand(-0.5, 0.5), sky.y, land.z + rand(-0.5, 0.5));
     const s = swordMesh(col, 0.85), rib = v.ribbon({ col, width: 0.07, n: 12 });
-    v.timed(s, 1.6, (k, dt, t) => {
-      const d = 0.25 + i * (1.0 / n);
+    v.timed(s, life, (k, dt, t) => {
+      const d = i * (0.9 / n);
       if (t < d) { s.visible = false; return; } s.visible = true;
       const f = Math.min(1, (t - d) / 0.22), p = st.clone().lerp(land, f);
       s.position.copy(p); pointAlong(s, st.clone().sub(land)); if (f < 1) rib.push(p.clone().add(st.clone().sub(land).normalize().multiplyScalar(0.9)));
       if (f >= 1 && !s.userData.hit) { s.userData.hit = 1; rib.end(); v.burst(land.clone().setY(land.y + 0.1), { n: 14, speed: 2.5, col, size: 0.05, life: 0.5 }); v.ring(land, col, 0.8, 0.35); v.decal(land, col, 0.5, 0.6); v.shake(0.04, 0.1);
         v.smokePuff(land.x, land.y + 0.1, land.z, { vy: 0.4, life: 1, size: 0.3, size1: 0.8, tint: [0.5, 0.45, 0.4] }); }
-      if (k > 0.9) s.scale.setScalar(0.85 * (1 - (k - 0.9) * 10));
+      if (t > life - 0.3) s.scale.setScalar(0.85 * Math.max(0.001, (life - t) / 0.3));
     });
   }
-  await ctx.wait(1450); v.impact(ctx.at, col, 1.3); ctx.hit(); await ctx.wait(700); outro(ctx);
+  await ctx.until(F); ctx.cue();
+  await ctx.wait(900); v.impact(ctx.at, col, 1.3); ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
-// 百步穿楊 / 旋風矢: the original fires one big arrow across the field (旋風矢 adds a whirlwind on the target)
+// 百步穿楊 / 旋風矢: the original fires one big arrow across the field; it strikes with its one sound (1.67 s after the
+// cast begins) and a whirlwind spins on the target (the ROM's frames show it for both: tools/rom/spellsheet.py 12), the
+// effect over at 4.85 s
 async function arrow(ctx, wind) {
-  const col = wind ? [0.55, 1, 0.7] : [1, 0.82, 0.4], v = ctx.vfx;
+  const col = wind ? [0.55, 1, 0.7] : [1, 0.82, 0.4], v = ctx.vfx, F = 1.67, E = 4.85;
   await intro(ctx, col, { dur: 500, dist: 10, pitch: 0.4, yaw: -0.6 });
   const c = ctx.caster.chest(), b = ctx.at.clone().setY(ctx.at.y + 0.55), dir = b.clone().sub(c).normalize();
   const a = c.clone().add(dir.clone().multiplyScalar(0.35)).setY(c.y + 0.1);
@@ -92,15 +107,16 @@ async function arrow(ctx, wind) {
   // draw: the arrow materialises at full size and charges
   const g = arrowMesh(col, 1.0); pointAlong(g, dir); g.position.copy(a);
   v.light(a, col, 8, 1.0, 5);
-  ticker(v, 0.75, (k, dt, t) => {
-    const pull = Math.min(1, t / 0.6); g.position.copy(a).add(dir.clone().multiplyScalar(-0.35 * pull));
+  const draw = Math.max(0.35, Math.min(0.75, F - 0.3 - ctx.now()));   // (a shorter draw for a caster whose own cast runs long: it looses on time)
+  ticker(v, draw, (k, dt, t) => {
+    const pull = Math.min(1, t / (draw * 0.8)); g.position.copy(a).add(dir.clone().multiplyScalar(-0.35 * pull));
     for (const m of g.userData.glow) m.material.opacity = pull * 0.5;
     g.userData.head.material.emissiveIntensity = 1 + pull * 3;
     const hp = g.position.clone().add(dir.clone().multiplyScalar(0.85));
     for (let i = 0; i < 3; i++) { const q = hp.clone().add(V(rand(-1, 1), rand(-0.8, 1), rand(-1, 1))); v.spark(q.x, q.y, q.z, { seek: { x: hp.x, y: hp.y, z: hp.z, k: 7 }, life: 0.35, size: rand(0.04, 0.08), r: col[0], gg: col[1], b: col[2], shape: 1 }); }
   });
   v.timed(g, 2.5, () => {});
-  await ctx.wait(750);
+  await ctx.wait(draw * 1000); await ctx.until(F - 0.3);   // (it strikes about 0.3 s after it leaves the bow)
   // release
   v.ring(a, col, 1.6, 0.35, { vertical: true, yaw: yawOf(dir), y: a.y }); v.ring(a, [1, 1, 1], 0.9, 0.25, { vertical: true, yaw: yawOf(dir), y: a.y });
   v.shake(0.08, 0.15);
@@ -121,22 +137,26 @@ async function arrow(ctx, wind) {
     if (f >= 1) { g.visible = false; }
     else if (hit) for (const m of g.userData.glow) m.material.opacity *= 0.85;
   }, () => { rib.end(); core.end(); for (const [, r] of helix) r.end(); g.visible = false; }));
-  if (wind) {
+  {
     // whirlwind: a twisting funnel with leaves and dust caught in it
-    swirl(v, ctx.at.clone().setY(ctx.at.y), col, 0.35, 1.25, 3.2, 1.6, { speed: 5, twist: 5, sway: true, foam: [0.9, 1, 0.9], intensity: 0.75 });
-    for (let i = 0; i < 70; i++) setTimeout(() => {
+    await ctx.wait(250);
+    swirl(v, ctx.at.clone().setY(ctx.at.y), wind ? col : [0.85, 0.95, 0.8], 0.35, 1.25, 3.2, 1.9, { speed: 5, twist: 5, sway: true, foam: [0.9, 1, 0.9], intensity: 0.75 });
+    for (let i = 0; i < 90; i++) later(ctx, i * 16, () => {
       const ang = rand(0, 6.28), r = rand(0.3, 0.9), leaf = Math.random() < 0.5;
       const cc = leaf ? [[0.45, 0.75, 0.25], [0.6, 0.85, 0.35]][(Math.random() * 2) | 0] : [0.85, 1, 0.9];
       (leaf ? v.smoke.bind(v) : v.spark.bind(v))(ctx.at.x + Math.cos(ang) * r, ctx.at.y + rand(0.05, 0.6), ctx.at.z + Math.sin(ang) * r, { vy: rand(1.2, 2.4), life: rand(0.8, 1.3), size: leaf ? rand(0.06, 0.1) : 0.05, r: cc[0], gg: cc[1], b: cc[2], a: 1, shape: 1, orb: { x: ctx.at.x, z: ctx.at.z, w: rand(7, 11) } });
-    }, i * 16);
+    });
     for (let i = 0; i < 16; i++) { const ang = rand(0, 6.28); v.smokePuff(ctx.at.x + Math.cos(ang) * 0.6, ctx.at.y + 0.15, ctx.at.z + Math.sin(ang) * 0.6, { vy: rand(0.2, 0.6), life: rand(1, 1.6), size: 0.45, size1: 1.2, tint: [0.55, 0.5, 0.4], orb: { x: ctx.at.x, z: ctx.at.z, w: 5 } }); }
-    await ctx.wait(1400);
-  } else await ctx.wait(700);
+    // as it dies the dust and leaves it carried settle round the target
+    later(ctx, 1700, () => { for (let i = 0; i < 24; i++) { const ang = rand(0, 6.28), r = rand(0.2, 1.1); v.smoke(ctx.at.x + Math.cos(ang) * r, ctx.at.y + rand(1, 2.4), ctx.at.z + Math.sin(ang) * r, { vx: rand(-0.3, 0.3), vy: -rand(0.3, 0.7), life: rand(1.2, 1.8), size: rand(0.06, 0.1), r: 0.5, gg: 0.75, b: 0.3, a: 1, shape: 1, wob: 1.4, ph: rand(0, 6), floor: ctx.at.y + 0.03 }); } });
+    await ctx.until(E - 0.2);
+  }
   outro(ctx);
 }
 // 炎殺: [ROM fx 22] flames spring up around the target, a fire sphere swells out of them and erupts
 async function flameKill(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone(), gy = groundH(at.x, at.z);
+  const v = ctx.vfx, at = ctx.at.clone(), gy = effectH(at.x, at.z);
+  cueAt(ctx, 0.53);   // (the original's flames roar up 0.53 s after the cast begins, its one sound; over at 2.75 s)
   await intro(ctx, [1, 0.5, 0.15], { dur: 850, dist: 10, pitch: 0.42 });
   DARK(ctx, 0.45, 0.85, 0.95, 1);
   v.decal(at, [1, 0.3, 0.05], 1.5, 3.4, { intensity: 0.7, flicker: true });
@@ -193,22 +213,26 @@ async function meteor(ctx) {
   ticker(v, 1.6, (k) => flameRing(v, ctx.at, 1.0, 2, 0.4 * (1 - k)));
   ctx.hit(); await ctx.wait(1300); outro(ctx);
 }
-// 三昧真火: [ROM fx 23] a ring of fireballs with comet tails circles the target, then they dive into the cross of cells
+// 三昧真火: [ROM fx 23] a ring of fireballs with comet tails circles the target, then they dive into the cross of cells one
+// after another, the first on the original's first sound (3.38 s after the cast begins), a roar with each to 4.9 s; the
+// five fires join into one column; over at 5.85 s
 async function fireOrbs(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone();
+  const v = ctx.vfx, at = ctx.at.clone(), F = 3.38, E = 5.85;
   await intro(ctx, [1, 0.5, 0.15], { dur: 900, dist: 11, pitch: 0.45 });
   DARK(ctx, 0.42, 0.85, 0.95, 1);
-  const cells = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0, 0], [1, 0], [-1, 0]].map(([dx, dz]) => { const p = V(at.x + dx, 0, at.z + dz); p.y = groundH(p.x, p.z); return p; });
+  const C = Math.max(1.45, F - 0.28 - ctx.now());   // (C: they circle until the first dives, 0.28 s before it lands)
+  cueAt(ctx, F);
+  const cells = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0, 0], [1, 0], [-1, 0]].map(([dx, dz]) => { const p = V(at.x + dx, 0, at.z + dz); p.y = effectH(p.x, p.z); return p; });
   v.runeCircle(at, [1, 0.5, 0.15], 2.2, 3, { spin: 1.6 });
   const n = 8; let landed = 0;
   for (let i = 0; i < n; i++) {
     const o = v.fireball(0.2, { heat: 1.3 }), rib = v.ribbon({ col: [1, 0.45, 0.1], width: 0.13, n: 18 });
     let from = null, done = false;
-    v.timed(o, 2.6, (k, dt, t) => {
+    const dive = C + i * 0.2;
+    v.timed(o, dive + 1.2, (k, dt, t) => {
       o.userData.mat.uniforms.uT.value = t + i;
-      const dive = 1.45 + i * 0.09;
       let p;
-      if (t < dive) { const r = 2.1 - Math.min(1, t / dive) * 0.6, a = t * 3.4 + i / n * 6.28; p = V(at.x + Math.cos(a) * r, at.y + 1.2 + Math.sin(t * 4 + i) * 0.15 + t * 0.4, at.z + Math.sin(a) * r); from = p.clone(); }
+      if (t < dive) { const r = 2.1 - Math.min(1, t / dive) * 0.6, a = t * 3.4 + i / n * 6.28; p = V(at.x + Math.cos(a) * r, at.y + 1.2 + Math.sin(t * 4 + i) * 0.15 + Math.min(t, 1.6) * 0.4, at.z + Math.sin(a) * r); from = p.clone(); }
       else { const f = Math.min(1, (t - dive) / 0.28), tg = cells[i].clone().setY(cells[i].y + 0.25); p = bezier(from, from.clone().lerp(tg, 0.5).add(V(0, 1.2, 0)), tg, f * f);
         if (f >= 1 && !done) {
           done = true; o.visible = false; rib.end(); landed++;
@@ -219,17 +243,18 @@ async function fireOrbs(ctx) {
       if (!done) { o.position.copy(p); rib.push(p); if (Math.random() < 0.7) v.puff(p.x, p.y, p.z, { life: 0.3, size: 0.22, size1: 0.35, vy: 0.3 }); }
     });
   }
-  v.light(at.clone().setY(at.y + 1.4), [1, 0.5, 0.15], 40, 1.6, 9);
-  await ctx.wait(2300);
+  v.light(at.clone().setY(at.y + 1.4), [1, 0.5, 0.15], 40, C + 1.6, 9);
+  await ctx.until(F + 1.75);
   // the five fires join into one column
   v.flash([1, 0.55, 0.25], 0.22); v.shake(0.2, 0.35); v.ring(at, [1, 0.6, 0.2], 3.2, 0.7);
   ticker(v, 0.8, (k) => { for (let i = 0; i < 5; i++) v.realFire(at.x + rand(-0.45, 0.45), at.y, at.z + rand(-0.45, 0.45), { size: rand(0.84, 1.33) * (1 - k * 0.5), asp: rand(1.3, 1.7), life: rand(0.35, 0.6), vy: rand(2.5, 5) }); });
   v.explode(at.clone().setY(at.y + 0.6), 0.6, { n: 16 });
-  ctx.hit(); await ctx.wait(1500); outro(ctx);
+  ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
 // 冰晶術: [ROM fx 26] an ice orb falls trailing sparkles, smashes, and a cluster of crystals bursts up and shatters
 async function iceCrystals(ctx) {
   const col = [0.55, 0.85, 1], v = ctx.vfx, at = ctx.at.clone();
+  cueAt(ctx, 0.98);   // (the original's one sound as the orb forms, 0.98 s after the cast begins; over at 2.3 s)
   await intro(ctx, col, { dur: 800, dist: 10, pitch: 0.45 });
   DARK(ctx, 0.35, 0.9, 0.5, 0.2);
   const iceMat = iceMaterial();   // (src/elements.js)
@@ -249,7 +274,7 @@ async function iceCrystals(ctx) {
   for (let i = 0; i < 13; i++) {
     const a = rand(0, 6.28), r = i === 0 ? 0 : rand(0.3, 1.0), h = i === 0 ? 2.0 : rand(0.6, 1.5);
     const m = new THREE.Mesh(shardGeometry(), iceMat); m.scale.set(0.001, 0.001, 0.001);
-    const p = V(at.x + Math.cos(a) * r, groundH(at.x, at.z) - 0.05, at.z + Math.sin(a) * r);
+    const p = V(at.x + Math.cos(a) * r, effectH(at.x, at.z) - 0.05, at.z + Math.sin(a) * r);
     m.position.copy(p); m.rotation.set(rand(-0.5, 0.5) * (r > 0 ? 1 : 0.2), rand(0, 6), rand(-0.5, 0.5) * (r > 0 ? 1 : 0.2));
     v.timed(m, 1.5, (k, dt, t) => {
       const d = i * 0.03, g = Math.min(1, Math.max(0, (t - d) / 0.14)), w = (i === 0 ? 0.24 : 0.17);
@@ -267,6 +292,7 @@ async function iceCrystals(ctx) {
 // 疾雷: [ROM fx 30] one bolt strikes the target and a spiked ball of lightning crackles on it
 async function thunder(ctx) {
   const col = [0.7, 0.8, 1], v = ctx.vfx, at = ctx.at.clone();
+  cueAt(ctx, 0.7);   // (the original's thunder 0.7 s after the cast begins, as the storm gathers; over at 1.8 s)
   await intro(ctx, col, { dur: 800, dist: 11, pitch: 0.34 });
   v.screen.darkTarget = 0.6; v.screen.darkCol.setRGB(0.9, 0.85, 0.6);
   for (let i = 0; i < 26; i++) v.smokePuff(at.x + rand(-3, 3), at.y + rand(6, 7.5), at.z + rand(-3, 3), { vx: rand(-0.3, 0.3), life: 2.8, size: 2.2, size1: 3.4, tint: [0.12, 0.12, 0.17] });
@@ -303,51 +329,53 @@ async function thunder(ctx) {
 }
 // 歸元 / 凝神歸元: [ROM fx 38/40] spirit leaves drift down onto the target, a lotus-shaped ring of light opens under
 // it and motes of life rise, wound by spiralling ribbons
-async function heal(ctx, col) {
+// (it heals with the original's chime, F s after the cast begins: 3.02 for both; the leaves take the time before it)
+async function heal(ctx, col, F = 3.02) {
   const v = ctx.vfx;
   await intro(ctx, col, { dur: 600, dist: 8, pitch: 0.42 });
-  const list = ctx.targets.length ? ctx.targets : [{ pos: ctx.at }];
+  const list = ctx.targets.length ? ctx.targets : [{ pos: ctx.at }], D = Math.max(0.9, F - 0.45 - ctx.now()), R = Math.max(900, (F - 0.4 - ctx.now()) * 1000);   // (D: the leaves' fall; R ms: the ring)
   for (const t of list) {
     const P = t.pos.clone();
     // leaves of light spiral down onto the target
     for (let i = 0; i < 9; i++) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.32), new THREE.MeshBasicMaterial({ map: LEAF, color: new THREE.Color(...col).multiplyScalar(1.1), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
       const a0 = i / 9 * 6.28, d = i * 0.05;
-      v.timed(m, 1.0 + d, (k, dt, tt) => {
-        const f = Math.max(0, Math.min(1, (tt - d) / 0.9)), a = a0 + f * 4, r = 0.9 * (1 - f) + 0.15;
+      v.timed(m, D + 0.1 + d, (k, dt, tt) => {
+        const f = Math.max(0, Math.min(1, (tt - d) / D)), a = a0 + f * (3 + D), r = 0.9 * (1 - f) + 0.15;
         m.position.set(P.x + Math.cos(a) * r, P.y + 2.6 - f * 2.2, P.z + Math.sin(a) * r); m.rotation.set(tt * 3 + i, a, tt * 2);
         m.material.opacity = Math.min(1, f * 5) * (1 - Math.max(0, (f - 0.85) / 0.15));
         if (f >= 1 && !m.userData.p) { m.userData.p = 1; v.burst(m.position, { n: 5, speed: 1, col, size: 0.04, life: 0.4, g: 0 }); }
       });
     }
-    setTimeout(() => {
+    later(ctx, R, () => {
       v.runeCircle(P, col, 1.0, 1.8, { spin: 0.5, intensity: 1.2 }); v.decal(P, col, 1.1, 1.8, { intensity: 0.7 }); v.ring(P, col, 1.6, 0.7, { intensity: 1.2 });
       v.pillar(P, col, 0.45, 3.2, 1.4, { taper: 0.9, intensity: 0.45, grow: 1 });
       v.light(P.clone().setY(P.y + 1.2), col, 12, 1.6, 6);
       for (let j = 0; j < 3; j++) { const r = v.ribbon({ col, width: 0.06, n: 22 });
         ticker(v, 1.3, (k, dt, tt) => { const a = tt * 6 + j * 2.09, rr = 0.5 - k * 0.2; r.push(V(P.x + Math.cos(a) * rr, P.y + 0.1 + k * 2.2, P.z + Math.sin(a) * rr)); }, () => r.end()); }
-      for (let i = 0; i < 50; i++) setTimeout(() => v.spark(P.x + rand(-0.45, 0.45), P.y + rand(0, 0.3), P.z + rand(-0.45, 0.45), { vy: rand(0.7, 1.5), life: rand(0.9, 1.4), size: rand(0.04, 0.08), r: col[0], gg: col[1], b: col[2], shape: Math.random() < 0.6 ? 1 : 0, wob: 0.5, ph: rand(0, 6) }), i * 20);
-    }, 900);
+      for (let i = 0; i < 50; i++) later(ctx, i * 20, () => v.spark(P.x + rand(-0.45, 0.45), P.y + rand(0, 0.3), P.z + rand(-0.45, 0.45), { vy: rand(0.7, 1.5), life: rand(0.9, 1.4), size: rand(0.04, 0.08), r: col[0], gg: col[1], b: col[2], shape: Math.random() < 0.6 ? 1 : 0, wob: 0.5, ph: rand(0, 6) }));
+    });
   }
-  await ctx.wait(1300); ctx.hit(); await ctx.wait(1000); outro(ctx);
+  await ctx.until(F); ctx.hit(); await ctx.wait(1000); outro(ctx);
 }
 // 靈血咒 / 淨衣咒: [ROM fx 44/45] a golden talisman descends, its seal glows and it bursts, washing the target clean
+// (it bursts on the original's chime, 3.45 s after the cast begins; the talisman takes the time before it to come down)
 async function cleanse(ctx, col, glyph) {
-  const v = ctx.vfx;
+  const v = ctx.vfx, F = 3.45;
   await intro(ctx, col, { dur: 600, dist: 8, pitch: 0.42 });
-  const list = ctx.targets.length ? ctx.targets : [{ pos: ctx.at }], tex = talismanTex(glyph);
+  const list = ctx.targets.length ? ctx.targets : [{ pos: ctx.at }], tex = talismanTex(glyph), L = Math.max(1.5, F - 0.05 - ctx.now()), DN = L - 0.7;   // (L: the card's life, to the burst; DN: its descent)
   for (const t of list) {
     const P = t.pos.clone(), top = P.clone().setY(P.y + 2.6);
     const card = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 1.1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
     const aura = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.8), new THREE.MeshBasicMaterial({ map: v.glowTex, color: new THREE.Color(...col), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     aura.position.z = -0.01; card.add(aura);
-    v.timed(card, 1.5, (k, dt, tt) => {
-      const f = Math.min(1, tt / 0.8);
+    v.timed(card, L, (k, dt, tt) => {
+      const f = Math.min(1, tt / DN);
       card.position.copy(top).setY(top.y + 1.4 * (1 - ease(f)) + Math.sin(tt * 3) * 0.05);
       card.lookAt(ctx.cam.camera.position); card.rotateZ(Math.sin(tt * 2.2) * 0.08);
-      aura.material.opacity = Math.min(1, Math.max(0, (tt - 0.6) / 0.5)) * 0.8;
-      card.material.color.setScalar(1 + Math.max(0, tt - 0.8) * 2.5);
-      if (tt > 0.8 && Math.random() < 0.6) { const q = card.position; v.spark(q.x + rand(-0.25, 0.25), q.y + rand(-0.5, 0.5), q.z + rand(-0.25, 0.25), { vy: -rand(0.4, 1), life: 0.8, size: 0.05, r: col[0], gg: col[1], b: col[2], shape: 1 }); }
+      aura.material.opacity = Math.min(1, Math.max(0, (tt - DN + 0.2) / 0.5)) * 0.8;
+      card.material.color.setScalar(1 + Math.max(0, tt - DN) * 2.5);
+      if (tt > DN && Math.random() < 0.6) { const q = card.position; v.spark(q.x + rand(-0.25, 0.25), q.y + rand(-0.5, 0.5), q.z + rand(-0.25, 0.25), { vy: -rand(0.4, 1), life: 0.8, size: 0.05, r: col[0], gg: col[1], b: col[2], shape: 1 }); }
       if (k >= 0.99 && !card.userData.b) {
         card.userData.b = 1;
         v.burst(card.position, { n: 40, speed: 3, cols: [[1, 0.95, 0.7], col], size: 0.06, life: 0.9, g: 2, shape: 1 });
@@ -358,12 +386,15 @@ async function cleanse(ctx, col, glyph) {
       }
     });
   }
-  await ctx.wait(1550); ctx.hit(); await ctx.wait(900); outro(ctx);
+  await ctx.until(F); ctx.hit(); await ctx.wait(900); outro(ctx);
 }
-// 迴夢: [ROM fx 51] a lotus blooms around the target, then bursts into pink light
+// 迴夢: [ROM fx 51] a lotus blooms around the target, pulsing pink with each of the original's nine sounds (the first
+// 1.78 s after the cast begins, a sixth of a second apart), then bursts into pink light (3.2 s); the target drowses,
+// flickering in a pink haze; over at 5.3 s
 async function dream(ctx) {
-  const col = [1, 0.6, 0.9], v = ctx.vfx, at = ctx.at.clone();
+  const col = [1, 0.6, 0.9], v = ctx.vfx, at = ctx.at.clone(), F = 1.78, E = 5.33, tr = ctx.track.length ? ctx.track : [...Array(9).keys()].map(i => i / 6);
   await intro(ctx, col, { dur: 700, dist: 9, pitch: 0.45 });
+  await ctx.until(F - 0.3);
   DARK(ctx, 0.4, 0.5, 0.85, 0.4);
   const mat = new THREE.ShaderMaterial({ side: THREE.DoubleSide, transparent: true, depthWrite: true,
     uniforms: { uA: { value: 0 } },
@@ -377,59 +408,38 @@ async function dream(ctx) {
     const pivot = new THREE.Group(), m = new THREE.Mesh(pg, mat); pivot.rotation.y = i / n * 6.28 + off; m.scale.setScalar(sc); pivot.add(m); lotus.add(pivot); petals.push({ m, open0, open1, pivot });
   }
   const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.7, 0.6), toneMapped: false })); core.position.y = 0.12; lotus.add(core);
-  lotus.position.set(at.x, groundH(at.x, at.z) + 0.02, at.z);
+  lotus.position.set(at.x, effectH(at.x, at.z) + 0.02, at.z);
   v.light(at.clone().setY(at.y + 1), col, 25, 2.4, 6); v.decal(at, col, 1.6, 2.4);
-  v.timed(lotus, 2.2, (k, dt, t) => {
+  const BU = F + 1.42 - ctx.now();   // (the burst, after the last pulse)
+  v.timed(lotus, BU + 0.9, (k, dt, t) => {
     const g = ease(Math.min(1, t / 1.0)); lotus.scale.setScalar(0.2 + 0.9 * g); lotus.rotation.y += dt * 0.5;
-    mat.uniforms.uA.value = Math.min(1, t * 3) * (t > 1.6 ? Math.max(0, 1 - (t - 1.6) / 0.4) : 1);
-    for (const p of petals) p.m.rotation.x = -(p.open0 + (p.open1 - p.open0) * g) + (t > 1.25 ? (t - 1.25) * 1.5 : 0);
+    mat.uniforms.uA.value = Math.min(1, t * 3) * (t > BU + 0.4 ? Math.max(0, 1 - (t - BU - 0.4) / 0.4) : 1);
+    for (const p of petals) p.m.rotation.x = -(p.open0 + (p.open1 - p.open0) * g) + (t > BU ? (t - BU) * 1.5 : 0);
     if (Math.random() < 0.5) v.spark(at.x + rand(-0.6, 0.6), at.y + rand(0.2, 1), at.z + rand(-0.6, 0.6), { vy: rand(0.2, 0.6), life: 1, size: 0.06, r: 1, gg: 0.75, b: 0.92, shape: 0, wob: 0.8, ph: rand(0, 6) });
   });
-  await ctx.wait(1300);
+  // a pulse of pink light on each sound
+  for (let i = 0; i < tr.length; i++) { await ctx.until(F + tr[i]); if (i === 0) ctx.cue(); core.scale.setScalar(1.6); v.light(at.clone().setY(at.y + 0.6), col, 10, 0.12, 5); v.ring(at, col, 1.2 + (i % 3) * 0.3, 0.3, { intensity: 0.8 }); later(ctx, 80, () => core.scale.setScalar(1)); }
+  await ctx.until(F + 1.42);
   // bloom bursts: pink light puffs, flying petals and a drowsy haze
   v.flash([1, 0.6, 0.85], 0.18); v.ring(at, [1, 0.7, 0.9], 2.4, 0.6);
-  for (let i = 0; i < 5; i++) setTimeout(() => { const q = at.clone().add(V(rand(-0.5, 0.5), rand(0.4, 1.2), rand(-0.5, 0.5)));
-    v.burst(q, { n: 16, speed: 2, col: [1, 0.7, 0.92], size: 0.06, life: 0.7, g: 0, shape: 1 }); v.spark(q.x, q.y, q.z, { life: 0.4, size: 0.9, size1: 0.1, r: 1, gg: 0.6, b: 0.85, shape: 0 }); }, i * 90);
+  for (let i = 0; i < 5; i++) later(ctx, i * 90, () => { const q = at.clone().add(V(rand(-0.5, 0.5), rand(0.4, 1.2), rand(-0.5, 0.5)));
+    v.burst(q, { n: 16, speed: 2, col: [1, 0.7, 0.92], size: 0.06, life: 0.7, g: 0, shape: 1 }); v.spark(q.x, q.y, q.z, { life: 0.4, size: 0.9, size1: 0.1, r: 1, gg: 0.6, b: 0.85, shape: 0 }); });
   for (let i = 0; i < 30; i++) v.smoke(at.x + rand(-0.5, 0.5), at.y + rand(0.3, 1), at.z + rand(-0.5, 0.5), { vx: rand(-1, 1), vy: rand(0.4, 1.4), vz: rand(-1, 1), drag: 1, life: rand(1.2, 2), size: 0.1, r: 1, gg: rand(0.45, 0.7), b: 0.75, a: 1, shape: 1, wob: 1.2, ph: rand(0, 6), orb: { x: at.x, z: at.z, w: 1.5 } });
-  for (let i = 0; i < 6; i++) v.smokePuff(at.x + rand(-1, 1), at.y + rand(0.05, 0.4), at.z + rand(-1, 1), { vy: rand(0.05, 0.15), life: 1.8, size: 0.4, size1: 1.0, tint: [0.95, 0.66, 0.85] });
-  ctx.hit(); await ctx.wait(1100); outro(ctx);
-}
-async function hound(ctx) {
-  const col = [0.6, 0.85, 1], v = ctx.vfx;
-  await intro(ctx, col, { dur: 700, dist: 10, pitch: 0.38, yaw: -0.9 });
-  // [the user's call: it ran without moving its legs] the original's 哮天犬 is one leaping pose, its outline flickering
-  // (fx 52), slid across; here it gallops: the four strides of the level-up's hound (src/levelup.js) in the original's
-  // colours, the stride kept to the ground it covers, a rise and fall with each one, afterimages behind
-  const tex = houndRunTex(), NF = 4, LEN = 14, DUR = 1.0;
-  const mk = ghost => { const t = tex.clone(); t.needsUpdate = true; return new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.8), ghost
-    ? new THREE.MeshBasicMaterial({ map: t, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(0.75, 0.95, 1.25), toneMapped: false, side: THREE.DoubleSide })
-    : new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, toneMapped: false })); };
-  const setFrame = (m, i) => { m.material.map.offset.x = (((i % NF) + NF) % NF) / NF; };
-  const start = ctx.at.clone().add(V(LEN / 2, 0, 0)), end = ctx.at.clone().add(V(-LEN / 2, 0, 0)), dog = mk(), STRIDE = 1.15;   // (a stride's length: four poses to it)
-  v.timed(dog, DUR, (k, dt, t) => {
-    const run = k * LEN, ph = run / STRIDE, fi = Math.floor(ph * NF);
-    dog.position.copy(start.clone().lerp(end, k)); dog.position.y = groundH(dog.position.x, dog.position.z) + 0.88 + Math.sin(ph * Math.PI * 2) * 0.08;
-    dog.lookAt(ctx.cam.camera.position.x, dog.position.y, ctx.cam.camera.position.z); dog.scale.x = -1; setFrame(dog, fi);   // (it runs left: the poses face right)
-    if (!dog.userData.rib) dog.userData.rib = [v.ribbon({ col, width: 0.35, n: 16 }), v.ribbon({ col: [1, 1, 1], width: 0.08, n: 12 })];
-    for (const r of dog.userData.rib) r.push(dog.position.clone().add(V(0.9, 0.1, 0))); if (k > 0.97) for (const r of dog.userData.rib) r.end();
-    if (Math.random() < 0.35) { const ghost = mk(true); ghost.position.copy(dog.position); ghost.quaternion.copy(dog.quaternion); ghost.scale.x = -1; setFrame(ghost, fi); v.timed(ghost, 0.25, k2 => { ghost.material.opacity = 0.18 * (1 - k2); }); }
-    if (fi % 2 === 0 && Math.random() < 0.6) v.smoke(dog.position.x + 0.3, groundH(dog.position.x, dog.position.z) + 0.05, dog.position.z, { vy: 0.3, vx: 0.8, life: 0.9, size: 0.25, size1: 0.8, r: 0.55, gg: 0.48, b: 0.38, a: 0.35, shape: -1 });   // (dust off the paws as they strike)
-    for (let i = 0; i < 2; i++) v.spark(dog.position.x + rand(0.4, 1.2), dog.position.y + rand(-0.4, 0.3), dog.position.z + rand(-0.3, 0.3), { vx: 4, life: 0.3, size: 0.04, r: 1, gg: 0.9, b: 0.45, shape: 1 });
-  });
-  await ctx.wait(500);
-  // the bite: claw slashes across the target and a howl ring
-  const bp = ctx.at.clone().setY(ctx.at.y + 0.55), B = basis(ctx);
-  for (let i = 0; i < 3; i++) { const r = v.ribbon({ col, width: 0.06, n: 10 }), o = (i - 1) * 0.22;
-    ticker(v, 0.16, (k) => r.push(bp.clone().add(B.right.clone().multiplyScalar((k - 0.5) * 1.3)).add(V(0, 0.45 - k * 0.9 + o, 0))), () => r.end()); }
-  v.impact(bp, col, 0.9); v.ring(ctx.at, col, 2.2, 0.5, { intensity: 1 }); v.hitstop = 0.1;
-  ctx.hit(); await ctx.wait(1000); outro(ctx);
+  for (let i = 0; i < 10; i++) v.smokePuff(at.x + rand(-1, 1), at.y + rand(0.05, 0.4), at.z + rand(-1, 1), { vy: rand(0.05, 0.15), life: 2.6, size: 0.4, size1: 1.1, tint: [0.95, 0.66, 0.85] });
+  ticker(v, E - 0.3 - ctx.now(), (k, dt, t) => { for (const a of ctx.targets) a.flash = 0.35 * (1 - k) * (Math.sin(t * 9) > 0.3 ? 1 : 0); if (Math.random() < 0.25) v.spark(at.x + rand(-0.4, 0.4), at.y + rand(0.8, 1.4), at.z + rand(-0.4, 0.4), { vy: rand(0.1, 0.3), life: 1.2, size: 0.07, r: 1, gg: 0.7, b: 0.9, shape: 0, wob: 0.6, ph: rand(0, 6) }); }, () => { for (const a of ctx.targets) a.flash = 0; });   // (the target drowses, flickering, as the original's)
+  ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
 async function dragon(ctx) {
   const col = [0.35, 0.7, 1], v = ctx.vfx;
   await intro(ctx, col, { dur: 900, dist: 13, pitch: 0.3 });
-  DARK(ctx, 0.62, 0.95, 0.75, 0.45);                       // storm: the world turns night-blue
+  DARK(ctx, 0.9, 0.92, 0.75, 0.42);                        // storm: the world turns a deep night-blue (stronger: on a sunlit map the old 0.62 read as a rainy afternoon)
   v.rain(ctx.at, 3.4, { n: 600 });
   for (let i = 0; i < 60; i++) v.smoke(ctx.at.x + rand(-6, 6), ctx.at.y + rand(7, 9), ctx.at.z + rand(-5, 5), { vx: rand(-0.4, 0.4), life: 3.4, size: 2.4, size1: 3.6, r: 0.06, gg: 0.08, b: 0.14, a: 0.7, shape: -1, fadeIn: 0.8 });
+  // [the original's time, tools/rom/spelltime.py: its first sound 2.6 s after the cast begins, its second 1.5 s later,
+  // the effect over at 5.1 s] the dragon comes up through the ground on the first (it surfaces 0.23 s into its path)
+  const FIRST = 2.6, END = 5.1;
+  await ctx.until(FIRST - 1.4);
+  ctx.cam.shot(ctx.at.clone().add(V(0, 2.0, 0)), { cine: true, dist: 12, pitch: 0.36, yaw: 0.4, speed: 1.8 });   // [remade next-gen, 2026-10-23] low, looking up into the storm
   // the water dragon: a scaled tube following a spiral around the target, rebuilt every frame
   const N = 60, pts = Array.from({ length: N }, () => V(0, -50, 0));
   const mat = new THREE.ShaderMaterial({
@@ -461,11 +471,15 @@ async function dragon(ctx) {
   }
   // [the user's call] the dragon bursts up out of the ground under the target and spirals up into the storm, not down
   // onto it: out of the earth through the target, round it in a widening coil, away into the clouds
-  const g0 = groundH(ctx.at.x, ctx.at.z);
-  const path = t => { const a = t * 11 + 1.2, r = 0.15 + Math.min(1, t * 1.6) * 2.3, y = g0 - 1.4 + t * 11.5; return V(ctx.at.x + Math.cos(a) * r, y, ctx.at.z + Math.sin(a) * r * 0.8); };
+  const g0 = effectH(ctx.at.x, ctx.at.z);
+  // (a slower, lower coil than it was [the user's call, next-gen: the dragon on screen]: it rises round the target and the lifted target, its head
+  // turning in view, before it climbs into the storm)
+  const path = t => { const a = t * 8 + 1.2, r = 0.2 + Math.min(1, t * 1.8) * 2.6, y = g0 - 1.4 + t * 6.5 + Math.max(0, t - 0.8) * 8; return V(ctx.at.x + Math.cos(a) * r, y, ctx.at.z + Math.sin(a) * r * 0.8); };
   let erupted = false;
-  const erupt = () => {   // the ground bursts open where it comes through: a spiralling geyser of water round the target
-    erupted = true; const base = ctx.at.clone().setY(g0);
+  // the ground bursts open where it comes through: a spiralling geyser of water round the target, with the spell's
+  // first sound (the original's: the target lifted)
+  const erupt = () => {
+    erupted = true; ctx.cue(); const base = ctx.at.clone().setY(g0);
     v.impact(ctx.at, col, 1.6); v.flash([0.7, 0.85, 1], 0.25); v.shake(0.25, 0.4); v.hitstop = 0.08;
     swirl(v, base, [0.15, 0.45, 1], 1.0, 0.85, 6.5, 1.8, { speed: 3, twist: 6, foam: [0.85, 0.95, 1], intensity: 1.3 });
     swirl(v, base, [0.4, 0.75, 1], 0.6, 0.55, 7, 1.8, { speed: -5, twist: 3, intensity: 0.8 });
@@ -473,28 +487,48 @@ async function dragon(ctx) {
     for (let i = 0; i < 160; i++) { const a = rand(0, 6.28), s = rand(2, 7); v.spark(ctx.at.x, g0 + 0.3, ctx.at.z, { vx: Math.cos(a) * s * 0.5, vy: rand(3, 9), vz: Math.sin(a) * s * 0.5, g: 14, life: rand(0.8, 1.4), size: rand(0.04, 0.08), r: 0.7, gg: 0.9, b: 1, shape: 1 }); }
     v.ring(ctx.at, [0.6, 0.85, 1], 3.5, 1); v.ring(ctx.at, [1, 1, 1], 2, 0.6);
   };
-  v.timed(body, 3.0, (k, dt, t) => {
+  // the dragon king itself, as the original shows it (its own sprite, assets/fx/summon_53.png): coiled over the target in
+  // the storm, materialising out of it in a water-blue aura before its dragon comes up through the ground
+  const king = beastSprite(v, 53, 2.6, PAL.water), kingAt = ctx.at.clone().add(V(0, 2.6, 0)).addScaledVector(basis(ctx).toCam, -1.2);   // (in frame, behind the target)
+  v.world.scene.add(king); king.position.copy(kingAt);
+  v.timed(king, END - (FIRST - 1.4) - 0.3, (k, dt, t) => { const U = king.userData; U.fit(); U.face(); U.set('uT', t); U.set('uK', Math.min(1, t / 0.8) * Math.min(1, (END - (FIRST - 1.4) - 0.3 - t) / 0.5)); king.position.y = kingAt.y + Math.sin(t * 1.6) * 0.12; });
+  await ctx.until(FIRST - 0.48);   // (it breaks the surface 0.48 s into its path: on the original's first sound)
+  v.timed(body, 3.4, (k, dt, t) => {
     mat.uniforms.uT.value = t;
-    const lead = Math.min(1.35, t / 2.2);
+    const lead = Math.min(1.35, t / 2.6);
     for (let i = 0; i < N; i++) pts[i] = path(Math.max(0, Math.min(1.3, lead - i * 0.0085)));
     const curve = new THREE.CatmullRomCurve3(pts.slice().reverse());
-    body.geometry.dispose(); body.geometry = new THREE.TubeGeometry(curve, 120, 0.24, 10, false);
+    body.geometry.dispose(); body.geometry = new THREE.TubeGeometry(curve, 120, 0.36, 10, false);
     const hp = pts[0], nx = path(Math.min(1.3, lead + 0.01)); head.position.copy(hp); head.lookAt(nx); head.visible = lead < 1.15 && hp.y > g0 - 0.3;
     body.visible = lead - (N - 1) * 0.0085 < 1.15;
     if (!erupted && hp.y > g0 - 0.2) erupt();
     if (head.visible) { v.light(hp, col, 35, 0.06, 8); for (let i = 0; i < 3; i++) { const q = pts[(Math.random() * N) | 0]; if (q.y > g0) v.spark(q.x + rand(-0.2, 0.2), q.y + rand(-0.2, 0.2), q.z + rand(-0.2, 0.2), { vy: rand(-1, 0.2), g: 4, life: 0.6, size: rand(0.04, 0.07), r: 0.6, gg: 0.85, b: 1, shape: 1 }); } }
   });
-  v.timed(head, 3.0, () => {});
-  await ctx.wait(700);
-  ctx.hit(); await ctx.wait(2100);
+  v.timed(head, 3.4, () => {}); head.scale.setScalar(1.5);
+  // as in the original, the target is lifted: up into the coil of water, turning, spirals of water streaming round it
+  const T0 = ctx.targets[0], face0 = T0 && T0.u.facing, spin = [0, 1, 2].map(i => energyStreak(v, PAL.water, 20, 0.16, i * 3.7, { taper: 0.95 })), up0 = ctx.at.y;
+  ticker(v, 1.45, (k, dt, t) => { if (T0) { T0.lift = 2.2 * Math.sin(Math.min(1, k * 1.3) * Math.PI / 2); T0.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * 9) % 4]; }
+    spin.forEach((st, i) => { const a = t * 7 + i * 2.1, r = 0.9 + 0.2 * Math.sin(t * 3 + i); st.push(V(ctx.at.x + Math.cos(a) * r, up0 + 0.3 + k * 2.4 + i * 0.25, ctx.at.z + Math.sin(a) * r * 0.85)); }); }, () => spin.forEach(st => st.end()));
+  // the original's second sound (1.5 s after its first): the target slammed down; here the storm's lightning strikes
+  // it from the clouds the dragon has gone up into and dashes it to the ground
+  await ctx.until(FIRST + (ctx.track[1] || 1.5) - 0.12);
+  ctx.cam.shot(ctx.at.clone().add(V(0, 0.8, 0)), { cine: true, dist: 9, pitch: 0.42, yaw: 0.4, speed: 4 });
+  if (T0) ticker(v, 0.12, k => { T0.lift = 2.2 * (1 - k * k); }, () => { T0.lift = 0; T0.u.facing = face0; });
+  await ctx.until(FIRST + (ctx.track[1] || 1.5));
+  for (let i = 0; i < 24; i++) { const a = rand(0, 6.28), sp = rand(2, 6); v.spark(ctx.at.x, up0 + 0.2, ctx.at.z, { vx: Math.cos(a) * sp, vy: rand(2, 6), vz: Math.sin(a) * sp, g: 12, life: rand(0.5, 1), size: rand(0.04, 0.08), r: 0.7, gg: 0.9, b: 1, shape: 1, floor: up0 + 0.02 }); }   // the splash
+  v.decal(ctx.at, [0.03, 0.05, 0.1], 1.4, 1.6, {});
+  const sky = ctx.at.clone().setY(ctx.at.y + 9), tg = ctx.at.clone().setY(ctx.at.y + 0.4);
+  for (let i = 0; i < 3; i++) v.bolt(sky.clone().add(V(rand(-0.6, 0.6), 0, rand(-0.4, 0.4))), tg, [0.75, 0.9, 1], 0.35, { width: 0.09 });
+  v.impact(tg, col, 1.4); v.flash([0.85, 0.92, 1], 0.3); v.shake(0.25, 0.35); v.ring(ctx.at, [0.6, 0.85, 1], 3, 0.6); v.hitstop = 0.08;
+  ctx.hit(); await ctx.until(END);
   outro(ctx);
 }
 // ---------------------------------------------------------------- dispatch
 const SCRIPT = {
-  0: c => flyingSwords(c, 3), 1: giantSword, 4: c => swordRain(c, 10, [0.55, 0.85, 1]), 5: c => swordRain(c, 16, [1, 0.85, 0.4]),
+  0: c => flyingSwords(c, 3), 1: giantSword, 4: c => swordRain(c, 10, [0.55, 0.85, 1], 2.68, 5.2), 5: c => swordRain(c, 16, [1, 0.85, 0.4], 4.05, 6.08),
   12: c => arrow(c, false), 16: c => arrow(c, true), 22: flameKill, 23: fireOrbs, 26: iceCrystals, 30: thunder,
   38: c => heal(c, [0.5, 1, 0.55]), 40: c => heal(c, [0.55, 1, 0.75]), 44: c => cleanse(c, [1, 0.8, 0.4], '靈血'), 45: c => cleanse(c, [1, 0.92, 0.6], '淨衣'),
-  51: dream, 52: hound, 53: dragon, ...SPELLBOOK,
+  51: dream, 53: dragon, ...SPELLBOOK,   // (52 哮天犬 in SPELLBOOK)
 };
 export const scripted = id => id in SCRIPT;   // every spell id the ROM has gets its own set-piece (tools/qa/spells.js checks)
 export async function playSpell(id, ctx, kind) {

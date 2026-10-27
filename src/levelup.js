@@ -2,10 +2,10 @@
 // the four facings, and a few poses made for the remake from those frames) plus effects drawn from their story.
 // These poses are new to the remake. battle.js levelUpAnim plays them: LEVEL_POSE[sprite](actor, feet position).
 import * as THREE from 'three';
-import { groundH, rand } from './world.js';
+import { effectH, rand } from './world.js';
 import { tex } from './actors.js';
 import { arrowMesh } from './spells.js';
-import { swordMesh } from './spellkit.js';
+import { upscale } from '../extract/hd.js';
 import { world, vfx, cam, ui, anim, wait, V } from './battle.js';
 
 const LV = {
@@ -89,7 +89,7 @@ function flowerRain(q, P) {
     m.renderOrder = 6;
     const a = rand(0, 6.28), r1 = rand(0.6, 1.9), fall = rand(2.4, 3.6), slow = rand(2.6, 3.4), life = rand(1.7, 2.3), d = rand(0, 0.25),   // slow: the drift down as before; life: how soon it has faded [the user's call: fade faster, not fall faster]
       spin = V(rand(-4, 4), rand(-3, 3), rand(-4, 4)), ph = rand(0, 6.28);
-    const end = Math.max(P.y + 0.05, groundH(q.x + Math.cos(a) * r1, q.z + Math.sin(a) * r1) + 0.05);
+    const end = Math.max(P.y + 0.05, effectH(q.x + Math.cos(a) * r1, q.z + Math.sin(a) * r1) + 0.05);
     vfx.timed(m, life + d, (k, dt, t) => {
       const f = Math.max(0, t - d), out = 1 - Math.exp(-f * 4), drop = Math.min(q.y - end, Math.max(0, f - 0.2) * fall / slow * (q.y - end + 0.4));
       const sway = Math.sin(f * 2.6 + ph) * 0.25;
@@ -293,7 +293,7 @@ async function yangLevel(a, P) {
   const th0 = Math.atan2(toCam.z, toCam.x);
   await anim(0.75, k => {
     const th = th0 + Math.sin(k * Math.PI * 2) * 1.1 * (1 - k * 0.3), d = 3.2;   // swept left and right across the field before him
-    const to = V(P.x + Math.cos(th) * d, 0, P.z + Math.sin(th) * d); to.y = groundH(to.x, to.z) + 0.05;
+    const to = V(P.x + Math.cos(th) * d, 0, P.z + Math.sin(th) * d); to.y = effectH(to.x, to.z) + 0.05;
     beam.push(to); beam.push(brow());
     if (Math.random() < 0.7) vfx.spark(to.x + rand(-0.15, 0.15), to.y, to.z + rand(-0.15, 0.15), { vy: rand(0.6, 1.4), life: 0.6, size: rand(0.04, 0.07), r: 1, gg: 0.85, b: 0.45, shape: 0 });
     if (Math.random() < 0.25) vfx.decal(to, [1, 0.75, 0.35], 0.35, 0.5, { intensity: 0.5 });
@@ -315,10 +315,10 @@ async function yangLevel(a, P) {
     const q = dogAt(k), mv = q.clone().sub(prev), dist = along(k) / (v * 0.875) * turn * R1, ph = (dist / stride) % 1, f = Math.floor(ph * 4);
     if (mv.lengthSq() > 1e-8) face = mv.dot(right) < 0 ? -1 : 1;
     prev = q; frame(k > 0.97 ? 4 : f);
-    q.y = groundH(q.x, q.z) + 0.23 + (k > 0.97 ? 0 : 0.035 * (0.5 + 0.5 * Math.cos(ph * Math.PI * 4)));   // a light rise in each of the gallop's two flights
+    q.y = effectH(q.x, q.z) + 0.23 + (k > 0.97 ? 0 : 0.035 * (0.5 + 0.5 * Math.cos(ph * Math.PI * 4)));   // a light rise in each of the gallop's two flights
     dog.position.copy(q); dog.quaternion.copy(world.camera.quaternion); dog.rotateZ(k > 0.97 ? 0 : Math.sin(ph * Math.PI * 2) * 0.05 * face);
     dog.scale.x = face; dog.material.opacity = Math.min(1, k * 10);
-    if (f !== lastF && (f === 1 || f === 3) && k < 0.97) { const gq = q.clone().setY(groundH(q.x, q.z) + 0.03); for (let i = 0; i < 4; i++) vfx.spark(gq.x + rand(-0.12, 0.12), gq.y, gq.z + rand(-0.12, 0.12), { vy: rand(0.2, 0.6), vx: rand(-0.3, 0.3), life: 0.45, size: rand(0.03, 0.05), r: 0.82, gg: 0.9, b: 1, shape: 0 }); }   // light kicked up at each footfall
+    if (f !== lastF && (f === 1 || f === 3) && k < 0.97) { const gq = q.clone().setY(effectH(q.x, q.z) + 0.03); for (let i = 0; i < 4; i++) vfx.spark(gq.x + rand(-0.12, 0.12), gq.y, gq.z + rand(-0.12, 0.12), { vy: rand(0.2, 0.6), vx: rand(-0.3, 0.3), life: 0.45, size: rand(0.03, 0.05), r: 0.82, gg: 0.9, b: 1, shape: 0 }); }   // light kicked up at each footfall
     lastF = f;
     const d = q.clone().sub(P); a.u.facing = Math.abs(d.x) > Math.abs(d.z) ? (d.x > 0 ? 'right' : 'left') : (d.z > 0 ? 'down' : 'up');   // his eyes follow the hound
   });
@@ -391,94 +391,196 @@ async function nezhaLevel(a, P) {
 }
 
 // ---------------------------------------------------------------- 林雲: the young hunter of 昌平村, quick and brash
-// [the user's call: redesigned, a signature like the others'] his sword arts (御劍術, 萬劍訣): eight spirit swords rise out of
-// the ground in a ring round him, points up, and turn; they spin up into a vortex and fly together over him into one great
-// sword of blue light, which plunges into the ground beside him: a shockwave, and it breaks into motes
+// [the user's call] he spins round and round in a rising wind, stops facing us and closes his eyes; a great sword of blue
+// light takes shape at his back, point up, and shoots up into the sky, its trail a pillar of light over him; he opens his eyes
+// the sword of light: a broad 劍 seen flat, point up (256 x 1024), white at its core, blue at its edges, haloed
+const LIN_SWORD = () => once('linSword', () => canvasTex(256, 1024, g => {
+  const blade = () => { g.beginPath(); g.moveTo(128, 30); g.lineTo(162, 110); g.lineTo(160, 700); g.lineTo(96, 700); g.lineTo(94, 110); g.closePath(); };
+  g.shadowColor = 'rgba(60,140,255,1)'; g.shadowBlur = 40; g.fillStyle = 'rgba(90,160,255,0.9)'; blade(); g.fill();
+  const gr = g.createLinearGradient(94, 0, 162, 0); gr.addColorStop(0, '#5aa8ff'); gr.addColorStop(0.5, '#ffffff'); gr.addColorStop(1, '#5aa8ff');
+  g.shadowBlur = 12; g.fillStyle = gr; blade(); g.fill();
+  g.shadowBlur = 0; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 4; g.beginPath(); g.moveTo(128, 60); g.lineTo(128, 690); g.stroke();   // the ridge
+  g.shadowColor = 'rgba(60,140,255,1)'; g.shadowBlur = 24; g.fillStyle = '#bfe0ff';   // the guard, swept up at its ends
+  g.beginPath(); g.moveTo(30, 690); g.quadraticCurveTo(128, 730, 226, 690); g.lineTo(214, 730); g.quadraticCurveTo(128, 770, 42, 730); g.closePath(); g.fill();
+  g.fillStyle = '#8cc4ff'; g.fillRect(112, 750, 32, 180);   // the grip, wrapped
+  g.strokeStyle = 'rgba(40,90,200,0.8)'; g.lineWidth = 4; for (let y = 760; y < 925; y += 16) { g.beginPath(); g.moveTo(112, y); g.lineTo(144, y + 10); g.stroke(); }
+  g.fillStyle = '#d8ecff'; g.beginPath(); g.arc(128, 952, 26, 0, Math.PI * 2); g.fill();   // the pommel
+}));
+const LIN_EYES = [[13, 11], [14, 11], [18, 11], [19, 11]];   // his eyes on the facing-us frame (32 px): white and pupil, rows 11-12
+// his facing-us frame with the eyes shut: the eye pixels of the 32 px frame painted as a dark lid line over skin, smoothed
+// to 4x as the extractor smooths every sheet, and only that patch laid over his own HD frame (the line on the eyes' upper
+// row, under the brows: on the lower row the smoothing ran it down into the dark pixels below the eyes' outer corners, so
+// the shut eyes drooped where his open eyes slant up [the user's report])
+async function linEyesShut(a) {
+  const sd = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'assets/sd/spr_' + a.u.sprite + '.png'; });
+  const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'); g.drawImage(sd, 0, 0, 32, 32, 0, 0, 32, 32);
+  const d = g.getImageData(0, 0, 32, 32);
+  const put = (x, y, rgb) => d.data.set([...rgb, 255], (y * 32 + x) * 4);
+  for (const [x, y] of LIN_EYES) { put(x, y, [108, 36, 0]); put(x, y + 1, [252, 144, 0]); }
+  const hd = upscale({ w: 32, h: 32, channels: 4, px: d.data });
+  const src = a.texWalk.image, fw = src.width / 9;   // (frame 0: facing us)
+  const out = document.createElement('canvas'); out.width = out.height = 2 * fw; const og = out.getContext('2d');
+  og.drawImage(src, 0, 0, fw, fw, fw / 2, fw / 2, fw, fw);
+  const K = fw / 32, patch = og.getImageData(fw / 2 + 12 * K, fw / 2 + 10 * K, 9 * K, 4 * K);
+  for (let y = 0; y < 4 * K; y++) for (let x = 0; x < 9 * K; x++) { const o = ((10 * K + y) * 128 + 12 * K + x) * 4, p = (y * 9 * K + x) * 4; patch.data.set(hd.px.subarray(o, o + 4), p); }
+  og.putImageData(patch, fw / 2 + 12 * K, fw / 2 + 10 * K);
+  return tex(out);
+}
 async function linLevel(a, P) {
-  const { right, toCam } = axes(), BLUE = [0.3, 0.65, 1], N = 8, R0 = 0.95;
-  a.u.facing = 'down'; LV.guard(a);
-  vfx.decal(P, BLUE, 1.2, 3.6, { intensity: 0.45 }); vfx.light(P.clone().setY(P.y + 0.8), [0.5, 0.75, 1], 6, 3.4, 4);
-  const swords = Array.from({ length: N }, (_, i) => { const m = swordMesh(BLUE, 0.85); vfx.timed(m, 1e9, () => {}); m.userData.a = i / N * Math.PI * 2; return m; });
-  const place = (m, ang, r, y, tilt) => { m.position.set(P.x + Math.cos(ang) * r, y, P.z + Math.sin(ang) * r * 0.85); m.rotation.set(0, -ang, tilt); };
-  // 1. they rise out of the ground round him, points up, one after another, and turn
-  let spin = 0;
-  await anim(0.9, (k, dt = 1 / 60) => { spin += dt * 1.2;
-    swords.forEach((m, i) => { const ki = Math.min(1, Math.max(0, (k - i * 0.06) / 0.4)), e = 1 - Math.pow(1 - ki, 3);
-      place(m, m.userData.a + spin, R0, P.y - 1.1 + e * 1.15, 0); m.visible = ki > 0;
-      if (ki > 0 && ki < 0.5 && Math.random() < 0.5) { const q = m.position; vfx.smokePuff(q.x, P.y + 0.05, q.z, { vy: 0.4, life: 0.6, size: 0.08, size1: 0.25, tint: [0.62, 0.55, 0.46] }); } });
+  const { toCam } = axes(), BLUE = [0.3, 0.62, 1];
+  const shut = await (once.c.linEyes || (once.c.linEyes = linEyesShut(a)));
+  a.u.facing = 'down'; a.act = null;
+  // 1. he spins, faster and then slowing, three rounds, in a wind that rises round him, turning his way (down, right, up,
+  // left: counter-clockwise from above; the wind went clockwise against him, the user's report)
+  const winds = [0, 1, 2].map(() => vfx.ribbon({ col: [0.6, 0.8, 1], width: 0.05, n: 18, fade: 0.35 }));
+  let T = 0, turn = 0;
+  await anim(1.6, (k, dt = 1 / 60) => {
+    T += dt; turn += dt * 7.5 * Math.sin(Math.PI * Math.min(1, k * 1.05));   // (3 rounds of four facings over the whole)
+    LV.spin(a, turn, 1);
+    winds.forEach((w, j) => { const th = -T * 10 + j * 2.1, r = 0.5 + j * 0.08; w.push(V(P.x + Math.cos(th) * r, P.y + 0.15 + j * 0.35 + k * 0.4, P.z + Math.sin(th) * r * 0.85)); });
+    if (Math.random() < 0.5) { const t = rand(0, 6.28); vfx.smokePuff(P.x + Math.cos(t) * 0.35, P.y + 0.05, P.z + Math.sin(t) * 0.35, { vx: Math.cos(t) * 1.2, vz: Math.sin(t) * 1.2, vy: 0.15, drag: 2, life: 0.7, size: 0.12, size1: 0.35, tint: [0.62, 0.55, 0.46] }); }
   });
-  // 2. a vortex: faster and faster, rising, drawing in to a point over his head
-  const trails = swords.map(() => vfx.ribbon({ col: BLUE, width: 0.06, n: 12, fade: 0.3 })), top = P.clone().setY(P.y + 2.6);
-  await anim(0.75, (k, dt = 1 / 60) => { spin += dt * (2 + k * 12);
-    swords.forEach((m, i) => { const r = R0 * (1 - k * 0.92), y = P.y + 0.05 + k * k * 2.4; place(m, m.userData.a + spin, r, y, -0.5 * k); trails[i].push(m.position.clone().setY(y + 0.6)); });
-    if (Math.random() < 0.6) vfx.spark(P.x + rand(-0.5, 0.5), P.y + rand(0.3, 2.4), P.z + rand(-0.3, 0.3), { vx: 0, vy: 0, seek: { x: top.x, y: top.y, z: top.z, k: 5 }, life: 0.5, size: rand(0.03, 0.05), r: 0.7, gg: 0.88, b: 1, shape: 1 });
+  winds.forEach(w => w.end());
+  // 2. he stops facing us and closes his eyes; blue light rises softly round him
+  a.u.facing = 'down'; a.act = { kind: 'tex', tex: shut };
+  vfx.decal(P, BLUE, 0.9, 3.4, { intensity: 0.4 }); vfx.light(P.clone().setY(P.y + 0.9), [0.55, 0.75, 1], 2.5, 3.2, 4);
+  const motes = (n, spread) => { for (let i = 0; i < n; i++) vfx.spark(P.x + rand(-spread, spread), P.y + rand(0, 0.3), P.z + rand(-spread, spread) * 0.8, { vy: rand(0.4, 0.9), life: rand(0.8, 1.3), size: rand(0.025, 0.045), r: 0.6, gg: 0.82, b: 1, shape: 0, fadeIn: 0.3 }); };
+  await anim(0.7, () => motes(1, 0.5));
+  // 3. the great sword takes shape at his back, point up: light gathering into it from the air round him
+  const H = 3.2, big = card(LIN_SWORD(), H / 4, H, { order: 6 }); big.material.opacity = 0;
+  const back = P.clone().addScaledVector(toCam, -0.8), base = back.clone().setY(P.y - 0.2 + H / 2);   // the grip at his back, the blade over his head (well behind: his sprite leans back, its head behind his feet)
+  const fadeTo = v => { big.material.opacity = Math.min(1, v); big.material.color.setScalar(Math.max(1, v)); };
+  await anim(0.9, k => {
+    fadeTo(k * k); big.position.copy(base).setY(base.y + k * 0.25); face(big);
+    for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.8, 1.4), y = big.position.y + rand(0.3, 2.6), q = V(back.x + Math.cos(t) * r, y, back.z + Math.sin(t) * r);
+      vfx.spark(q.x, q.y, q.z, { vx: 0, vy: 0, seek: { x: back.x, y, z: back.z, k: 5 }, life: 0.45, size: rand(0.03, 0.05), r: 0.7, gg: 0.88, b: 1, shape: 1 }); }
+    motes(1, 0.5);
   });
-  trails.forEach(t => t.end());
-  for (const m of swords) drop(m);
-  // 3. one great sword of light forms over him, point down, and moves over the ground beside him (a sword that tall before
-  // him would cover him, seen from above)
-  vfx.flash([0.7, 0.85, 1], 0.12); vfx.burst(top, { n: 26, speed: 2.4, cols: [[1, 1, 1], [0.55, 0.8, 1]], size: 0.05, life: 0.5, g: 0, shape: 1 });
-  const big = swordMesh([0.45, 0.75, 1], 2.6); vfx.timed(big, 1e9, () => {}); big.rotation.set(Math.PI, 0, 0);
-  const at = P.clone().addScaledVector(right, 1.15).addScaledVector(toCam, 0.35); at.y = groundH(at.x, at.z);
-  const over = at.clone().setY(top.y + 0.9);
-  LV.atk(a, 0);
-  await anim(0.35, k => { const e = 1 - Math.pow(1 - k, 3); big.position.copy(top).add(V(0, 0.9, 0)).lerp(over, e); big.scale.setScalar(2.6 * (0.3 + 0.7 * e)); });
-  await wait(150);
-  // 4. it plunges into the ground
-  LV.atk(a, 1);
-  const from = big.position.clone(), to = at.clone().setY(at.y + 2.6 * 1.24 - 0.5);   // (the blade's tip a little into the ground)
-  await anim(0.16, k => { big.position.copy(from).lerp(to, k * k); });
-  LV.atk(a, 2);
-  vfx.shake(0.22, 0.4); vfx.flash([0.75, 0.9, 1], 0.2); vfx.hitstop = 0.06; vfx.light(at.clone().setY(at.y + 0.6), [0.5, 0.75, 1], 18, 0.6, 7);
-  for (const [d, r] of [[0, 2.6], [110, 1.8]]) later(() => vfx.ring(at, [0.55, 0.8, 1], r, 0.55, { intensity: 0.9 }), d);
-  vfx.decal(at, [0.35, 0.6, 1], 1, 1.2, { intensity: 0.6 });
-  for (let i = 0; i < 16; i++) { const t = i / 16 * 6.28, sp = rand(1.8, 2.8); vfx.smokePuff(at.x, at.y + 0.06, at.z, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: 0.25, drag: 2.5, life: 0.9, size: 0.2, size1: 0.6, tint: [0.62, 0.55, 0.46] }); }
-  vfx.burst(at.clone().setY(at.y + 0.2), { n: 30, speed: 3.2, cols: [[1, 1, 1], [0.55, 0.8, 1]], size: 0.05, life: 0.6, g: 5, up: 0.6, shape: 1 });
-  await wait(450);
-  // 5. it breaks into motes that drift up; he stands in his guard
-  LV.guard(a);
-  await anim(0.6, k => { big.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = (o.material.userData.o0 ??= o.material.opacity) * (1 - k); } });
-    for (let i = 0; i < 3; i++) { const q = big.localToWorld(V(rand(-0.05, 0.05), rand(0, 1.2), 0)); vfx.spark(q.x, q.y, q.z, { vy: rand(0.5, 1.2), vx: rand(-0.2, 0.2), life: 1, size: rand(0.03, 0.05), r: 0.7, gg: 0.88, b: 1, shape: 1 }); } });
-  drop(big);
-  await wait(400);
+  vfx.flash([0.6, 0.8, 1], 0.08); vfx.light(back.clone().setY(P.y + 1.6), [0.45, 0.7, 1], 10, 0.6, 6);
+  await anim(0.5, k => { fadeTo(1 + 0.6 * Math.sin(k * Math.PI)); face(big); motes(1, 0.5); });   // it pulses once, full
+  // 4. it shoots up into the sky, leaving a pillar of light over him; then he opens his eyes
+  const trail = vfx.ribbon({ col: [0.55, 0.8, 1], width: 0.5, n: 16, fade: 0.45 }), from = big.position.clone();
+  vfx.shake(0.12, 0.3);
+  for (let i = 0; i < 14; i++) { const t = i / 14 * 6.28, sp = rand(1.6, 2.4); vfx.smokePuff(P.x, P.y + 0.06, P.z, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: 0.2, drag: 2.5, life: 0.8, size: 0.16, size1: 0.5, tint: [0.62, 0.55, 0.46] }); }
+  vfx.ring(P, [0.55, 0.8, 1], 1.8, 0.5, { intensity: 0.7 });
+  await anim(0.12, k => { big.position.copy(from).setY(from.y - k * 0.15); face(big); });   // it dips, gathering itself
+  const low = big.position.clone();
+  await anim(0.5, k => { big.position.copy(low).setY(low.y + k * k * 18); face(big); trail.push(big.position.clone().setY(big.position.y - H * 0.3)); });
+  trail.end(); drop(big);
+  vfx.pillar(back, BLUE, 0.12, 16, 0.7, { intensity: 0.5 });
+  vfx.flash([0.7, 0.85, 1], 0.08);
+  await wait(250);
+  a.act = null;   // he opens his eyes, standing as he stood (no guard pose after: the user's call)
+  // light falls back down over him like fine rain
+  await anim(1.0, () => { if (Math.random() < 0.8) vfx.spark(P.x + rand(-0.9, 0.9), P.y + rand(2, 3.4), P.z + rand(-0.7, 0.7), { vy: -rand(0.6, 1.1), life: rand(1, 1.6), size: rand(0.025, 0.04), r: 0.65, gg: 0.85, b: 1, shape: 0, fadeIn: 0.2 }); });
+  await wait(300);
 }
 
 // ---------------------------------------------------------------- 黃飛虎: 武成王, the flying tiger
-// the tiger head-on, lunging at us (256x256): the broad striped head with its white ruff and open roaring jaws, the two
-// forepaws thrown out wide with their claws spread, the shoulders behind; roar: the jaws wide open
+// the tiger head-on, lunging at us, drawn on a 256 grid at twice that (512x512) [the user's call: real and ferocious, not
+// cute]: a broad angular head, its cheek ruffs flaring in pointed tufts, the ears pinned back; heavy brows drawn down
+// over glowing amber eyes; the snarl wrinkling the nose's bridge, the upper lip drawn back off long fangs; tapering
+// broken stripes and fine fur over it all; the massive forepaws thrown out below, claws out. roar: the jaws wide
 export function drawTigerFront(g, roar) {
-  const gold = g.createRadialGradient(128, 96, 10, 128, 120, 150); gold.addColorStop(0, '#ffe7a0'); gold.addColorStop(0.45, '#ffaa28'); gold.addColorStop(1, '#c85a0c');
-  const stripe = 'rgba(70,28,6,0.9)', white = '#fff6e4';
-  // the forepaws: out and forward to either side, big at the ends (nearest us), claws spread
+  g.save(); g.scale(2, 2);
+  const R = (a, b) => a + Math.random() * (b - a), jaw = roar ? 30 : 12;
+  const fur = (x0, y0, x1, y1) => { const q = g.createLinearGradient(x0, y0, x1, y1); q.addColorStop(0, '#e89a48'); q.addColorStop(0.55, '#c86c24'); q.addColorStop(1, '#6a2a0c'); return q; };
+  const ink = '#120604';
+  const stripe = (x0, y0, x1, y1, w, b = 0) => { const mx = (x0 + x1) / 2 + b, my = (y0 + y1) / 2 - b * 0.4, nx = -(y1 - y0), ny = x1 - x0, l = Math.hypot(nx, ny) || 1;
+    g.fillStyle = ink; g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(mx + nx / l * w, my + ny / l * w, x1, y1); g.quadraticCurveTo(mx - nx / l * w, my - ny / l * w, x0, y0); g.closePath(); g.fill(); };   // pointed at both ends
+  // the forepaws, out to either side and toward us, heavy, striped, the claws hooked out of the toes
   for (const s of [-1, 1]) {
-    limb(g, [[128 + s * 34, 150], [128 + s * 74, 176], [128 + s * 100, 214]], [44, 34, 30], gold);
-    g.fillStyle = gold; g.beginPath(); g.ellipse(128 + s * 104, 222, 26, 20, s * 0.3, 0, 6.28); g.fill();
-    g.strokeStyle = stripe; g.lineWidth = 4; for (const t of [0.3, 0.55]) { const x = 128 + s * (34 + 66 * t), y = 150 + 64 * t; g.beginPath(); g.moveTo(x - 14, y - 6); g.lineTo(x + 10, y + 8); g.stroke(); }
-    g.fillStyle = '#fffaf0'; for (let c = -2; c <= 2; c++) { const x = 128 + s * 104 + c * 9, y = 238; g.beginPath(); g.moveTo(x - 3, y - 4); g.lineTo(x + 3, y - 4); g.lineTo(x + s * 2, y + 12); g.closePath(); g.fill(); }
+    limb(g, [[128 + s * 44, 176], [128 + s * 84, 196], [128 + s * 106, 226]], [54, 44, 40], fur(128 + s * 40, 168, 128 + s * 112, 244));
+    for (const t of [0.2, 0.45, 0.7]) stripe(128 + s * (50 + 52 * t), 172 + 46 * t, 128 + s * (40 + 52 * t), 198 + 46 * t, 3.2, s * 3);
+    g.fillStyle = fur(128 + s * 90, 214, 128 + s * 124, 254); g.beginPath(); g.ellipse(128 + s * 106, 234, 32, 21, s * 0.2, 0, 6.28); g.fill();
+    g.strokeStyle = 'rgba(60,20,4,0.7)'; g.lineWidth = 1.5; for (let c = -1; c <= 1; c++) { g.beginPath(); g.moveTo(128 + s * (106 + c * 11), 226); g.lineTo(128 + s * (106 + c * 11), 248); g.stroke(); }   // the toes
+    for (let c = -2; c <= 1; c++) { const x = 128 + s * (100 + c * 11), y = 248; const cg = g.createLinearGradient(x, y - 4, x, y + 14); cg.addColorStop(0, '#f8f2dc'); cg.addColorStop(1, '#a89878');
+      g.fillStyle = cg; g.beginPath(); g.moveTo(x - 3, y - 3); g.quadraticCurveTo(x + s * 2, y + 5, x + s * 6, y + 13); g.quadraticCurveTo(x + s * 0.5, y + 5, x + 3, y - 3); g.closePath(); g.fill(); }
   }
-  // shoulders behind the head
-  g.fillStyle = gold; g.beginPath(); g.ellipse(128, 150, 70, 40, 0, 0, 6.28); g.fill();
-  // the head: a ruff of white fur round it, the face, round ears
-  g.fillStyle = white; g.beginPath(); for (let i = 0; i < 24; i++) { const a = i / 24 * 6.28, r = i % 2 ? 66 : 76; g.lineTo(128 + Math.cos(a) * r, 104 + Math.sin(a) * r * 0.9); } g.closePath(); g.fill();
-  for (const s of [-1, 1]) { g.fillStyle = gold; g.beginPath(); g.arc(128 + s * 44, 52, 17, 0, 6.28); g.fill(); g.fillStyle = '#3a1806'; g.beginPath(); g.arc(128 + s * 44, 54, 8, 0, 6.28); g.fill(); }
-  g.fillStyle = gold; g.beginPath(); g.ellipse(128, 100, 56, 54, 0, 0, 6.28); g.fill();
-  // the 王 mark and the stripes of the brow and cheeks
-  g.strokeStyle = stripe; g.lineCap = 'round'; g.lineWidth = 5;
-  for (const y of [58, 68, 78]) { g.beginPath(); g.moveTo(116, y); g.lineTo(140, y); g.stroke(); } g.beginPath(); g.moveTo(128, 56); g.lineTo(128, 80); g.stroke();
-  for (const s of [-1, 1]) for (const [y, l] of [[96, 26], [108, 30], [120, 24]]) { g.beginPath(); g.moveTo(128 + s * 56, y); g.quadraticCurveTo(128 + s * (56 - l * 0.6), y + 4, 128 + s * (56 - l), y + 10); g.stroke(); }
-  // eyes: fierce, amber with dark slits, a white glint
-  for (const s of [-1, 1]) { g.fillStyle = '#ffd040'; g.beginPath(); g.ellipse(128 + s * 22, 91, 10, 4.5, s * -0.45, 0, 6.28); g.fill();
-    g.fillStyle = '#1a0a02'; g.beginPath(); g.ellipse(128 + s * 22, 91, 2, 4, 0, 0, 6.28); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(128 + s * 24, 89, 1.3, 0, 6.28); g.fill();
-    g.strokeStyle = '#2a1004'; g.lineWidth = 4; g.beginPath(); g.moveTo(128 + s * 6, 84); g.lineTo(128 + s * 36, 82); g.stroke(); }   // brows drawn down: a scowl
-  // the muzzle, nose and jaws
-  g.fillStyle = white; g.beginPath(); g.ellipse(128, 122, 30, 20, 0, 0, 6.28); g.fill();
-  g.fillStyle = '#5a2a14'; g.beginPath(); g.moveTo(118, 108); g.lineTo(138, 108); g.lineTo(128, 118); g.closePath(); g.fill();
-  const jaw = roar ? 30 : 12;
-  g.fillStyle = '#6a1408'; g.beginPath(); g.moveTo(106, 124); g.quadraticCurveTo(128, 124 + jaw * 1.6, 150, 124); g.quadraticCurveTo(128, 128, 106, 124); g.fill();
-  g.fillStyle = '#a82a22'; g.beginPath(); g.ellipse(128, 124 + jaw * 1.05, 8, jaw * 0.18 + 1, 0, 0, 6.28); g.fill();   // the tongue, low in the jaw
-  g.fillStyle = '#fffaf0'; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(128 + s * 16, 124); g.lineTo(128 + s * 11, 124); g.lineTo(128 + s * 14, 124 + 10 + jaw * 0.2); g.fill();
-    g.beginPath(); g.moveTo(128 + s * 15, 124 + jaw * 1.2); g.lineTo(128 + s * 10, 124 + jaw * 1.2); g.lineTo(128 + s * 13, 116 + jaw * 1.1); g.fill(); }
-  g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 1.5; for (const s of [-1, 1]) for (const dy of [-4, 2, 8]) { g.beginPath(); g.moveTo(128 + s * 22, 120 + dy * 0.3); g.lineTo(128 + s * 54, 114 + dy); g.stroke(); }   // whiskers
+  // the shoulders behind the head, hunched: each blade rising at the side as it crouches (one oval made a ball of it all)
+  g.fillStyle = fur(128, 124, 128, 214); for (const s of [-1, 1]) { g.beginPath(); g.ellipse(128 + s * 66, 188, 48, 28, s * -0.35, 0, 6.28); g.fill(); }
+  g.beginPath(); g.ellipse(128, 200, 64, 24, 0, 0, 6.28); g.fill();
+  for (const s of [-1, 1]) for (const k of [0, 1, 2, 3]) stripe(128 + s * (66 + k * 13), 166 + k * 3, 128 + s * (60 + k * 13), 208 + k * 2, 3.5, s * 4);
+  // the ears laid back at the top corners of the skull: short rounded triangles turned outward, their dark backs and
+  // the white spot on each showing (a pinned blob at the sides made the head read as a ball [the user's report])
+  for (const s of [-1, 1]) { g.save(); g.translate(128 + s * 62, 58); g.rotate(s * 1.5); g.scale(0.8, 0.7);
+    g.fillStyle = '#2a1206'; g.beginPath(); g.moveTo(-15, 4); g.quadraticCurveTo(-11, -16, -2, -25); g.quadraticCurveTo(3, -27, 6, -22); g.quadraticCurveTo(13, -10, 15, 4); g.closePath(); g.fill();
+    const sp = g.createRadialGradient(1, -11, 0.5, 1, -11, 6); sp.addColorStop(0, 'rgba(236,226,206,0.85)'); sp.addColorStop(1, 'rgba(236,226,206,0)'); g.fillStyle = sp; g.beginPath(); g.ellipse(1, -11, 4, 6.5, 0, 0, 6.28); g.fill();
+    g.strokeStyle = '#c87830'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(-15, 4); g.quadraticCurveTo(-11, -16, -2, -25); g.stroke(); g.restore(); }
+  // the head: a flat broad brow between the ears, the skull's sides straight down to the cheek ruffs, which flare out in
+  // pointed tufts; then the jaw cut in at an angle to a square chin (not a round face: the user's report)
+  const head = new Path2D(); head.moveTo(128, 40);
+  head.quadraticCurveTo(152, 37, 172, 42); head.quadraticCurveTo(188, 48, 194, 64); head.lineTo(198, 90);
+  for (let i = 0; i < 6; i++) { const y = 96 + i * 11, x = 204 - Math.abs(i - 2.2) * 4; head.lineTo(x + 10, y + 4); head.lineTo(x - 5, y + 8); }
+  head.lineTo(176, 172); head.lineTo(156, 190); head.quadraticCurveTo(128, 197, 100, 190); head.lineTo(80, 172);
+  for (let i = 5; i >= 0; i--) { const y = 96 + i * 11, x = 52 + Math.abs(i - 2.2) * 4; head.lineTo(x + 5, y + 8); head.lineTo(x - 10, y + 4); }
+  head.lineTo(58, 90); head.lineTo(62, 64); head.quadraticCurveTo(68, 48, 84, 42); head.quadraticCurveTo(104, 37, 128, 40); head.closePath();
+  // lit as planes, not a dome: the brow and muzzle catch the light down the middle, the cheeks turn away darker to the sides
+  const hg = g.createLinearGradient(36, 0, 220, 0);
+  for (const [t, c] of [[0, '#4a1a06'], [0.16, '#9a4612'], [0.3, '#c86a22'], [0.42, '#e49448'], [0.5, '#eca050'], [0.58, '#e49448'], [0.7, '#c86a22'], [0.84, '#9a4612'], [1, '#4a1a06']]) hg.addColorStop(t, c);
+  g.save(); g.shadowColor = 'rgba(30,8,0,0.7)'; g.shadowBlur = 18; g.shadowOffsetY = 8; g.fillStyle = hg; g.fill(head); g.restore();   // (its shadow on the shoulders: the head stands off the body)
+  const vg = g.createLinearGradient(0, 40, 0, 196); vg.addColorStop(0, 'rgba(60,20,4,0.35)'); vg.addColorStop(0.25, 'rgba(60,20,4,0)'); vg.addColorStop(0.8, 'rgba(60,20,4,0)'); vg.addColorStop(1, 'rgba(40,12,2,0.5)');
+  g.fillStyle = vg; g.fill(head);
+  g.save(); g.clip(head);
+  const pale = (x, y, rx, ry, rot = 0, a = 0.92) => { const q = g.createRadialGradient(0, 0, 1, 0, 0, rx); q.addColorStop(0, `rgba(238,228,208,${a})`); q.addColorStop(0.65, `rgba(230,214,186,${a * 0.85})`); q.addColorStop(1, 'rgba(230,214,186,0)');
+    g.save(); g.translate(x, y); g.rotate(rot); g.scale(1, ry / rx); g.fillStyle = q; g.beginPath(); g.arc(0, 0, rx, 0, 6.28); g.fill(); g.restore(); };
+  for (const s of [-1, 1]) { pale(128 + s * 26, 74, 10, 5, s * 0.35, 0.7); pale(128 + s * 58, 154, 28, 20, s * -0.4); pale(128 + s * 19, 142, 22, 17); }   // spots over the eyes, the cheeks' undersides, the muzzle pads
+  pale(128, 188, 22, 8, 0, 0.8);   // the chin under the jaw
+  // the stripes: thin, black, pointed at both ends, in the brow's broken bars and the cheeks' long parallel sweeps
+  stripe(114, 54, 128, 52, 2.4); stripe(128, 52, 142, 54, 2.4); stripe(112, 62, 144, 62, 2.6); stripe(118, 70, 138, 70, 2.2); stripe(128, 48, 128, 76, 1.8);
+  for (const s of [-1, 1]) {
+    for (const [x0, y0, x1, y1] of [[22, 52, 40, 70], [34, 48, 56, 70], [48, 54, 66, 76]]) stripe(128 + s * x0, y0, 128 + s * x1, y1, 2.6, s * 2);
+    for (const [x0, y0, x1, y1, w] of [[44, 98, 88, 92, 3.4], [48, 110, 92, 106, 3.8], [50, 122, 90, 122, 3.6], [52, 134, 88, 140, 3.2], [50, 146, 80, 156, 2.8]]) stripe(128 + s * x0, y0, 128 + s * x1, y1, w, s * -4);
+  }
+  g.restore();
+  // brows: heavy ridges driven down to the nose in a scowl, deep shadow under them
+  for (const s of [-1, 1]) { const sh = g.createLinearGradient(0, 80, 0, 96); sh.addColorStop(0, 'rgba(30,10,2,0.8)'); sh.addColorStop(1, 'rgba(30,10,2,0)');
+    g.fillStyle = sh; g.beginPath(); g.moveTo(128 + s * 6, 84); g.lineTo(128 + s * 46, 78); g.lineTo(128 + s * 44, 96); g.lineTo(128 + s * 8, 98); g.closePath(); g.fill();
+    g.strokeStyle = ink; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath(); g.moveTo(128 + s * 8, 89); g.quadraticCurveTo(128 + s * 26, 79, 128 + s * 46, 81); g.stroke(); }
+  // the eyes: hooded, slanting down to the nose, molten amber round a small black pupil, ringed in black, a hard glint
+  for (const s of [-1, 1]) { g.save(); g.translate(128 + s * 28, 93); g.rotate(s * -0.3);
+    g.fillStyle = ink; g.beginPath(); g.ellipse(0, 0, 14, 6.5, 0, 0, 6.28); g.fill();
+    const ir = g.createRadialGradient(0, 1, 0.5, 0, 1, 10); ir.addColorStop(0, '#fff2a0'); ir.addColorStop(0.45, '#f0b018'); ir.addColorStop(1, '#a85000');
+    g.fillStyle = ir; g.beginPath(); g.ellipse(0, 1, 11, 4.2, 0, 0, 6.28); g.fill();
+    g.fillStyle = 'rgba(20,6,0,0.55)'; g.beginPath(); g.ellipse(0, -2.5, 12, 3, 0, 0, 6.28); g.fill();   // the heavy upper lid's shadow
+    g.fillStyle = '#000'; g.beginPath(); g.arc(0, 1, 2.3, 0, 6.28); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(-s * 3, 0, 1, 0, 6.28); g.fill(); g.restore(); }
+  // the long bridge of the nose, wrinkled in deep folds by the snarl, creases running down to the lip
+  const br = g.createLinearGradient(0, 88, 0, 128); br.addColorStop(0, 'rgba(240,170,90,0.5)'); br.addColorStop(1, 'rgba(240,170,90,0)');
+  g.fillStyle = br; g.beginPath(); g.moveTo(120, 88); g.lineTo(136, 88); g.lineTo(144, 126); g.lineTo(112, 126); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(50,16,2,0.85)'; g.lineWidth = 2;
+  for (const y of [104, 110, 116]) { g.beginPath(); g.moveTo(117, y); g.quadraticCurveTo(128, y - 4, 139, y); g.stroke(); }
+  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(128 + s * 14, 118); g.quadraticCurveTo(128 + s * 26, 128, 128 + s * 38, 144); g.stroke(); }
+  // the nose: broad, the leather a dull rose, the nostrils flared
+  g.fillStyle = '#9a5848'; g.beginPath(); g.moveTo(109, 122); g.quadraticCurveTo(128, 116, 147, 122); g.quadraticCurveTo(143, 136, 128, 138); g.quadraticCurveTo(113, 136, 109, 122); g.fill();
+  g.fillStyle = ink; for (const s of [-1, 1]) { g.beginPath(); g.ellipse(128 + s * 7, 131, 4.2, 2.5, s * 0.5, 0, 6.28); g.fill(); }
+  g.strokeStyle = ink; g.lineWidth = 1.6; g.beginPath(); g.moveTo(128, 137); g.lineTo(128, 145); g.stroke();
+  // the mouth: the upper lip drawn up off the gums across the whole muzzle, the jaws gaping on a dark throat
+  const top = 146, bot = top + jaw * 1.6, half = 37;
+  const thr = g.createRadialGradient(128, (top + bot) / 2, 2, 128, (top + bot) / 2, 40); thr.addColorStop(0, '#120201'); thr.addColorStop(0.7, '#3e0806'); thr.addColorStop(1, '#6e160e');
+  g.fillStyle = thr; g.beginPath(); g.moveTo(128 - half, top); g.quadraticCurveTo(128, top - 8, 128 + half, top); g.quadraticCurveTo(128 + half - 4, bot, 128, bot + 5); g.quadraticCurveTo(128 - half + 4, bot, 128 - half, top); g.fill();
+  if (roar) { g.fillStyle = '#a84444'; g.beginPath(); g.ellipse(128, bot - 3, 18, 6, 0, 0, 6.28); g.fill(); g.strokeStyle = 'rgba(80,16,16,0.6)'; g.lineWidth = 1; for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(128 + k * 6, bot - 8); g.lineTo(128 + k * 6.5, bot); g.stroke(); } }   // the tongue, ridged
+  g.fillStyle = '#8a3438'; g.beginPath(); g.moveTo(128 - half + 2, top); g.quadraticCurveTo(128, top - 10, 128 + half - 2, top); g.lineTo(128 + half - 4, top + 5); g.quadraticCurveTo(128, top - 3, 128 - half + 4, top + 5); g.closePath(); g.fill();   // the gums
+  g.strokeStyle = ink; g.lineWidth = 3; g.beginPath(); g.moveTo(128 - half - 4, top + 2); g.quadraticCurveTo(128, top - 12, 128 + half + 4, top + 2); g.stroke();   // the black lips
+  g.beginPath(); g.moveTo(128 - half + 2, bot - 8); g.quadraticCurveTo(128, bot + 8, 128 + half - 2, bot - 8); g.stroke();
+  const tooth = (x, y, len, w, down) => { const d = down ? 1 : -1, tg = g.createLinearGradient(x, y, x, y + len * d); tg.addColorStop(0, '#f4ead0'); tg.addColorStop(1, '#c8b488');
+    g.fillStyle = tg; g.beginPath(); g.moveTo(x - w, y); g.quadraticCurveTo(x - w * 0.4, y + len * 0.6 * d, x + w * 0.2, y + len * d); g.quadraticCurveTo(x + w * 0.6, y + len * 0.4 * d, x + w, y); g.closePath(); g.fill(); };
+  for (const s of [-1, 1]) { tooth(128 + s * 22, top + 2, 15 + jaw * 0.3, 4.6, true); tooth(128 + s * 19, bot - 5, 11 + jaw * 0.18, 4, false); }   // the fangs
+  for (let k = -3; k <= 3; k++) if (k) { tooth(128 + k * 4.6, top + 2, 4.5, 1.9, true); tooth(128 + k * 4.4, bot - 5, 3.8, 1.7, false); }   // the incisors
+  // whiskers out from the pads, stiff and fine
+  g.strokeStyle = 'rgba(250,244,228,0.75)'; g.lineWidth = 0.7;
+  for (const s of [-1, 1]) for (let k = 0; k < 4; k++) { g.beginPath(); g.moveTo(128 + s * 30, 134 + k * 4); g.quadraticCurveTo(128 + s * 56, 130 + k * 5, 128 + s * (82 + k * 3), 124 + k * 8); g.stroke(); }
+  g.restore();
+  // fur over everything: short strokes in each spot's own colour, lighter and darker, running out from the nose
+  const W = g.canvas.width, H = g.canvas.height, px = g.getImageData(0, 0, W, H).data;
+  g.lineWidth = 1; g.lineCap = 'round';
+  for (let i = 0; i < 12000; i++) {
+    const x = Math.random() * W, y = Math.random() * H, o = (Math.floor(y) * W + Math.floor(x)) * 4; if (px[o + 3] < 200) continue;
+    const r = px[o], gg = px[o + 1], b = px[o + 2]; if (r + gg + b < 120 && Math.random() < 0.7) continue;
+    const ang = Math.atan2(y - 244, x - 256) + R(-0.3, 0.3), len = R(3, 9), k = Math.random() < 0.5 ? 1.16 : 0.8;
+    g.strokeStyle = `rgba(${Math.min(255, r * k) | 0},${Math.min(255, gg * k) | 0},${Math.min(255, b * k) | 0},0.5)`;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len); g.stroke();
+  }
 }
 // 黃飛虎's level-up [the user's call: the tiger comes out of his body, to the front]: war-fire climbs round him and a gold
 // light gathers in his chest; the spirit tiger bursts out of it head-on, lunging at us, growing as it comes, and roars
@@ -491,14 +593,14 @@ async function huangLevel(a, P) {
   await anim(0.7, k => { for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.35, 0.65); vfx.realFire(P.x + Math.cos(t) * r, P.y - 0.05, P.z + Math.sin(t) * r, { size: rand(0.3, 0.45) * (0.5 + k), asp: 1.5, life: 0.6, vy: 0.5 }); }
     a.flash = 0.45 * k; const c = a.chest(); vfx.spark(c.x + rand(-0.5, 0.5), c.y + rand(-0.4, 0.6), c.z, { vx: 0, vy: 0, seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.45, size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.4, shape: 1 }); });
   // the tiger bursts out of his chest, lunging at the camera, growing as it comes
-  const map = once('tigerFront', () => glowStrip(256, 256, 2, 'rgba(255,190,70,0.95)', (g, i) => drawTigerFront(g, i === 1))).clone(); map.needsUpdate = true; map.repeat.set(0.5, 1);
-  const tiger = card(map, 1, 1, { order: 9.5, col: [1.15, 1.05, 0.9] }); tiger.material.depthTest = false;   // (a spirit: a little see-through)
+  const map = once('tigerFront2', () => glowStrip(512, 512, 2, 'rgba(255,150,40,0.7)', (g, i) => drawTigerFront(g, i === 1))).clone(); map.needsUpdate = true; map.repeat.set(0.5, 1);
+  const tiger = card(map, 1, 1, { order: 9.5 }); tiger.material.depthTest = false;   // (solid, its own colours: see-through and brightened, the hero showed through its jaws and it read soft [the user's call: real, ferocious])
   const c0 = a.chest(), cp = world.camera.position, toward = cp.clone().sub(c0).normalize(), dist = cp.distanceTo(c0);
   vfx.flash([1, 0.8, 0.4], 0.15); vfx.burst(c0, { n: 30, speed: 2.5, cols: [[1, 0.95, 0.7], [1, 0.7, 0.25]], size: 0.05, life: 0.5, g: 0, shape: 1 });
   a.flash = 0;
   await anim(0.55, k => {
     const e = 1 - Math.pow(1 - k, 3); tiger.position.copy(c0).addScaledVector(toward, e * dist * 0.25).add(V(0, e * 0.25, 0));
-    face(tiger); tiger.scale.setScalar(0.3 + e * 1.5); tiger.material.opacity = 0.88 * Math.min(1, k * 4); map.offset.x = k > 0.7 ? 0.5 : 0;
+    face(tiger); tiger.scale.setScalar(0.3 + e * 1.5); tiger.material.opacity = Math.min(1, k * 4); map.offset.x = k > 0.7 ? 0.5 : 0;
     if (Math.random() < 0.8) vfx.spark(tiger.position.x + rand(-0.6, 0.6), tiger.position.y + rand(-0.5, 0.5), tiger.position.z, { vy: rand(-0.3, 0.4), life: 0.5, size: rand(0.04, 0.06), r: 1, gg: 0.8, b: 0.35, shape: 1 });
   });
   // the roar
@@ -510,7 +612,7 @@ async function huangLevel(a, P) {
   // it breaks into gold embers
   const tp = tiger.position.clone();
   for (let i = 0; i < 50; i++) vfx.spark(tp.x + rand(-0.7, 0.7), tp.y + rand(-0.6, 0.6), tp.z + rand(-0.3, 0.3), { vx: rand(-1, 1), vy: rand(-0.2, 1.4), vz: rand(-0.5, 0.5), life: rand(0.6, 1.2), size: rand(0.04, 0.07), r: 1, gg: rand(0.7, 0.9), b: 0.35, shape: 1, flicker: 1, ph: rand(0, 6) });
-  await anim(0.4, k => { tiger.scale.setScalar(1.8 + k * 0.4); tiger.material.opacity = 0.88 * (1 - k); face(tiger); });
+  await anim(0.4, k => { tiger.scale.setScalar(1.8 + k * 0.4); tiger.material.opacity = 1 - k; face(tiger); });
   drop(tiger);
   LV.guard(a);
   await wait(600);
@@ -700,7 +802,7 @@ async function jiangLevel(a, P) {
   a.u.facing = 'down'; LV.cast(a, 0);
   // the banner: it rises out of the ground behind him and unfurls
   const root = new THREE.Group(), H = 1.9, W = 0.62, CH = 0.86;
-  root.rotation.y = Math.atan2(-right.z, right.x); const base = P.clone().addScaledVector(right, -0.28).addScaledVector(toCam, -0.5);   // behind him, the silk spread over his head base.y = groundH(base.x, base.z);
+  root.rotation.y = Math.atan2(-right.z, right.x); const base = P.clone().addScaledVector(right, -0.28).addScaledVector(toCam, -0.5);   // behind him, the silk spread over his head base.y = effectH(base.x, base.z);
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, H, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.12, 0.06) })); pole.position.y = H / 2;
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.8, 0.3), toneMapped: false })); knob.position.y = H + 0.03;
   const cg = new THREE.PlaneGeometry(W, CH, 12, 6); cg.translate(W / 2, H - 0.08 - CH / 2, 0); const rest = cg.attributes.position.array.slice();
@@ -744,7 +846,7 @@ async function tianhuaLevel(a, P) {
   LV.cast(a, 0); await wait(150);
   const hand = a.chest().add(V(0, 0.3, 0)), th0 = Math.atan2(toCam.z, toCam.x);
   for (let i = 0; i < 7; i++) {
-    const th = th0 + i / 7 * 6.28, end = V(P.x + Math.cos(th) * 0.6, 0, P.z + Math.sin(th) * 0.6);   // a ring half as wide again as his cell end.y = groundH(end.x, end.z);
+    const th = th0 + i / 7 * 6.28, end = V(P.x + Math.cos(th) * 0.6, 0, P.z + Math.sin(th) * 0.6);   // a ring half as wide again as his cell end.y = effectH(end.x, end.z);
     const trail = vfx.ribbon({ col: [0.85, 0.45, 0.04], width: 0.035, n: 12 });
     const nail = new THREE.Mesh(new THREE.ConeGeometry(0.0525, 0.36, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.8, 0.3), toneMapped: false })); vfx.timed(nail, 1e9, () => {});
     nails.push({ nail, end, th });
@@ -785,7 +887,7 @@ async function tuLevel(a, P) {
   const heart = t => { const x = 16 * Math.sin(t) ** 3, y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t); return P.clone().addScaledVector(right, x / 16 * 1.1).addScaledVector(toCam, -(y + 4) / 16 * 1.1); };
   let lastDecal = -1;
   await anim(1.4, (k, dt = 1 / 60) => {
-    const q = heart(k * Math.PI * 2); q.y = groundH(q.x, q.z);
+    const q = heart(k * Math.PI * 2); q.y = effectH(q.x, q.z);
     if (Math.random() < dt * 30) vfx.smokePuff(q.x + rand(-0.06, 0.06), q.y + 0.06, q.z + rand(-0.06, 0.06), { vy: rand(0.2, 0.5), life: 0.7, size: 0.13, size1: 0.32, tint: DIRT });
     if (Math.random() < dt * 25) vfx.burst(q.clone().setY(q.y + 0.05), { n: 2, speed: 0.8, cols: [DIRT, [0.62, 0.52, 0.38]], size: 0.04, life: 0.4, g: 8, up: 0.8, shape: 0 });
     const step = Math.floor(k * 56); if (step !== lastDecal) { lastDecal = step; vfx.decal(q, [1, 0.3, 0.55], 0.17, 2.0 - k * 1.2, { intensity: 1.3 }); }
@@ -876,7 +978,7 @@ async function randengLevel(a, P) {
   await anim(1.1, (k, dt = 1 / 60) => { T += dt; pearls.forEach((m, i) => { const born = i * 0.03; if (T < born) return; m.visible = true; m.position.copy(orbit(i, T - born));
     if (Math.random() < dt * 4) vfx.spark(m.position.x, m.position.y, m.position.z, { life: 0.3, size: 0.05, r: 0.85, gg: 0.92, b: 1, shape: 0 }); }); });
   // they settle on the ground round him; a light runs between them and the formation shines out
-  const from = pearls.map(m => m.position.clone()), spot = i => { const th = i / N * 6.28 + T * 2.2, q = V(P.x + Math.cos(th) * R, 0, P.z + Math.sin(th) * R); q.y = groundH(q.x, q.z) + 0.06; return q; };
+  const from = pearls.map(m => m.position.clone()), spot = i => { const th = i / N * 6.28 + T * 2.2, q = V(P.x + Math.cos(th) * R, 0, P.z + Math.sin(th) * R); q.y = effectH(q.x, q.z) + 0.06; return q; };
   await anim(0.35, k => pearls.forEach((m, i) => m.position.copy(from[i]).lerp(spot(i), ease(k))));
   LV.cast(a, 1);
   const tracer = vfx.ribbon({ col: [1, 0.75, 0.25], width: 0.04, n: 40, fade: 0.4 });
@@ -887,7 +989,6 @@ async function randengLevel(a, P) {
   // the lamp: a flame kindles over his head and burns bright while the formation glows
   const lamp = () => a.head().add(V(0, 0.32, 0));
   vfx.light(lamp(), [1, 0.75, 0.35], 8, 1.1, 4);
-  ui.floater(lamp().add(V(0, 0.35, 0)), '哈哈哈', 'dmg text', 1.2);   // pleased with himself
   await anim(1.0, (k, dt = 1 / 60) => {
     const q = lamp(); vfx.flame(q.x, q.y, q.z, { size: 0.26 + Math.sin(k * 20) * 0.03, asp: 1.7, life: 0.2, vy: 0.4, tint: [1, 0.9, 0.6] });
     if (k > 0.6) { const f = (k - 0.6) / 0.4; plate.material.opacity = 0.9 * (1 - f); pearls.forEach(m => { m.position.y += dt * 1.2; m.scale.setScalar(1 - f); }); }
@@ -897,7 +998,7 @@ async function randengLevel(a, P) {
 }
 
 export const LEVEL_POSE = {
-  // 林雲: the young hunter's three cuts and a wave of sword wind (linLevel)
+  // 林雲: he spins, closes his eyes, and a great blue sword of light rises at his back and shoots into the sky (linLevel)
   p0: (a, P) => linLevel(a, P),
   // 燕蓉: facing us, draws and looses an arrow into the sky that bursts into 天女散花, flowers of many colours
   p1: async (a, P) => {

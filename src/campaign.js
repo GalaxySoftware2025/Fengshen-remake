@@ -1,13 +1,13 @@
 // The campaign state between battles: where the story is, the roster, the shared bag. Renderer-free (the tests run it).
 // A save (save.js) is this object as JSON:
 //   { scene: 'prologue' | 'prologue2' | 0..64 | 'end', part: 'intro' | 'outro', camp: true when at a battle's camp, battle: its n,
-//     chapter: the last chapter card shown, place, roster: [hero records], bag: { itemId: count }, flags: {}, saves, wins,
+//     chapter: the chapter reached, place, roster: [hero records], bag: { itemId: count }, flags: {}, saves, wins,
 //     chestFlags: { table: bits } (the chests opened before, ROM ff3252) }
 // Rules from the ROM: after a battle every hero (cid ≤ 12) is written back to the roster fully healed, without the
 // battle's temporary boosts [0x1BCCE]; held equipment is in effect while a hero holds it, its bonus added into the
 // hero's stats when it moves from the bag and taken off when it goes back [0x169B0]; a hero holds up to 8 items, and
 // the bag keeps up to 99 of each [0x163C8].
-import { hero, JOIN_AT } from './party.js';
+import { hero, JOIN_AT, autoPick } from './party.js';
 
 const C = () => globalThis.COMMON;
 const KEEP = ['cid', 'lv', 'exp', 'hp', 'mhp', 'mp', 'mmp', 'atk', 'df', 'spd', 'move', 'items', 'spells'];
@@ -41,9 +41,29 @@ export function summon(state, spell) {
   const r = heroRec(state, 2); if (!r || r.spells.includes(spell) || r.spells.length >= 8) return false;
   r.spells.push(spell); return true;
 }
-// after a scene: the next one (65 scenes, then the ending)
+// the things the story hands a hero [the user's call: they never reached the party]: the original's scripts show them
+// (the lines, 林雲's memory back at the 火靈珠) but put none in a hand or the bag that we could find (no call of the
+// routine that gives an item, 0x13012, but the chests' and the drops'; no write to a held slot or the bag in scenes
+// 25 and 39-56): each is given at the line it is handed over on, by scene and frame
+//   火靈珠   scene 42 (after 九龍島, battle 21): 林雲 sees it in the 四聖騎's hoard and his memory comes back
+//   天門雙寶 scene 54 (after 天門, battle 26): the guardian's 青翎劍 to 林雲, the 月影戒指 for 燕蓉
+// @qa scene:42 scene:54 job:saving
+export const GIFTS = {
+  42: [{ f: 464, item: 20, to: 0, key: 'gift-42-20' }],
+  54: [{ f: 1794, item: 21, to: 0, key: 'gift-54-21' }, { f: 2243, item: 18, to: 1, key: 'gift-54-18' }],
+};
+// a story gift, once (state.flags): into the hero's hands, equipped (its bonus on), or the bag when the hero cannot take it
+// @qa scene:42 scene:54 job:saving
+export function gift(state, g) {
+  state.flags = state.flags || {}; if (state.flags[g.key]) return null;
+  state.flags[g.key] = true;
+  const r = heroRec(state, g.to), it = C().items[g.item];
+  if (r && r.items.length < MAX_HELD && mayHold(r, it)) { r.items.push(g.item); equipBonus(r, it, 1); return r.cid; }
+  state.bag[g.item] = Math.min(MAX_BAG, (state.bag[g.item] || 0) + 1); return 'bag';
+}
+// after a scene: the next one (66 scenes, the last the epilogue, then the title)
 export function nextScene(state) {
-  state.scene = state.scene === 'prologue' ? 'prologue2' : state.scene === 'prologue2' ? 0 : state.scene >= 64 ? 'end' : state.scene + 1;
+  state.scene = state.scene === 'prologue' ? 'prologue2' : state.scene === 'prologue2' ? 0 : state.scene >= 65 ? 'end' : state.scene + 1;
   state.part = 'intro'; state.camp = false; state.battle = null;
   return state;
 }
@@ -57,6 +77,8 @@ export function enterCamp(state, B) {
   for (const j of B.party.joins) join(state, j.cid);
   for (const cid of B.party.forced) join(state, cid);
   JOIN_AT.forEach((n, cid) => { if (n <= B.n && !B.party.unavailable.includes(cid)) join(state, cid); });
+  // @qa job:saving job:flow
+  for (const [tag, list] of Object.entries(GIFTS)) if (+tag < B.scene) for (const g of list) gift(state, g);   // (a game saved past a gift's scene before it was given)
   state.place = B.name;
   return state;
 }
@@ -72,6 +94,17 @@ export function afterBattle(state, units, won, found, chestFlags) {   // found: 
   }
   if (won) { state.wins++; state.camp = false; state.part = 'outro'; }
   return state;
+}
+// who goes, as the camp opens: kept from an earlier visit to this battle's camp (a loss, a reload) if still allowed, else
+// only the heroes the battle must take, the rest grey and standing until chosen [the user's call; the original too starts
+// from 林雲 alone]. The picks carry the battle they were made for: the next battle's camp starts again from its required
+// heroes [the user's report: they were carried over from the battle before]
+export function campPick(state, n, party, P) {
+  const ok = c => party.some(p => p.cid === c) && !P.unavailable.includes(c);
+  if (state.pickFor !== n || !Array.isArray(state.pick) || !state.pick.every(ok) || state.pick.length > P.deployMax || !P.forced.every(c => !ok(c) || state.pick.includes(c)))
+    state.pick = autoPick(party, P).filter(p => P.forced.includes(p.cid)).map(p => p.cid);
+  state.pickFor = n;
+  return state.pick;
 }
 export const summary = state => ({ place: state.place, lv: (heroRec(state, 0) || { lv: 1 }).lv, saves: state.saves });
 

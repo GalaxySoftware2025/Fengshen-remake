@@ -2,7 +2,7 @@
 
 Every battle plays from its generated data (`data/battles/NN.js`), with the engine's generic rules: dormant enemies (AI 7 and 8) wake when a hero comes within their range (to the AI in their record's +35), AI 9 walks to a cell and then takes the AI in +37, AI 10 paces a zone until a hero comes near (`rules.js`; the record's AI bytes +34..+3B are each unit's `aip`), and chests (`D.chests`) open when a hero picks the chest's cell as the move target or attacks it from next to it (a chest marked `hidden` gets no highlight and is not a move target: a hero finds it only by attacking its cell from next to it). Chests and hidden flags come from the ROM for every battle: the room a battle opens in holds the header's chest table, each room entered its record's, and the extractor marks hidden every chest the map's art does not draw (`extract/battles.js` drawnChest); a battle module never flags them by hand. An enemy's drop (`drop`: its spawn record's item, held at +0x12) goes to the hero who fells it, by an attack, a spell or an item (`rules.js` takeDrop; not the rout at a battle's end); a unit a hook spawns from its own list carries that list's item byte as `drop` (battle 8's wave: 0x1DA22), and one copied from a template keeps the template's +0x12. `test/battles.mjs` checks all of it on all 32 battles. Every caster (any unit with a spell, a module's own wave records included) has its own casting animation in `src/casts.js`, keyed by cid; `test/casts.mjs` names any new caster without one. This folder holds only what is unique to a battle,
 ported from its ROM hook code (`research/battles/NN-hooks.txt`). Register a battle in `index.js`
-(`MODULES = { 1: '01-fushan', 2: '02-fushan', 3: '03-dungeon', 4: '04-fushan', 5: '05-feizhong', 6: '06-feizhong2', 7: '07-chaoge', 8: '08-lintong', 9: '09-ziyang', 10: '10-hailong', 11: '11-lianggong', 12: '12-shengling', 13: '13-panxi', 14: '14-huoyan', 15: '15-qilin' }`). Its scripted checks go in `test/battles.mjs`. A battle without a module uses the generic rules: the win and lose conditions are read
+(`MODULES = { 1: '01-fushan', …, 22: '22-xiqi', 23: '23-jiameng', 24: '24-jiameng2', 25: '25-kunlun', 26: '26-tianmen', 27: '27-jinao', 28: '28-xiqi2', 29: '29-mengjin', 30: '30-chaoge2', 31: '31-zhaixing', 32: '32-zhaixing2' }`). Its scripted checks go in `test/battles.mjs`. A battle without a module uses the generic rules: the win and lose conditions are read
 from the condition text (rout; named units falling), and the scene's pre- and post-battle lines play over the map.
 
 ## `NN-name.js`: rules (pure; `test/sim.mjs` runs it too)
@@ -15,7 +15,7 @@ A default export. Every field is optional.
 | `beforeTurn(G, u)` | before every unit's turn (the ROM's turn hook, header +34) | scripted beats: wakes units (`ai = 0`) and returns the lines to play, `[{ who, text, unit }]` (battle 1: the escort's orders; `unit: null` for a speaker not on the map); a hero who joins is pushed onto `G.units` and `G.joined` (battle 4's 楊戩) |
 | `roundStart(G)` | each round, before any unit acts | returns an event object for the presentation (磻溪: `{ col, victims }`) |
 | `trigger(G)` | after every action | returns `true` when a scripted trigger fires (an ambush wakes) |
-| `victory(G)` | after every action | `true` when won; replaces the generic check |
+| `victory(G)` | after every action | `true` when won, or `{ lines, rout, after }`: lines spoken first, the rout of every enemy left, lines after it (battle 23); replaces the generic check |
 | `defeat(G)` | after every action and each round start | the loss reason text, or `null`; replaces the generic check |
 | `goal(G)` | sim `rescue` option | units the AI's fliers head for |
 | `hud(G)` | each round | the HUD gauge `{ label, fill, text }` |
@@ -36,3 +36,14 @@ A default export. Functions get `E`, the battle engine (`src/battle.js`): `cam`,
 | `intro(E)` | before the first round; default: the scene's pre-battle lines, then the battle's name |
 | `victory(E)` | on a win; default: a banner and the scene's post-battle lines |
 | `end` | `{ title, sub }` for the end screen |
+
+## Experiments (variants)
+
+`VARIANTS` in `index.js` lists other presentations of a battle: `<stem>-<variant>-fx.js`, opened as
+`#battle=N-<variant>` (the test page lists them after the battle). The rules, units and board stay the battle's own,
+and the campaign never plays a variant. `tools/qa/sets.js battle=N-<variant>` and `tools/qa/battle.js N-<variant>`
+check one.
+
+| Variant | What it tries |
+|---|---|
+| `25-reimagine` | 崑崙仙山 rebuilt from what the place is rather than from the original's tiles: stone pillars climbing out of a sea of cloud at dawn, wild below (rope bridges, hewn steps) to the pilgrims' tiers (old paving, stone lanterns, a shrine) to the jade summit (balustrade, the red-stone stele of the 紅石古文書, beds of 甘露草, the gate, 玉虛宮 on the far peak); light warming with height, jade under the rims, the lone crag chained to the summit; cranes and 祥雲 ribbons by the user's leave (`src/remake/kunlun-reimagine.js`, `-props.js`) |

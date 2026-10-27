@@ -28,7 +28,7 @@ export async function checkRom(bytes) {
   const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(v => v.toString(16).padStart(2, '0')).join('');
   return h === ROM_SHA256 ? null : 'SHA-256 ' + h;
 }
-export const SCENES = ['prologue', 'prologue2', ...Array.from({ length: 65 }, (_, i) => String(i).padStart(2, '0'))];
+export const SCENES = ['prologue', 'prologue2', ...Array.from({ length: 66 }, (_, i) => String(i).padStart(2, '0'))];
 
 // the images and data
 export function extractData(rom, log = () => {}) {

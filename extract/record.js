@@ -28,6 +28,10 @@ export function stubs(m) {
 // a 512-byte tile block -> a number (FNV-1a), for looking sheets up by what VRAM shows
 function hash(u8, a, n) { let h = 0x811c9dc5; for (let i = 0; i < n; i++) { h ^= u8[a + i]; h = Math.imul(h, 0x01000193); } return h >>> 0; }
 const eq = (A, a, B, b, n) => { for (let i = 0; i < n; i++) if (A[a + i] !== B[b + i]) return false; return true; };
+// native cuts that unpack a one-frame pose to RAM 0xFFA000 and point a unit's record at it (0x0F733C: scene 43's 伯邑考,
+// the graphic whose pointer table is at 0x0802C2; 0x0F7B90: scene 45's 文王, 0x06926A): such a unit is recorded under
+// that table's address as its sheet (record.py the same; extract/natives.js poseSheet makes the sheet)
+const POSE_BUF = 0xffa000, CUT_POSES = { 0x0f733c: 0x0802c2, 0x0f7b90: 0x06926a, 0x0f9bd8: 0x05339c };   // (0x0F9BD8: scene 54's 燕蓉 kneeling as her memory comes back)
 
 // The state every recording starts from: the console booted to the title (the prologue and the demo at 0x7C8 / 0x7E0
 // skipped, as title.py does), with the few RAM words the Python recordings' snapshot (the 磻溪 camp of a played game) had
@@ -54,7 +58,7 @@ export function record(R, m, scene, { maxFrames = 20000, onFrame = null } = {}) 
     const off = L(0xff0f7c), scr = L(0xff32b6), w = cpu.rd16(scr + off);
     if (w < 58) { const n = SIZE[w] - 2, arg = []; for (let k = 0; k < n; k++) arg.push(cpu.rd8(scr + off + 2 + k)); ops.push({ f: state.f, at: (scr + off) >>> 0, op: w, arg: arg.map(v => v.toString(16).padStart(2, '0')).join('') }); }
     if (w === 25) { const a = cpu.rd8(scr + off + 2) - 1 - 31, b = cpu.rd8(scr + off + 3) - 1 - 31; if (a >= 0 && a < 30 && b >= 0 && b < 30) { const t = own[a]; own[a] = own[b]; own[b] = t; } }
-    if (w === 0 || w === 13) for (let i = 0; i < 30; i++) own[i] = i;
+    if (w === 0 || w === 13 || w === 52) for (let i = 0; i < 30; i++) own[i] = i;   // a map load (op 52: op 13's, from white)
   };
   c.hooks.set(0x872, onOp); c.hooks.set(0x2d26, onOp); c.hooks.set(0x4090, onOp);
   const seen = new Set(); c.hooks.set(PART2, () => seen.add(PART2)); c.hooks.set(PART2_END, () => seen.add(PART2_END));
@@ -84,7 +88,7 @@ export function record(R, m, scene, { maxFrames = 20000, onFrame = null } = {}) 
     return hit;
   };
   const seenAt = new Map(), drawn = [], props = [];
-  let error = null, f;
+  let error = null, f, pose = null, seenOps = 0;   // the pose a cut has unpacked to 0xFFA000 (CUT_POSES)
   const J = JSON.stringify;
   for (f = 0; f < maxFrames; f++) {
     state.f = f;
@@ -92,11 +96,18 @@ export function record(R, m, scene, { maxFrames = 20000, onFrame = null } = {}) 
     if (onFrame) onFrame(f);
     const cx = W(0xff0020), cy = W(0xff0022);
     if (!cams.length || cams[cams.length - 1][1] !== cx || cams[cams.length - 1][2] !== cy) cams.push([f, cx, cy]);
+    for (const o of ops.slice(seenOps)) if (o.op === 38 && CUT_POSES[parseInt(o.arg.slice(0, 8), 16)] != null) pose = CUT_POSES[parseInt(o.arg.slice(0, 8), 16)];
+    seenOps = ops.length;
+    const named = g => (g === POSE_BUF && pose != null ? pose : g).toString(16).padStart(6, '0');   // a unit's sheet: its graphic, or the pose in the buffer
+    const okg = g => (g >= 0x40000 && g < 0x200000) || (g === POSE_BUF && pose != null);
     // what the hardware draws: every 32x32 sprite on the 256x224 screen, told apart by its tiles
     const cur = new Set();
     for (let i = 0; i < 30; i++) {
       const g = (m.ram[0x02aa + 64 * i + 6] << 24 | m.ram[0x02aa + 64 * i + 7] << 16 | m.ram[0x02aa + 64 * i + 8] << 8 | m.ram[0x02aa + 64 * i + 9]) >>> 0;
-      if (g >= 0x40000 && g < 0x200000) {
+      if (g === POSE_BUF && pose != null) {
+        cur.add(named(g)); const tl = m.ram.slice(POSE_BUF & 0xffff, (POSE_BUF & 0xffff) + 512), h = hash(tl, 0, 512);
+        if (!sheets.has(h)) sheets.set(h, []); if (!sheets.get(h).some(e => e[0] === named(g))) sheets.get(h).push([named(g), 0, null, tl]);
+      } else if (g >= 0x40000 && g < 0x200000) {
         cur.add(g.toString(16).padStart(6, '0'));
         if (!known.has(g)) { known.add(g); for (let k = 0; k < 9; k++) { const h = hash(rom, g + 512 * k, 512); if (!sheets.has(h)) sheets.set(h, []); sheets.get(h).push([g.toString(16).padStart(6, '0'), k, g + 512 * k]); } }
       }
@@ -110,7 +121,7 @@ export function record(R, m, scene, { maxFrames = 20000, onFrame = null } = {}) 
       }
       if (((sz >> 8) & 0xf) === 0xf && 0x80 - 32 < y && y < 0x80 + 224 && 0x80 - 32 < x && x < 0x80 + 256) {
         const t = attr & 0x7ff, h = hash(m.vram, t * 32, 512);
-        const cand = (sheets.get(h) || []).filter(([, , o]) => eq(rom, o, m.vram, t * 32, 512));
+        const cand = (sheets.get(h) || []).filter(([, , o, tl]) => o == null ? eq(tl, 0, m.vram, t * 32, 512) : eq(rom, o, m.vram, t * 32, 512));
         const list = cand.length ? cand : [['', -1]];
         const [g, k] = list.find(x2 => cur.has(x2[0])) || list[0];
         shown.push([x - 0x80 + cx * 8, y - 0x80 + cy * 8, g, k, (attr >> 11) & 1]);
@@ -126,14 +137,14 @@ export function record(R, m, scene, { maxFrames = 20000, onFrame = null } = {}) 
       const y = m.ram[so] << 8 | m.ram[so + 1], attr = m.ram[so + 4] << 8 | m.ram[so + 5], x = m.ram[so + 6] << 8 | m.ram[so + 7];
       const rb = 0x02aa + 64 * i, r0 = m.ram[rb];
       const gfx = (m.ram[rb + 6] << 24 | m.ram[rb + 7] << 16 | m.ram[rb + 8] << 8 | m.ram[rb + 9]) >>> 0;
-      const vis = 0x80 - 32 < y && y < 0x80 + 224 && x > 0x80 - 40 && r0 !== 0 && r0 !== 0xff && gfx >= 0x40000 && gfx < 0x200000;
+      const vis = 0x80 - 32 < y && y < 0x80 + 224 && x > 0x80 - 40 && r0 !== 0 && r0 !== 0xff && okg(gfx);
       const t = attr & 0x7ff;
       const s16 = v => v & 0x8000 ? v - 0x10000 : v, rx = s16(m.ram[rb + 2] << 8 | m.ram[rb + 3]), ry = s16(m.ram[rb + 4] << 8 | m.ram[rb + 5]);
-      const present = r0 !== 0 && r0 !== 0xff && rx >= 0 && rx < 128 && ry >= 0 && ry < 128 && gfx >= 0x40000 && gfx < 0x200000;
+      const present = r0 !== 0 && r0 !== 0xff && rx >= 0 && rx < 128 && ry >= 0 && ry < 128 && okg(gfx);
       let key = null;
       const incut = ops.length && ops[ops.length - 1].op === 38;
       if (vis) {
-        key = [x - 0x80 + cx * 8, y - 0x80 + cy * 8, gfx.toString(16).padStart(6, '0'), frameOf(gfx, t * 32), (attr >> 11) & 1];
+        key = [x - 0x80 + cx * 8, y - 0x80 + cy * 8, named(gfx), gfx === POSE_BUF ? 0 : frameOf(gfx, t * 32), (attr >> 11) & 1];
         seenAt.set(i, [key, [rx, ry], !!incut]);
       } else if (present && seenAt.has(i)) {
         const [k0, r0s, c0] = seenAt.get(i), same = r0s[0] === rx && r0s[1] === ry;
@@ -141,7 +152,7 @@ export function record(R, m, scene, { maxFrames = 20000, onFrame = null } = {}) 
         const there = !onscr || shown.some(d => Math.abs(d[0] - k0[0]) <= 16 && Math.abs(d[1] - k0[1]) <= 16 && d[2] === k0[2]);
         if (same && (incut || (!c0 && there))) key = k0.slice();
         else if (same && !c0) seenAt.delete(i);
-        else if (incut) key = [rx * 32, ry * 32, gfx.toString(16).padStart(6, '0'), k0[3], k0[4]];
+        else if (incut) key = [rx * 32, ry * 32, named(gfx), k0[3], k0[4]];
       }
       if (!tracks.has(i)) tracks.set(i, []);
       const tr = tracks.get(i);

@@ -3,14 +3,14 @@
 //   the floor     rows 9-14 (x 4-13), a red carpet up its middle (x 7-10) from the south to the throne
 //   the terrace   rows 7-8 either side of the carpet (x 4-7, 10-13), a jade balustrade along its front over a brick face
 //   the dais      rows 2-6 (x 4-13), up the carpeted stair (x 7-10, rows 6.5-9); jade balustrades along its front (x 5-7,
-//                 10-12) and down its sides (x 5, 11.5); 崇侯虎's throne at (8.5, 3.4) before a grey stone wall with a
+//                 10-12) and down its sides (x 5, 11.5); 崇侯虎's throne at (8.5, 3.0) before a grey stone wall with a
 //                 gilt crest, stone blocks at its corners
 // Lit warm from braziers either side of the dais.
 import * as THREE from 'three';
 import * as T from '../kit/tex.js';
 import { Levels, mats, box, shade, merged, stairs, throne } from '../kit/parts.js';
 
-const MW = 16, MH = 15, MID = 0.35, DAIS = 0.7, BASE = -6;
+const MW = 16, MH = 15, MID = 0.35, DAIS = 0.7, BASE = -6, TZ = 3.0;   // TZ: the throne's middle (崇侯虎 sits at 3.5, on its front)
 function levels() {
   const L = new Levels(MW, MH, 4);
   L.set(4, 8.75, 13, 15, 0).set(4, 6.75, 7, 8.75, MID).set(10, 6.75, 13, 8.75, MID).set(4, 2, 13, 6.75, DAIS).set(7, 6.75, 10, 9, 0);
@@ -58,7 +58,7 @@ async function build(E, FX) {
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(9, 3.4), new THREE.MeshStandardMaterial({ map: crestTex(), roughness: 0.9 })); wall.position.set(8.5, DAIS + 1.7, 2.02); S.add(wall);
   const stone = T.material(T.rock(0xb8b4a0, 'chongStone', 0.4), {}, [0.5, 0.5]);
   for (const x of [4.5, 12.5]) S.add(shade(box(stone, x - 0.5, DAIS, 2, x + 0.5, DAIS + 0.9, 2.95, 1)));
-  S.add(throne(M, 8.5, 3.4, DAIS));
+  S.add(throne(M, 8.5, TZ, DAIS));
   for (const x of [6.3, 10.7]) {   // braziers either side of the dais
     S.add(shade(new THREE.Mesh(new THREE.LatheGeometry([[0, 0], [0.18, 0], [0.08, 0.1], [0.06, 0.6], [0.22, 0.72], [0.26, 0.82], [0, 0.8]].map(([a, b]) => new THREE.Vector2(a, b)), 20), M.bronze)).translateX(x).translateY(DAIS).translateZ(5.6));
     FX.fire(E, { x, y: 5.6, z: DAIS + 0.85, size: 0.45, light: 6, col: 0xffa050, smoke: false });
@@ -78,6 +78,9 @@ async function build(E, FX) {
 }
 export const chongHall = {
   build, ground: (x, z) => { if (!built) return 0; const R4 = 4, i = Math.floor(x * R4), j = Math.floor(z * R4), v = i >= 0 && j >= 0 && i < MW * R4 && j < MH * R4 ? LV.H[j * MW * R4 + i] : NaN; return isNaN(v) && !LV.ramps.some(r => x >= r.x0 && x < r.x1 && z >= r.z0 && z < r.z1) ? BASE : LV.at(x, z); },
+  // 崇侯虎 sits on the throne in both scenes (his seated sheet; a few pixels' start or shake about (8.5, 3.5)): up on its
+  // step, his feet on it, in front of the cushion (he stood inside the chair, only his crown showing: the user's report)
+  seat: (x, z) => built && Math.abs(x - 8.5) < 0.4 && z > TZ && z < TZ + 1.1 ? { y: DAIS + 0.27, z: Math.max(TZ + 0.47, z) } : null,
   particles: 'dust',
   mood: { bg: 0x000000, voidCol: 0x000000, voidY: BASE, fog: 0x050302, fogD: 0.03, sky: 0xffe0b0, under: 0x2a1a0a, hemi: 0.75,
     sun: 0xffd8b0, sunI: 1.7, sunDir: [-0.25, 0.9, 0.4], sat: 1.04, exposure: 1.1, bloom: 0.45,

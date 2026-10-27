@@ -61,6 +61,7 @@ export async function sfx(id, o = {}) {   // o: { vol (0-1), rate (playback spee
   if (typeof id === 'string' && SFX[id] != null) id = SFX[id];
   if (id == null) return;
   if (window.__qa) (window.__qa.sfx ||= []).push(id);   // what was asked for (tools/qa: sound checks), even with no audio running
+  if (window.__qa) (window.__qa.sfxT ||= []).push([id, window.__remake && window.__remake.clock ? window.__remake.clock() : 0]);   // and when, on the game clock (tools/qa/spells.js: a spell's sounds against the original's)
   await init(); if (!ctx || ctx.state !== 'running') return;
   const buf = await load(id); if (!buf) return;
   const src = ctx.createBufferSource(); src.buffer = buf; if (o.rate) src.playbackRate.value = o.rate;

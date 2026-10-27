@@ -54,6 +54,7 @@ const V = {
   '0f488a': {   // 桃花林 (scene 36, battle 18's forest): a meadow of peach trees in blossom, the cliff of the temple's cave in the
     // north-east (rows 0-2), its mouth at (18, 1) between two stone pillars (17.5 and 19.5, row 4), two boulders. Spring.
     w: 24, h: 35, art: 'assets/maps/0f488a.png', snow: false, start: [13, 32],   // (battle 18's deploy)
+    particles: 'peach',   // petals on the breeze [the user's call]
     palette: { [CL.grass]: [0x002400, 0x249000, 0x90b400], [CL.rock]: [0x242400, 0x000000, 0x484824, 0x909090] },
     rocky: [0x242400, 0x000000, 0x484824, 0x909090], crown: [0xd82400, 0xfc6c48],
     mouth: { x: 18.5, z: 1.7, w: 0.95, h: 1.15 },
@@ -138,10 +139,12 @@ function setFor(key) {
     const rockM = v.snow ? T.material(T.rock(0x404e58, 'snowBoulder', 0.5), { color: 0xd8e2ec }, [0.5, 0.5]) : v.boulder ? T.material(T.rock(v.boulder, 'boulder' + key, 0.6), { color: 0xe8e8e0 }, [0.5, 0.5]) : T.material(T.rock(0x6a4a2a, 'holyRock', 0.6), { color: 0xf0d8b8 }, [0.5, 0.5]);
     S.add(mouth(land.at.bind(land), rockM, mo));
     // the forest: a tree on each cell no one stands on that is not ridge (two on a few), kept off the stones and the mouth
+    const chestAt = new Set((D.rooms && G.chests ? G.chests : D.chests || []).map(c => c.x + ',' + c.y));
     treeCells = []; const list = [], bush = [], hash = (x, y, k) => { const h = Math.sin(x * 127.1 + y * 311.7 + k * 74.7) * 43758.5453; return h - Math.floor(h); };
     for (let y = -1; y <= MH; y++) for (let x = -1; x <= MW; x++) {
       if (x >= 0 && y >= 0 && x < MW && y < MH && (walk(x, y) || rockCell(x, y) || stoneCell(x, y))) continue;
       if (Math.hypot(x + 0.5 - mo.x, y + 0.5 - mo.z) < 1.4) continue;
+      if (chestAt.has(x + ',' + y)) continue;   // (no bush or tree on a chest's cell: it stood in the open chest)
       if ((x < 0 || y < 0 || x >= MW || y >= MH) && hash(x, y, 9) < 0.35) continue;   // (past the edge: a thinner wood)
       if (!treeArt(x, y)) { if (x >= 0 && y >= 0 && x < MW && y < MH) { bush.push([x + 0.5, land.at(x + 0.5, y + 0.5), y + 0.5]); treeCells.push([x, y]); } continue; }   // (grass the grid blocks: a low bush says so)
       const front = walk(x, y - 1) || walk(x, y - 2);   // a tree just south of open ground (between it and the camera) kept small: its crown would hide the squares and the units
@@ -168,7 +171,7 @@ function setFor(key) {
     const p = g ? g.position : new THREE.Vector3(x + 0.5, land.at(x + 0.5, y + 0.5), y + 0.5); if (g) S.remove(g);
     const o = chest(M, p.x, p.z, p.y, true, 0, 1.4); S.add(o); chestG.set(x + ',' + y, o);
   }
-  return { build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, mood: v.mood, particles: v.snow ? 'snow' : null, get props() { return v.stones.map(([x, z]) => [Math.floor(x), Math.floor(z)]).concat(v.bare || [], treeCells); } };   // (the stones' and the trees' cells: a model blocks them, tools/qa/sets.js)
+  return { build, openChest, ground: (x, z) => land ? land.at(x, z) : 0, mood: v.mood, particles: v.particles || (v.snow ? 'snow' : null), get props() { return v.stones.map(([x, z]) => [Math.floor(x), Math.floor(z)]).concat(v.bare || [], treeCells); } };   // (the stones' and the trees' cells: a model blocks them, tools/qa/sets.js)
 }
 export const holyMount = setFor('0f0fdc');
 export const qilinMount = setFor('0f2d64');

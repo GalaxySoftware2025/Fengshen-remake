@@ -4,9 +4,10 @@
 //   assets/units/100378.png, 050316.png   the rabbit's hop frames and 林雲's swing (scene 0's hunt)
 //   assets/units/jade.png                 伯邑考's jade (scene 3's toss)
 //   assets/maps/world-95a9.png            the world map of the 昌平村 descent, without the falling sprite or label
+//   assets/maps/prologue-world.png        the world map the prologue pans over (port of tools/rom/prologue_world.py)
 import { MD } from './md.js';
 import { image, cramRGB } from './png.js';
-import { stubs, record, PART2, TITLE, HALT } from './record.js';
+import { stubs, record, PART2, TITLE, HALT, PROLOGUE } from './record.js';
 import { Rom } from './rom.js';
 
 const unitRGB = R => Array.from({ length: 16 }, (_, i) => cramRGB(R.W(0x38436 + 2 * i)));
@@ -168,9 +169,49 @@ export function dragon(R, rom, files) {
   files['assets/units/' + DRAGON.toString(16).padStart(6, '0') + '.png'] = img;
 }
 
+// ---------------------------------------------------------------- scene 54's 古文書 (native cuts 0x0F9A0A, 0x0F9AB8)
+// The four ancient texts op 45 lays round 林雲 and 燕蓉 (16 px sprites, two tiles by two, column by column, the art packed at
+// the op's pointer; palette line 3 from 0x0F0C9C, op 31), and the one they become (32 px, four by four, 0x03A07C; its
+// palette 0x03A05C): assets/fx/tablet-N.png (top, right, bottom, left, as laid) and assets/fx/scroll.png
+export const TABLETS = [0x0f0cbc, 0x0f0d36, 0x0f0db0, 0x0f0e2a];
+export function tablets(R, rom, files) {
+  const draw = (src, n, pal, name) => {
+    const m = new MD(rom); m.call(0x6bce, [0xff8000, src]);
+    const rgb = Array.from({ length: 16 }, (_, i) => cramRGB(R.W(pal + 2 * i))), S = n * 8, img = image(S, S, 4);
+    for (let t = 0; t < n * n; t++) { const tx = Math.floor(t / n), ty = t % n;
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const b = m.ram[0x8000 + t * 32 + y * 4 + (x >> 1)], p = x & 1 ? b & 15 : b >> 4, o = ((ty * 8 + y) * S + tx * 8 + x) * 4;
+        img.px[o] = rgb[p][0]; img.px[o + 1] = rgb[p][1]; img.px[o + 2] = rgb[p][2]; img.px[o + 3] = p ? 255 : 0; } }
+    files['assets/fx/' + name + '.png'] = img;
+  };
+  TABLETS.forEach((a, k) => draw(a, 2, 0x0f0c9c, 'tablet-' + k));
+  draw(0x03a07c, 4, 0x03a05c, 'scroll');
+}
+
+// ---------------------------------------------------------------- the prologue's world map (native cuts 0x256C, 0x2BF4)
+// The view pans east over a map of 128 x 28 cells (1024 x 224 px), the words at 0x1B588C (pointer at 0x100514) on the
+// tiles the cut loads (header 0x18C6A2): the prologue run to f1060, when the map has faded in, and the map drawn from
+// VRAM and CRAM. The same land as the title's backdrop, in the prologue's own colours.
+const WORLD = 0x1B588C, WORLD_W = 128, WORLD_H = 28;
+export function prologueWorld(R, rom, files, snap) {
+  const m = new MD(rom).restore(snap), c = m.cpu; stubs(m);
+  m.rom.set([0x60, 0xfe], HALT); const sp = 0xFFFDFC; c.wr32(sp, HALT);
+  m.ram[0x32ba] = 0; m.ram[0x32bb] = 8; m.ram.fill(0, 0x0f7c, 0x0f80);
+  c.r[15] = sp; c.sr = 0x2000; c.pc = PROLOGUE;
+  for (let f = 0; f <= 1060; f++) m.stepFrame();
+  const W = WORLD_W * 8, px = new Uint8Array(W * WORLD_H * 8 * 3), pal = m.cram.map(cramRGB);
+  for (let cy = 0; cy < WORLD_H; cy++) for (let cx = 0; cx < WORLD_W; cx++) {
+    const e = R.W(WORLD + 2 * (cy * WORLD_W + cx)), t = (e & 0x7ff) * 32, line = ((e >> 13) & 3) * 16;
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      const sx = e & 0x800 ? 7 - x : x, sy = e & 0x1000 ? 7 - y : y, b = m.vram[t + sy * 4 + (sx >> 1)], p = sx & 1 ? b & 15 : b >> 4;
+      px.set(pal[line + p], ((cy * 8 + y) * W + cx * 8 + x) * 3);
+    }
+  }
+  files['assets/maps/prologue-world.png'] = { w: W, h: WORLD_H * 8, channels: 3, px };
+}
+
 // all of them, as files and as the measurements extract/scenes.js takes
 export function run(R, rom, files, snap) {
-  dragon(R, rom, files);
+  dragon(R, rom, files); tablets(R, rom, files); prologueWorld(R, rom, files, snap);
   const out = { hunt: hunt(R, rom, files), toss: toss(R, rom, files, snap), bridge: bridge(R, rom), descent: descent(R, rom, files, snap) };
   for (const [k, v] of Object.entries(out)) files['research/scenes/' + k + '.json'] = JSON.stringify(v);
   return out;

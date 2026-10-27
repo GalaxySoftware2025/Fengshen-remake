@@ -60,7 +60,7 @@
 <script type="module">
   const CN = ['', '一', '二', '三', '四', '五', '六', '七'];
   const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-  const { MODULES } = await import('../src/battles/index.js');
+  const { MODULES, VARIANTS } = await import('../src/battles/index.js');
   const nums = Array.from({ length: 32 }, (_, i) => i + 1);
   await Promise.all(nums.map(n => load('../data/battles/' + String(n).padStart(2, '0') + '.js').catch(() => null)));
   const B = window.BATTLES || {}, list = document.getElementById('list');
@@ -96,6 +96,12 @@
         a.innerHTML = `<div class="t"><span class="n">${n}</span><span class="name">${b.name}</span><span class="st ${ported ? 'done' : ''}">${ported ? '已移植' : '通用規則'}</span></div>
           <div class="c"><b>勝利</b> ${b.win.join('・')}　<b>敗北</b> ${b.lose.join('・')}<br><b>出陣</b> ${b.party.deployMax} 人　<b>敵軍</b> ${foes}　<b>地圖</b> ${b.mapW}×${b.mapH}</div>`;
         grid.appendChild(a);
+        for (const v of VARIANTS[n] || []) {   // an experiment on the same battle (src/battles/index.js VARIANTS)
+          const e = document.createElement('a'); e.className = 'b'; e.href = '../index.html#battle=' + n + '-' + v + flags;
+          e.innerHTML = `<div class="t"><span class="n">${n}</span><span class="name">${b.name}</span><span class="st">實驗・${v}</span></div>
+            <div class="c">同一戰役、同一棋盤，場景重新構想（battle${n}-${v}）</div>`;
+          grid.appendChild(e);
+        }
       }
       return;
     }

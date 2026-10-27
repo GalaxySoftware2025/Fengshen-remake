@@ -242,6 +242,22 @@ export function paper(base = 0xf6e6c4) {
   }, 0.5);
 }
 // cut stone blocks in running bond (parapets, retaining walls, wells)
+// worn stone flags laid in courses, `per` a texture across: each flag its own tint between base and alt, edges worn round
+// with grime in the joints, pitted, a carved scroll on some (carve: the share); calm enough for move squares
+const fr = v => v - Math.floor(v), rn = (a, b, k) => fr(Math.sin(a * 12.9898 + b * 78.233 + k * 37.719) * 43758.5453);
+export function flags(base = 0xd8d0b4, alt = 0xc2c2a8, name = 'flags', per = 8, carve = 0.28, grime = 0x605848) {
+  return pbr(name, 512, (u, v, o) => {
+    const N = per, row = Math.floor(v * N), cu = u * N + (row % 2) * 0.5, col = Math.floor(cu), fu = cu - col, fv = v * N - row;
+    const e = Math.min(fu, 1 - fu, fv, 1 - fv), n = fbm(u, v, 24, 4, 51), fine = fbm(u, v, 96, 2, 52);
+    const tint = rn(col % N, row, 1), B = mixc(hex(base), hex(alt), tint);
+    const bevel = smooth(0, 0.07, e), joint = 1 - smooth(0.005, 0.03, e), pit = smooth(0.8, 0.9, fbm(u, v, 64, 2, 53));
+    let cv = 0; if (rn(col % N, row, 2) < carve) { const dx = fu - 0.5, dy = fv - 0.5, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx); if (r < 0.34 && r > 0.05) cv = Math.abs(Math.sin(r * 28 - a)) < 0.16 ? 1 : 0; }
+    o.h = 0.5 + 0.08 * bevel + (n - 0.5) * 0.07 + (fine - 0.5) * 0.03 - joint * 0.22 - pit * 0.06 - cv * 0.05;
+    const g = clamp(joint * 0.6 + (1 - bevel) * 0.2 + pit * 0.35 + cv * 0.18 + smooth(0.55, 0.8, n) * 0.15);
+    o.c = mixc(mixc(B, [B[0] * 0.9, B[1] * 0.92, B[2] * 0.88], n), hex(grime), g);
+    o.r = 0.8 - bevel * 0.08 + joint * 0.15;
+  }, 3);
+}
 export function bricks(base = 0x9a9476, rows = 4, name = 'bricks') {
   return pbr(name + base + rows, 512, (u, v, o) => {
     const B = hex(base), y = v * rows, ry = Math.floor(y), x = u * 2 + (ry % 2) * 0.5, rx = Math.floor(x), fx = x - rx, fy = y - ry;

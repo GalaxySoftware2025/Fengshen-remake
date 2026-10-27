@@ -5,13 +5,14 @@
 // Space plays at 4x, Esc skips to the end of the part. Court scenes (only 紂王's court speaking) get the cutaway look.
 import * as THREE from 'three';
 import * as R from './rules.js';
-import { spriteKey, FLYING_FOES } from './sprites.js';
+import { spriteKey, FLYING_FOES, FLOATERS } from './sprites.js';
 import { emoteTexture, FRAMES as EMOTE_FRAMES } from './emotes.js';
 import { registerSets, setFor, dress } from './sets.js';
 import REMADE from './remake/index.js';
 import * as Audio from './audio.js';
 import { speed } from './speed.js';
 import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff } from './tracks.js';
+import * as CUT from './cutfx.js';
 registerSets(REMADE);
 const { G } = R;
 const $ = id => document.getElementById(id);
@@ -22,7 +23,6 @@ const VIEW = { pitch: 1.25, dist: 33, fov: 12 };
 // on a rebuilt HD set the walls and pillars are real geometry, so the camera comes down to an HD-2D angle
 const SET_VIEW = { pitch: 0.95, dist: 20, fov: 22 };
 let view = VIEW;
-const CN = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
 // op 11's balloon kinds -> frames of assets/fx/emotes.png [ROM 0x19CDC] (drawn from src/emotes.js, its HD redraw)
 const EMOTE = { 0: [0, 1, 2], 1: [3], 2: [4], 3: [5], 4: [6, 7], 5: [8, 9, 10] }, EMOTE_REST = [11, 12];
 
@@ -38,14 +38,16 @@ function isCourt(S, f) {
   return who.length > 0 && who.every(w => COURT.includes(w));
 }
 
-// a black overlay for the original's fades
-function fade(to, sec) {
+// a black overlay for the original's fades; white where the original loads a map from white (op 52, scene 54's way into
+// heaven), its fade-in then out of white (op 53)
+function fade(to, sec, white) {
   if (window.__qa) window.__qa.fades.push({ t: performance.now(), to });
-  const f = $('fade'); if (f.style.opacity === String(to)) return Promise.resolve();   // already there (or going there): a new transition would restart it from the old value
+  const f = $('fade'); if (to === 1) f.style.background = white ? '#fff' : '';
+  if (f.style.opacity === String(to)) return Promise.resolve();   // already there (or going there): a new transition would restart it from the old value
   f.style.transition = 'opacity ' + sec + 's'; f.style.opacity = to;
   return new Promise(r => setTimeout(r, sec * 1000));
 }
-// narration pages (op 54) and chapter cards: ink text on black, click to continue
+// narration pages (op 54): ink text on black, click to continue
 async function card(E, lines, cls, beforeHide) {
   const c = $('card-screen'); c.className = 'screen ' + (cls || ''); c.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
   c.classList.remove('hidden'); if (window.__qa) window.__qa.shown.push({ t: performance.now(), kind: 'card' });
@@ -59,7 +61,6 @@ function nextVisual(evs, i) {
   for (; i < evs.length; i++) if (['say', 'fadeIn', 'fadeOut', 'map', 'narrate', 'place', 'battle', 'emote', 'appear'].includes(evs[i].kind)) return evs[i].kind;
   return 'end';
 }
-export const chapterCard = (E, ch) => card(E, ['第' + (CN[ch] || ch) + '章'], 'chapter');
 
 // the balloon (src/emotes.js: the original's 13 frames redrawn at 256 px), untoned and unfogged so its white stays white
 let emoteTex = null;
@@ -78,10 +79,10 @@ function tossSprite(scene, name) {
 // a scene map as the world: a stand-in battle with the map's size and terrain, no units
 async function showMap(E, S, key, court) {
   const m = S.maps[key];
-  R.loadBattle({ n: 'scene', name: '', chapter: S.chapter, mapW: m.w, mapH: m.h, terrain: m.terrain, deploy: [[0, 0]], enemies: [], win: [], lose: [], party: { deployMax: 0, forced: [], unavailable: [], joins: [] }, intro: [], outro: [] }, [], {});
+  R.loadBattle({ n: 'scene', scene: S.tag, name: '', chapter: S.chapter, mapW: m.w, mapH: m.h, terrain: m.terrain, deploy: [[0, 0]], enemies: [], win: [], lose: [], party: { deployMax: 0, forced: [], unavailable: [], joins: [] }, intro: [], outro: [] }, [], {});
   const sprites = new Set();
   for (const tr of Object.values(S.actors)) for (const p of tr) if (p[3]) sprites.add(spriteKey(parseInt(p[3], 16)));
-  const set = setFor(key); view = set ? SET_VIEW : VIEW;
+  const set = setFor(key); view = set ? set.view || SET_VIEW : VIEW;   // (a set may frame itself: the world map fills the view as the original's screen)
   await E.loadWorld({ look: set ? { set } : { mapSD: 'assets/maps/' + key + '.png' }, sprites: [...sprites] });
   if (set) await dress(E, set);
   if (court) E.world.grade.uniforms.uSat.value = set ? 0.98 : 0.85;      // 紂王's court: colour a little drained, and a letterbox
@@ -115,14 +116,25 @@ export async function play(E, tag, part, hooks) {
   if (part === 'outro') { if (bi < 0) return 'end'; t0 = S.events[bi].f; evs = S.events.slice(bi + 1); }
   else if (bi >= 0) evs = S.events.slice(0, bi + 1);
   const tEnd = part === 'intro' && bi >= 0 ? S.events[bi].f : S.frames;
+  // the story's gifts in this part (src/campaign.js GIFTS: none in the original's data), after the lines of their frame,
+  // before a fade, map load or battle on it (scene 54's last lines and its fade-out share a frame)
+  // @qa scene:42 scene:54
+  const closes = e => ['battle', 'fadeOut', 'map', 'narrate'].includes(e.kind);
+  // @qa scene:42 scene:54
+  for (const g of (hooks && hooks.gifts) || []) if (g.f > t0 && g.f < tEnd + (part === 'intro' ? 0 : 1)) {
+    let k = evs.length; while (k > 0 && (evs[k - 1].f > g.f || (evs[k - 1].f === g.f && closes(evs[k - 1])) || evs[k - 1].kind === 'battle')) k--;
+    if (evs === S.events) evs = evs.slice(); evs.splice(k, 0, Object.assign({ kind: 'gift' }, g));
+  }
   // the map to stand on at t0: the last map loaded before it (the outro may play on the battle map)
   let mapKey = null;
   for (const e of S.events) { if (e.f > t0 || (part === 'outro' && e === S.events[bi])) break; if (e.kind === 'map') mapKey = e.map; }
   if (part === 'intro') mapKey = null;
   const units = new Map();      // actor slot -> unit
+  const slotActor = slot => { const a = units.get(String(slot)); return a ? E.actors.get(a.u) || null : null; };   // (src/cutfx.js: the actor in a slot)
   const cams = soften(S.camera, 3, 8);
   const camAt = camOf(S), loads = S.events.filter(e => e.kind === 'map' || e.kind === 'descent').map(e => e.f);
-  let t = t0, fast = false, skip = false, emote = null, emoteEv = null, worldReady = false, fresh = false, toss = null, tossEv = null;
+  let groupEv = null, group = [];   // (op 44 / 49: a balloon over each of a run of units)
+  let t = t0, fast = false, skip = false, emote = null, emoteEv = null, worldReady = false, fresh = false, toss = null, tossEv = null, rollEv = null;
   let frameFix = 0, camFast = false;   // cells the camera moves south (+) or north to keep a line's speaker clear of the dialogue box and the top edge
   const appearing = new Map();   // slot -> a fade-in in progress (the original flickers the sprite on)
   // a unit's strike (op 28, export_scenes.py: scene 3's 燕蓉 smashing the lock): its attack frames until the blow, the
@@ -143,9 +155,9 @@ export async function play(E, tag, part, hooks) {
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
   E.ui.show('hud', false);
   const atLabel = document.getElementById('scene-at'); atLabel.classList.remove('hidden');
-  const setMap = async (key, cut) => {
-    await fade(1, 0.25);
-    units.clear(); emote = null; toss = null; tossEv = null; props.clear(); lineProp = null;
+  const setMap = async (key, cut, white) => {
+    await fade(1, white ? 0 : 0.25, white);   // (from white: at once, as the original's palette turns white)
+    units.clear(); emote = null; groupEv = null; group = []; toss = null; tossEv = null; props.clear(); lineProp = null; rollEv = null; clearRoll();
     await showMap(E, S, key, !cut && isCourt(S, t)); worldReady = !cut; fresh = true;
     if (window.__remake) { window.__remake.world = 'map:' + key; window.__remake.mapAt = t; }
     for (const [slot, tr] of Object.entries(S.actors)) {
@@ -194,6 +206,8 @@ export async function play(E, tag, part, hooks) {
       if (q && q.length > 1 && q[3] === p[3] && q[0] > p[0]) { const k = (t - p[0]) / (q[0] - p[0]); x += (q[1] - p[1]) * k; y += (q[2] - p[2]) * k; moving = q[1] !== p[1] || q[2] !== p[2]; }
       if (stand && stand[p[3]] && stand[p[3]](E, x / 32 + 0.5, y / 32 + 0.5, moving, { tag, t }) !== false) { act.hidden = true; act.root.visible = false; a.standGfx = p[3]; continue; }   // a remade set plays this sprite with a model (valley: the cart), or hides it; false: the sprite as it is
       a.u.still = p[5];   // a sheet the original never walk-cycles (export_scenes.py stills): the frame it shows
+      act.stone = p[6] ? 1 : 0;   // turned to stone (the prologue's fox army, 0x278E): bluish white at the flash, grey by 16 frames on
+      if (p[6]) { const k = Math.min(1, Math.max(0, (t - p[0]) / 16)); act.stoneCol = (act.stoneCol || new THREE.Color()).setRGB(1.12 - 0.12 * k, 1.16 - 0.16 * k, 1.3 - 0.3 * k); }
       a.u.gfx = p[3]; a.u.facing = p[4] || 'down'; a.u.x = Math.round(x / 32); a.u.y = Math.round(y / 32);
       const wasWalking = act.walking; act.hidden = false; act.walking = moving;
       act.fade = offFade(tr.offstage, t);   // offstage: walked off the original's screen (src/tracks.js): faded out
@@ -210,9 +224,14 @@ export async function play(E, tag, part, hooks) {
         if (k >= 1) { appearing.delete(slot); act.dissolve = 0; }
       }
       const wx = x / 32 + 0.5, wz = y / 32 + 0.5, P = E.tileCenter(wx - 0.5, wz - 0.5);
+      if (FLOATERS.has(p[3])) { act.floatY = Math.max(P.y, act.floatY ?? P.y); P.y = act.floatY; }   // (a spirit floating off: never down onto lower ground)
       act.pos.set(wx, P.y, wz); act.off.set(0, 0);
-      if (FLYING_FOES.has(p[3]) && !act.over) { act.over = true; for (const m of [act.mesh, act.big]) { m.material.depthTest = false; m.renderOrder = 6.5; } }   // a flying enemy over the scenery, as in battle (battle.js syncActors)
-      if (p[3] === WINGED && !act.hover) act.hover = 0.7;   // 雷震子 flies: held in the air, so our tilted view keeps the gap the original shows (scene 15: he hung on 文王 before taking him up, the user)
+      const st = set && set.seat && set.seat(wx, wz); if (st) { act.pos.y = st.y; act.off.set(0, st.z - wz); }   // a remade set's seat (崇侯虎's throne): the sitter up on it, in front of its back
+      if ((FLYING_FOES.has(p[3]) || FLOATERS.has(p[3])) && !act.over) { act.over = true; for (const m of [act.mesh, act.big]) { m.material.depthTest = false; m.renderOrder = 6.5; } }   // a flying enemy over the scenery, as in battle (battle.js syncActors)
+      if (p[3] === WINGED) {   // 雷震子 held in the air only while he is on someone (scene 15 f1951-2077: he hangs on 文王 before taking him up, so our tilted view keeps the gap the original shows, the user); otherwise on the ground with the rest [the user's report: he stood higher than the others in many scenes]
+        const on = [...units].some(([s2, b]) => { if (s2 === slot) return false; const q = at(b.tr, t); return q && Math.abs(q.x - x) < 20 && Math.abs(q.y - y) < 20; });
+        act.hover += ((on ? 0.7 : 0) - act.hover) * (snap ? 1 : 0.15); if (act.hover < 0.005) act.hover = 0;
+      }
       const sk = strikes.find(e => e.slot === slot && t >= e.f && t < e.hit + 40);
       if (sk) strike(sk, act, t, snap);
       else if (act.act && act.act.kind === 'atk') act.act = null;
@@ -227,6 +246,7 @@ export async function play(E, tag, part, hooks) {
       E.cam.shot(target, { free: true, dist: view.dist, pitch: view.pitch, yaw: 0, speed: snap ? 100 : camFast ? 16 : 4 });
       if (snap) E.cam.snap();
     }
+    if (rollEv) { if (t > (rollEv.end != null ? (rollEv.hold ? Infinity : rollEv.end) : rollEv.f + 720)) { rollEv = null; clearRoll(); } else drawRoll(E, rollEv, t); }   // (a page with an end: gone then, or held there, the epilogue's last)
     if (emote && emoteEv) {
       const fr = EMOTE[emoteEv.emote] || EMOTE_REST, k = fr[Math.floor(t / Math.max(4, emoteEv.delay || 8)) % fr.length];
       emote.material.map.offset.x = k / EMOTE_FRAMES;
@@ -237,17 +257,25 @@ export async function play(E, tag, part, hooks) {
       // the wall behind 林雲 in scene 3)
       let near = null, nd = 48;
       for (const a of units.values()) { const q = at(a.tr, t), act = q && E.actors.get(a.u); if (!act || act.hidden) continue; const d = Math.hypot(q.x - emoteEv.x + 16, q.y - emoteEv.y - 16); if (d < nd) { nd = d; near = { act, dx: emoteEv.x - q.x }; } }
-      // [the user's call] higher over the head, to the side the speaker faces (left when it faces left, else right), the
-      // balloon mirrored there so its tail still points down at the head
-      if (near) { const H = near.act.head(), side = near.act.u.facing === 'left' ? -1 : 1; emote.position.set(H.x + side * 0.5, H.y + 0.8, H.z); emote.scale.x = side * Math.abs(emote.scale.x); }
+      // where the original draws it [the user's call: it had moved to the side the speaker faces]: every emote event in every
+      // scene is 0-24 px right of its speaker and above it, whichever way the speaker faces, so up and right of the head,
+      // its tail down-left at the head
+      if (near) { const H = near.act.head(); emote.position.set(H.x + 0.5, H.y + 0.8, H.z); }
       else { const P = E.tileCenter((emoteEv.x + 16) / 32 - 0.5, (emoteEv.y + 16) / 32 - 0.5); emote.position.set(P.x, P.y + 1.1, P.z); }
+    }
+    // the run of balloons (op 44 / 49): each over its unit's head, as the single one, popping up together
+    if (groupEv && worldReady) {
+      const shown = groupEv.slots.map(s => slotActor(s)).filter(a => a && !a.hidden && a.root.visible);
+      while (group.length < shown.length) group.push(emoteSprite(E.world.scene));
+      const pop = Math.min(1, (t - groupEv.f) / 9), sc = 0.8 * (pop < 1 ? 0.55 + 0.45 * Math.sin(pop * Math.PI * 0.62) / Math.sin(Math.PI * 0.62) : 1);
+      group.forEach((g, i) => { const a = shown[i]; g.visible = !!a; if (!a) return; const H = a.head(); g.position.set(H.x + 0.5, H.y + 0.8, H.z); g.scale.set(sc, sc, 1); g.material.map.offset.x = groupEv.frame / EMOTE_FRAMES; });
     }
     if (window.__remake) window.__remake.propsOn = [];
     for (const e of propEvs) {
       const on = worldReady && propsPassed.has(e) && t >= e.f && t < e.until && mapKeyOf(S, e.f) === mapKeyOf(S, t);
       let spr = props.get(e);
       if (on && !spr) { spr = tossSprite(E.world.scene, e.name); props.set(e, spr); }
-      if (spr) { if (on) propAt(spr, e.x, e.y); else spr.visible = false; }
+      if (spr) { if (on) { const q = e.path ? at(e.path.map(p => [p[0], p[1], p[2], '']), t) : null; propAt(spr, q ? q.x : e.x, q ? q.y : e.y); if (e.blink && t >= e.blink[0]) spr.visible = Math.floor(t) % 2 === 0; } else spr.visible = false; }   // (op 45's items: along their unit's record; op 46's blink)
       if (on && window.__remake) window.__remake.propsOn.push(e.f);   // (src/qa.js: none may show under a line of its own frame)
     }
     if (tossEv) {   // a thing thrown (scene 3's jade, toss.py): from the thrower's hand to the catcher's on a smooth arc
@@ -277,27 +305,34 @@ export async function play(E, tag, part, hooks) {
         if (e.kind === 'prop') propsPassed.add(e);
         if (seek != null && e.f < seek) {   // seeking (#at=): the state at the seek frame, nothing shown on the way
           if (e.kind === 'music') { if (e.id < 0x8000) Audio.play(e.id); }
-          else if (e.kind === 'map') { await setMap(e.map); lit = false; }
+          else if (e.kind === 'map') { await setMap(e.map, false, e.white); lit = false; }
           else if (e.kind === 'descent') { await setMap(e.map, true); await fade(1, 0); lit = false; }
-          else if (e.kind === 'fadeIn' || e.kind === 'say') lit = true;
+          else if (e.kind === 'fadeIn' || e.kind === 'say' || (e.kind === 'native' && e.name === 'vision' && seek > e.show)) lit = true;
           else if (e.kind === 'fadeOut' || CARDS.includes(e.kind)) lit = e.kind !== 'fadeOut' && lit;
           else if (e.kind === 'emote' && worldReady) { if (!emote) emote = emoteSprite(E.world.scene); emote.visible = true; emoteEv = e; if (window.__remake) window.__remake.emote = emote; }
           else if (e.kind === 'emoteOff' && emote) { emote.visible = false; emoteEv = null; }
+          else if (e.kind === 'emotes' && worldReady) groupEv = e;
+          else if (e.kind === 'emotesOff') { groupEv = null; for (const g of group) g.visible = false; }
+          else if (e.kind === 'roll') rollEv = e;
           else if (e.kind === 'toss' && worldReady && e.path[e.path.length - 1][0] >= seek) tossEv = e;   // still in the air at the seek frame
           else if (e.kind === 'cell' && worldReady && setFor(mapKeyOf(S, e.f))) setFor(mapKeyOf(S, e.f)).cell?.(E, e.x, e.y, e.block);
           else if (e.kind === 'cell' && worldReady && S.atlas[mapKeyOf(S, e.f)]) await E.world.paintCell(e.x, e.y, 'assets/maps/' + mapKeyOf(S, e.f) + '-blocks.png', S.atlas[mapKeyOf(S, e.f)].indexOf(e.block));
           else if (e.kind === 'join' && hooks && hooks.join) hooks.join(e.cid);
           else if (e.kind === 'summon' && hooks && hooks.summon) hooks.summon(e.spell);
+          // @qa scene:42 scene:54
+          else if (e.kind === 'gift' && hooks && hooks.gift) hooks.gift(e);
+          else if (e.kind === 'native' && worldReady && CUT[e.name]) CUT[e.name](E, e, () => t, slotActor);   // (one still running at the seek frame shows its state there)
           else if (e.kind === 'native' && worldReady) setFor(mapKeyOf(S, e.f))?.native?.(E, e, () => t);   // the set shows the state at the seek frame
           else if (e.kind === 'battle') { ei--; seek = null; }   // past the first part: the battle comes as usual
           continue;
         }
         if (e.kind === 'music') { if (!skip || e.id < 0x8000) Audio.play(e.id); continue; }   // a song (skipping: still the right one), an effect
-        if (skip && !['map', 'join', 'cell', 'battle'].includes(e.kind)) continue;
-        if (e.kind === 'map') await setMap(e.map);   // stays dark until the original's fade-in (or the first line / card)
+        // @qa scene:42 scene:54
+        if (skip && !['map', 'join', 'gift', 'cell', 'battle'].includes(e.kind)) continue;
+        if (e.kind === 'map') await setMap(e.map, false, e.white);   // stays dark until the original's fade-in (or the first line / card)
         else if (e.kind === 'fadeIn' && worldReady && !CARDS.includes(nextVisual(evs, ei))) {   // a fade-in for a page brings up the page, not the map
           t = Math.max(t, e.f); pose(fresh); if (fresh) { warm(E); await clock(); } fresh = false;   // cast and camera as the original has them at the fade-in (set and drawn once while dark; snap on a new map)
-          await fade(0, 0.25 + 0.08 * e.speed);
+          await fade(0, e.white ? e.frames / 60 : 0.25 + 0.08 * e.speed);
         }
         else if (e.kind === 'fadeOut') await fade(1, 0.25 + 0.08 * e.speed);
         else if (e.kind === 'say') {
@@ -331,11 +366,26 @@ export async function play(E, tag, part, hooks) {
         }
         else if (e.kind === 'emote' && worldReady) { if (!emote) emote = emoteSprite(E.world.scene); emote.visible = true; emoteEv = e; if (window.__remake) window.__remake.emote = emote; }
         else if (e.kind === 'emoteOff' && emote) { emote.visible = false; emoteEv = null; }
+        else if (e.kind === 'emotes' && worldReady) groupEv = e;   // op 44 / 49: a balloon over each of a run of units
+        else if (e.kind === 'emotesOff') { groupEv = null; for (const g of group) g.visible = false; }
+        else if (e.kind === 'roll') rollEv = e;   // narration rolled up over the panning world map (drawRoll)
         else if (e.kind === 'toss' && worldReady && !skip) tossEv = e;
         else if (e.kind === 'cell' && worldReady && setFor(mapKeyOf(S, e.f))) { const st = setFor(mapKeyOf(S, e.f)); if (st.cell) st.cell(E, e.x, e.y, e.block); }   // a remade set acts the change out (a door opens)
         else if (e.kind === 'cell' && worldReady && S.atlas[mapKeyOf(S, e.f)]) await E.world.paintCell(e.x, e.y, 'assets/maps/' + mapKeyOf(S, e.f) + '-blocks.png', S.atlas[mapKeyOf(S, e.f)].indexOf(e.block));
         else if (e.kind === 'join' && hooks && hooks.join) hooks.join(e.cid);
         else if (e.kind === 'summon') { if (hooks && hooks.summon) hooks.summon(e.spell); if (!skip) await E.ui.say('楊戩 得到了召喚獸「' + globalThis.COMMON.spells[e.spell].name + '」！', null, 2400); }   // [0x0EDD80 shows the beast and waits for a button]
+        // @qa scene:42 scene:54
+        else if (e.kind === 'gift') {   // a story gift into a hero's hands (or the bag), told as a summon is
+          const who = hooks && hooks.gift ? hooks.gift(e) : null, C = globalThis.COMMON, name = C.items[e.item].name;
+          if (!skip && who != null) await E.ui.say(who === 'bag' ? '得到了「' + name + '」！（放入袋中）' : C.heroes[who].name + ' 得到了「' + name + '」！', null, 2400);
+        }
+        else if (e.kind === 'native' && e.name === 'vision' && worldReady) {   // scene 65: a vignette comes up out of white (the cut keeps the veil)
+          t = Math.max(t, e.f); pose(fresh); if (fresh) { warm(E); await clock(); } fresh = false;
+          CUT.vision(E, e, () => t, slotActor);
+        }
+        else if (e.kind === 'hold' && !skip) await new Promise(res => { let tm = null; const go = () => { clearTimeout(tm); window.removeEventListener('click', go); window.removeEventListener('keydown', key); res(); }; const key = k => { if (['Enter', ' ', 'z', 'Escape'].includes(k.key)) go(); }; window.addEventListener('click', go); window.addEventListener('keydown', key); tm = setTimeout(go, 15000); });   // the epilogue's last page held (the original: 0x7FFF frames, then the reset): until a click, or 15 s
+        else if (e.kind === 'native' && e.name === 'flash') E.vfx.flash([1, 0.97, 0.9], 0.85);   // a native cut's palette flash to white and back (scene 43 f1438)
+        else if (e.kind === 'native' && worldReady && CUT[e.name]) CUT[e.name](E, e, () => t, slotActor);   // a native cut the player acts out (src/cutfx.js: scene 42's wisp, scene 43's slash)
         else if (e.kind === 'native' && worldReady) setFor(mapKeyOf(S, e.f))?.native?.(E, e, () => t);   // a native cut a remade set acts out (scene 6's bridge): it reads the scene clock
         else if (e.kind === 'appear' && worldReady && !skip && !((units.get(e.slot) || {}).tr || { gone: [] }).gone.some(g => Math.abs(g - e.f) <= 12)) appearing.set(e.slot, { t0: e.f, dur: Math.max(20, e.dur || 30), burst: true });
         else if (e.kind === 'battle') { await fade(1, 0.4); return 'battle'; }   // dark while the battle's world is built
@@ -356,12 +406,32 @@ export async function play(E, tag, part, hooks) {
   } finally {
     window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); atLabel.classList.add('hidden');
     if (emote) { emote.parent && emote.parent.remove(emote); }
+    clearRoll();
     if (toss) { toss.parent && toss.parent.remove(toss); }
     for (const spr of props.values()) spr.parent && spr.parent.remove(spr); if (lineProp) lineProp.parent && lineProp.parent.remove(lineProp);
     E.vfx.screen.barsTarget = 0; E.world.grade.uniforms.uSat.value = 1.08;
     E.world.camera.fov = 30; E.world.camera.updateProjectionMatrix();   // back to the battle lens
   }
 }
+// narration rolled up over a panning map like credits [the prologue's, op 54 over the world map; its 0x26AC callback]:
+// line k typed in below the bottom edge from f + 3 + 32k, a glyph each 2 frames, the text rising half a pixel a frame
+// (a line's top at 240 + 16k - (t - f) / 2 on the original's 224 px screen, scaled to the canvas), each line gone once it
+// is off the top; white with a dark outline, as the original's
+let rollEl = null;
+function drawRoll(E, e, t) {
+  if (!rollEl) { rollEl = document.createElement('div'); rollEl.className = 'roll'; const f = document.getElementById('fade'); f.parentNode.insertBefore(rollEl, f); }
+  const r = E.canvasRect, s = r.height / 224, u = Math.min(t, e.end ?? Infinity) - e.f;   // (it stops rising at its end: the epilogue's last page held)
+  Object.assign(rollEl.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', fontSize: 16 * s + 'px' });
+  while (rollEl.children.length < e.lines.length) rollEl.appendChild(document.createElement('div'));
+  e.lines.forEach((line, k) => {
+    const el = rollEl.children[k], g = [...line], y = 240 + 16 * k - u / 2, n = Math.max(0, Math.min(g.length, Math.floor((u - 3 - 32 * k) / 2) + 1));
+    const on = n > 0 && y > -16 && y < 224; el.style.display = on ? '' : 'none'; if (!on) return;
+    if (el.dataset.n !== String(n)) { el.textContent = g.slice(0, n).join(''); el.dataset.n = n; }
+    const x = e.xs ? e.xs[k] : (256 - 16 * g.length) / 2;
+    el.style.transform = `translate(${r.width / 2 + (x - 128) * s}px, ${y * s}px)`;
+  });
+}
+function clearRoll() { if (rollEl) { rollEl.remove(); rollEl = null; } }
 // the 昌平村 descent (0x44CA; measured by tools/rom/descent.py). The original fades the world map in as clouds clear,
 // with the village marked and labelled, and holds the screen still; 林雲 drops in at the top edge tumbling (his
 // facings cycled, the sprite turned over), then dives head first (his front frame upside down) onto the village, the

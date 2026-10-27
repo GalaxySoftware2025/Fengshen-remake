@@ -1,7 +1,7 @@
 // Shared pieces of the spell set-pieces (src/spells.js, src/spellbook.js): staging (intro / outro, the caster's
 // gathering light, darkening), models (swords, arrows, a talisman, leaves, petals) and shapes (swirls, flame rings).
 import * as THREE from 'three';
-import { rand, groundH } from './world.js';
+import { rand, effectH } from './world.js';
 import { NOISE } from './vfx.js';
 import { castOf } from './casts.js';
 
@@ -40,7 +40,7 @@ export function gather(ctx, col, dur) {
   const n = Math.round(dur / 18);
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), r = rand(1.1, 1.8), p = V(c.x + Math.cos(a) * r, c.y + rand(-0.4, 0.9), c.z + Math.sin(a) * r);
-    setTimeout(() => v.spark(p.x, p.y, p.z, { seek: { x: c.x, y: c.y, z: c.z, k: 4.5 }, life: 0.55, size: rand(0.06, 0.11), r: col[0], gg: col[1], b: col[2], shape: Math.random() < 0.5 ? 1 : 0 }), i * 18);
+    ctx.wait(i * 18).then(() => v.spark(p.x, p.y, p.z, { seek: { x: c.x, y: c.y, z: c.z, k: 4.5 }, life: 0.55, size: rand(0.06, 0.11), r: col[0], gg: col[1], b: col[2], shape: Math.random() < 0.5 ? 1 : 0 }));   // (the game clock)
   }
   for (let i = 0; i < 16; i++) v.spark(ctx.caster.pos.x + rand(-0.5, 0.5), ctx.caster.pos.y + 0.05, ctx.caster.pos.z + rand(-0.5, 0.5), { vy: rand(1, 2.2), life: rand(0.6, 1.1), size: 0.06, r: col[0], gg: col[1], b: col[2], shape: 1 });
 }
@@ -58,6 +58,19 @@ export function outro(ctx) { ctx.vfx.screen.barsTarget = 0; ctx.vfx.screen.darkT
 // darkCol is the light taken away (world.js grade: col *= 1 - dark * darkCol): (0.9, 0.75, 0.45) leaves a night-blue
 export const DARK = (ctx, a, r, g, b) => { ctx.vfx.screen.darkTarget = a; ctx.vfx.screen.darkCol.setRGB(r, g, b); };
 
+// hold the cast to s seconds after it began (an original's beat later than the caster's own cast ends): light drawn into
+// the caster meanwhile, never a still gap
+export function channel(ctx, col, s) {
+  const g = s - ctx.now();
+  if (g > 0.15) {
+    const c = ctx.caster.chest(), v = ctx.vfx; ctx.pose('cast'); v.light(c.clone().add(V(0, 0.5, 0)), col, 3, g, 4);
+    ticker(v, g, () => { if (Math.random() < 0.6) { const a = rand(0, 6.28), r = rand(0.8, 1.5), p = V(c.x + Math.cos(a) * r, c.y + rand(-0.3, 0.9), c.z + Math.sin(a) * r); v.spark(p.x, p.y, p.z, { seek: { x: c.x, y: c.y, z: c.z, k: 4.5 }, life: 0.5, size: rand(0.05, 0.09), r: col[0], gg: col[1], b: col[2], shape: 1 }); } });
+  }
+  return ctx.until(s);
+}
+// the spell's sounds from s seconds after the cast began (the original's first sound, tools/rom/spelltime.py), whatever
+// the script is doing then: a spell whose first sound is its casting, not its blow
+export const cueAt = (ctx, s) => { ctx.until(s).then(() => ctx.cue && ctx.cue()); };
 export const ticker = (v, life, fn, onEnd) => v.timed(new THREE.Object3D(), life, fn, onEnd);   // per-frame callback for a while
 export const facing = (a, b) => b.clone().sub(a).setY(0).normalize();
 export const yawOf = d => Math.atan2(d.x, d.z);
@@ -113,7 +126,7 @@ export function flameRing(v, p, r, n, size, o) {
   o = o || {};
   for (let i = 0; i < n; i++) {
     const a = rand(0, 6.28), rr = r * Math.sqrt(rand(o.inner || 0.75, 1)), x = p.x + Math.cos(a) * rr, z = p.z + Math.sin(a) * rr;
-    v.realFire(x, groundH(x, z) - 0.08, z, { size: size * rand(1.1, 1.6), asp: rand(1.3, 1.7), life: rand(0.55, 0.9), vy: rand(0.05, 0.3), tint: o.tint });   // (real fire, not tongues: the user's call)
+    v.realFire(x, effectH(x, z) - 0.08, z, { size: size * rand(1.1, 1.6), asp: rand(1.3, 1.7), life: rand(0.55, 0.9), vy: rand(0.05, 0.3), tint: o.tint });   // (real fire, not tongues: the user's call)
   }
 }
 

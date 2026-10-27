@@ -9,16 +9,20 @@ export function sayLists(R, walk, battles) {
   const rom = R.b, hooks = [];   // [address of a hook routine, battle]
   for (let n = 1; n <= 32; n++) for (const v of Object.values(battles[n].hooks)) if (v !== 0x582e) hooks.push([v, n]);
   hooks.sort((a, b) => a[0] - b[0]);
-  const out = {};
+  const out = {}, carried = {};   // a list played right after another in the same handler (within 0x100 bytes) goes on from its counters
   for (let i = 0; i + 10 < rom.length; i += 2) {
     if (!(rom[i] === 0x23 && rom[i + 1] === 0xfc && rom[i + 6] === 0x00 && rom[i + 7] === 0xff && rom[i + 8] === 0x32 && rom[i + 9] === 0xc6)) continue;
     const list = R.L(i + 2);
     let owner = null; for (const [a, n] of hooks) if (a <= i) owner = n;
     if (owner === null) continue;
-    const b = battles[owner], chapter = b.chapter - 1, op = walk[b.scene].ops.find(o => o.op === 10), counters = { ...(op.counters || {}) };
+    const b = battles[owner], chapter = b.chapter - 1, op = walk[b.scene].ops.find(o => o.op === 10), prev = carried[owner], counters = prev && i - prev.at < 0x100 ? prev.counters : { ...(op.counters || {}) };   // (the counter is RAM: battle 27's second list in 通天教主's room goes on from the first, 0x0FA974)
+    carried[owner] = { at: i, counters };
     if (list >= rom.length) {   // built in RAM just before (battle 17's note, 0x0F3D68): one record, its speaker and line set by immediates
       let spk = null, idx = null;   // move.b #spk, $2(a0) (11 7C 00 ss 00 02); move.w #idx, $4(a0) (31 7C ii ii 00 04)
       for (let j = i - 64; j < i; j += 2) { if (R.W(j) === 0x117c && R.W(j + 4) === 2) spk = R.B(j + 3); if (R.W(j) === 0x317c && R.W(j + 4) === 4) idx = R.W(j + 2); }
+      // or whole: move.l #ff uu ss aa, (a1) (22 BC ...); move.l #iiii FFFF, $4(a1) (23 7C ... 00 04): battle 23's, its unit and
+      // actor the first hero standing, set at run time (0x0F809E)
+      if (spk === null || idx === null) for (let j = i - 64; j < i; j += 2) { if (R.W(j) === 0x22bc && R.B(j + 2) === 0xff) spk = R.B(j + 4); if (R.W(j) === 0x237c && R.W(j + 6) === 4) idx = R.W(j + 2); }
       if (spk === null || idx === null) continue;
       const line = idx & 0x8000 ? idx & 0x7fff : counters[spk] || 0;
       let text; try { text = message(R, chapter, spk, line); } catch (e) { text = '?'; }

@@ -196,7 +196,8 @@ function setFor(fixedKey) {
     const rockM = T.material(T.rock(0x4a2a20, 'cinder', 0.4), { color: 0xe8c8b8 }, [0.5, 0.5]);
     const greyM = T.material(T.rock(0x8a8884, 'boulderGrey', 0.2), { color: 0xffffff, vertexColors: true, roughness: 0.75 }, [0.6, 0.6]);
     boulderCells = []; for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (isle(x, y)) boulderCells.push([x, y]);   // (the island's cells: out of reach, tools/qa/sets.js)
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (lone(x, y)) { S.add(boulder(greyM, x + 0.5, y + 0.55, land.at(x + 0.5, y + 0.5), x * 5 + y * 3)); boulderCells.push([x, y]); }
+    const chestAt = new Set((D.rooms && G.chests ? G.chests : D.chests || []).map(c => c.x + ',' + c.y));   // (no boulder on a chest's cell: it stood in the open chest)
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (lone(x, y) && !chestAt.has(x + ',' + y)) { S.add(boulder(greyM, x + 0.5, y + 0.55, land.at(x + 0.5, y + 0.5), x * 5 + y * 3)); boulderCells.push([x, y]); }
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (tc(x, y) === 3 || tc(x, y) === 4) S.add(tunnel(rockM, x + 0.5, y + 0.5, land.at(x + 0.5, y + 0.5), voidSide(tc, x, y)));
     // skulls and bones where the art strews them (its little pale clusters on the floor)
     const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = art; });

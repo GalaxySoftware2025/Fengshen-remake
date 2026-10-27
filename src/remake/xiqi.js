@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import * as T from '../kit/tex.js';
 import { Levels, mats, merged, box, pillar, parapet, latticeWall, curtain, ding, throne, stairs, shade } from '../kit/parts.js';
 
-const UP = 0.55, TOP = 4.0, BASE = -1.6;   // (the dais one low step: the guards line up at its foot, scene 20)
+const UP = 0.55, TOP = 4.0, BASE = -1.6, AISLE = 0.42;   // (the dais one low step: the guards line up at its foot, scene 20)
 const mx = x => 25 - x;   // mirror across the hall's axis (x = 12.5)
 function levels() {
   const L = new Levels(24, 25, 4);
@@ -22,6 +22,9 @@ function levels() {
     .set(8, 2.2, 17, 7, UP).set(8, 7, 10, 9, UP).set(15, 7, 17, 9, UP);   // the dais and its faces' blocks
   L.stairs(10, 7, 11, 9, 0, UP, 4, 's'); L.stairs(14, 7, 15, 9, 0, UP, 4, 's');
   L.stairs(11, 7, 14, 9, 0, UP, 10, 's');                   // the carved slab: a slope (blocked: no one climbs it)
+  // the colonnades' stylobate down both sides (x 1 and 22), a step up from the floor: the grid blocks those cells (battle
+  // 22 plays here), open where it opens to the side (rows 6, 13, 20)
+  for (const x of [1, 22]) for (const [z0, z1] of [[7, 13], [14, 20], [21, 22]]) L.set(x, z0, x + 1, z1, AISLE);
   return L;
 }
 const LV = levels();
@@ -81,10 +84,22 @@ async function build(E, FX) {
   const key = new THREE.PointLight(0xffd2a0, 4, 6, 1.6); key.position.set(12.5, UP + 2.4, 4.6); S.add(key);
 }
 
-export default {
-  build, ground: (x, z) => LV.at(x, z), particles: 'dust',
+const XIQI = {
+  build, particles: 'dust',
+  // the floor, the dais, the stairs; where the hall has no floor (behind its walls, past its south wall), the dark below
+  ground: (x, z) => { const i = Math.floor(x * 4), j = Math.floor(z * 4), v = i >= 0 && j >= 0 && i < 96 && j < 100 ? LV.H[j * 96 + i] : NaN;
+    return isNaN(v) && !LV.ramps.some(r => x >= r.x0 && x < r.x1 && z >= r.z0 && z < r.z1) ? BASE : LV.at(x, z); },
   mood: { bg: 0x030202, voidCol: 0x030202, voidY: -1.6, fog: 0x120804, fogD: 0.006, sky: 0xffe6c4, under: 0x3a1a0a, hemi: 0.95,
     sun: 0xffdcb0, sunI: 2.5, sunDir: [-0.35, 0.85, 0.5], sat: 1.04, exposure: 1.12, bloom: 0.38,
     env: { top: 0x9a6a40, mid: 0x6a3a1c, low: 0x2a1408, lights: [[0, 6, -8, 0xfff0d0, 6], [-7, 4, 0, 0xffd090, 4], [7, 4, 0, 0xffd090, 4], [0, 9, 3, 0xffe0b0, 5]] } },
   lights: [{ x: 12.5, y: 3.0, z: 9, col: 0xffb070, i: 3, d: 9 }],
 };
+export default XIQI;
+// the hall while 呂岳's plague holds 西岐 (scene 58 and battle 28: 0fba34, 0fba84, the same art), the same hall in a sick
+// light: the lamps low, a sallow haze hanging in it, the colours drained [design: the story's mood; scene 59, cured, is
+// the hall as ever]
+export const xiqiPlague = Object.assign({}, XIQI, {
+  mood: Object.assign({}, XIQI.mood, { fog: 0x14160a, fogD: 0.022, sky: 0xd4dcae, under: 0x1e2210, hemi: 0.8, sun: 0xe0e4b8, sunI: 1.9, sat: 0.8, exposure: 1.06, bloom: 0.3,
+    env: { top: 0x6a7048, mid: 0x3a3c22, low: 0x14160a, lights: [[0, 6, -8, 0xe8ecc8, 4], [-7, 4, 0, 0xd8d098, 2.6], [7, 4, 0, 0xd8d098, 2.6], [0, 9, 3, 0xe8e4c0, 3.4]] } }),
+  lights: [{ x: 12.5, y: 3.0, z: 9, col: 0xd8c890, i: 2, d: 9 }],
+});

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import * as T from '../kit/tex.js';
 import { Levels, mats, box, pillar, latticeWall, curtain, stairs, shade, merged } from '../kit/parts.js';
 import { craneBird, flap } from './title.js';
+import { darken } from '../cutfx.js';
 
 const UP = 0.2;
 function levels() { const L = new Levels(8, 10, 4); L.set(0, 1.8, 8, 4.6, UP).set(0, 4.6, 8, 9.1, 0); L.stairs(0, 4.4, 8, 4.8, 0, UP, 2, 's'); return L; }
@@ -308,6 +309,7 @@ function heaven(E) {
 
 export default {
   build, ground: (x, z) => LV.at(x, z), particles: 'sparkles',
+  native(E, ev, clock) { if (ev.name === 'redden') darken(E, ev, clock); },   // (scene 65: heaven sinks to dark before the closing words, 0x21732)
   // [design, the user's: the pink void did not read as heaven] a sea of sunlit cloud: ivory tops with a golden rim,
   // azure folds, deep blue in the gaps, a warm haze toward the horizon
   mood: { bg: 0xf6e6d2, voidCol: 0xf6e6d2, fog: 0xf2e4d4, fogD: 0.003, sky: 0xfff2de, under: 0x8a98c8, hemi: 1.0,

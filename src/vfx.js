@@ -1,6 +1,6 @@
 // Effects engine: particles, rings, rune circles, pillars, lightning, lights, screen beats, and the fire wall.
 import * as THREE from 'three';
-import { groundH, rand } from './world.js';
+import { effectH, rand } from './world.js';
 
 // ---------------------------------------------------------------- particles
 const PVS = `attribute vec4 aCol; attribute float aSize; attribute float aShape; uniform float uScale;
@@ -10,11 +10,18 @@ const PVS = `attribute vec4 aCol; attribute float aSize; attribute float aShape;
 const PFS = `varying vec4 vCol; varying float vShape;
   void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c);
     vec3 rgb = vCol.rgb; float a;
-    if (vShape > 2.5) {   // a grass blade: a thin curved sliver turned by the shape's fraction
+    float kind = floor(vShape + 0.0005);   // the shape by its whole number: a turning one carries its angle in the fraction (4.0-4.999 a petal), never past it (test/particles.mjs)
+    if (kind > 3.5) {   // a peach petal: rounded, narrow at its base, a little notch at its tip; it narrows and widens as it turns (tumbling)
+      float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
+      float t = clamp((q.y + 0.42) / 0.84, 0.0, 1.0), flip = 0.3 + 0.7 * abs(cos(r * 2.0));
+      float w = 0.27 * flip * pow(t, 0.55) * sqrt(max(0.0, 1.0 - t * t));
+      a = (1.0 - smoothstep(w - 0.025, w + 0.01, abs(q.x))) * step(abs(q.y), 0.42) * smoothstep(0.035, 0.07, length(q - vec2(0.0, 0.43)));
+      rgb *= mix(vec3(0.93, 0.72, 0.8), vec3(1.06, 1.03, 1.04), smoothstep(0.0, 0.7, t)) * (0.85 + 0.25 * smoothstep(-0.2, 0.2, q.x * flip));
+    } else if (kind > 2.5) {   // a grass blade: a thin curved sliver turned by the shape's fraction
       float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c; q.x -= 0.12 * (q.y + 0.46) * (q.y + 0.46);   // (bent)
       float w = 0.017; a = (1.0 - smoothstep(w - 0.01, w + 0.004, abs(q.x))) * (1.0 - smoothstep(0.42, 0.46, abs(q.y)));   // as thick at the tip as at the root (the user), rounded off at both ends
       rgb *= 0.8 + 0.45 * smoothstep(0.46, -0.3, q.y);
-    } else if (vShape > 1.5) {   // a leaf: a pointed oval turned by the shape's fraction, lit along one side
+    } else if (kind > 1.5) {   // a leaf: a pointed oval turned by the shape's fraction, lit along one side
       float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
       float w = 0.17 * (1.0 - pow(abs(q.y) / 0.46, 2.0)); a = (1.0 - smoothstep(w - 0.03, w + 0.01, abs(q.x))) * step(abs(q.y), 0.46);
       rgb *= 0.78 + 0.5 * smoothstep(-0.15, 0.15, q.x) - 0.25 * (1.0 - smoothstep(0.0, 0.02, abs(q.x)));
@@ -45,8 +52,16 @@ class Particles {
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.orb) { const dx = p.x - p.orb.x, dz = p.z - p.orb.z, a = p.orb.w * dt, c = Math.cos(a), s = Math.sin(a), pull = p.orb.pull ? Math.exp(-p.orb.pull * dt) : 1; p.x = p.orb.x + (dx * c - dz * s) * pull; p.z = p.orb.z + (dx * s + dz * c) * pull; }
       if (p.wob) { p.x += Math.sin(p.age * 3 + p.ph) * p.wob * dt; p.z += Math.cos(p.age * 2.3 + p.ph) * p.wob * dt; }
-      if (p.floor && p.y < p.floor) { p.y = p.floor; p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
-      const k = p.age / p.life, fade = Math.min(1, p.age / p.fadeIn) * (1 - k * k);
+      if (p.floor && p.y < p.floor) {
+        p.y = p.floor;
+        if (p.settle && p.landed == null) {   // settle: it lies where it landed, as it lay, and fades over that many seconds
+          p.landed = p.age; p.vx = p.vy = p.vz = p.g = p.wob = 0;
+          if (p.spin) { p.shape = Math.floor(p.shape || 2) + (((p.ph || 0) + p.age * p.spin) % 1 + 1) % 1 * 0.999; p.spin = 0; }
+        } else if (!p.settle) { p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
+      }
+      const k = p.age / p.life, gone = p.landed == null ? 1 : 1 - (p.age - p.landed) / p.settle;
+      if (gone <= 0) continue;
+      const fade = Math.min(1, p.age / p.fadeIn) * (1 - k * k) * gone;
       const j = w++;
       this.pos[j * 3] = p.x; this.pos[j * 3 + 1] = p.y; this.pos[j * 3 + 2] = p.z;
       const flick = p.flicker ? 0.6 + 0.4 * Math.sin(p.age * 40 + p.ph) : 1;
@@ -259,7 +274,7 @@ export class VFX {
       const a = rand(0, Math.PI * 2), e = rand(-0.2, 1) * o.spread, v = o.speed * rand(0.35, 1);
       const c = o.cols ? o.cols[(Math.random() * o.cols.length) | 0] : o.col;
       this.spark(p.x, p.y, p.z, { vx: Math.cos(a) * v * Math.cos(e), vy: Math.sin(e) * v + o.up * o.speed, vz: Math.sin(a) * v * Math.cos(e), g: o.g, drag: 1.5, life: rand(0.5, 1) * o.life,
-        size: o.size * rand(0.7, 1.3), r: c[0], gg: c[1], b: c[2], shape: o.shape, floor: groundH(p.x, p.z) + 0.02, ph: rand(0, 9), flicker: o.flicker });
+        size: o.size * rand(0.7, 1.3), r: c[0], gg: c[1], b: c[2], shape: o.shape, floor: effectH(p.x, p.z) + 0.02, ph: rand(0, 9), flicker: o.flicker });
     }
   }
   flame(x, y, z, o) { this.flames.add(Object.assign({ x, y, z }, o)); }
@@ -290,20 +305,20 @@ export class VFX {
   decal(p, col, r, life, o) {
     o = o || {};
     const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: this.glowTex, color: new THREE.Color(...col), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    m.rotation.x = -Math.PI / 2; m.position.set(p.x, groundH(p.x, p.z) + 0.03, p.z); m.renderOrder = 3;
+    m.rotation.x = -Math.PI / 2; m.position.set(p.x, effectH(p.x, p.z) + 0.03, p.z); m.renderOrder = 3;
     return this.timed(m, life, k => { m.material.opacity = Math.min(1, k * life / (o.in || 0.25)) * Math.min(1, (1 - k) * life / (o.out || 0.5)) * (o.intensity || 1) * (o.flicker ? 0.8 + 0.2 * Math.random() : 1); });
   }
   ring(p, col, r1, life, o) {
     o = o || {};
     const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: this.ringTex, color: new THREE.Color(...col), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
-    m.rotation.x = -Math.PI / 2; m.position.set(p.x, (o.y != null ? o.y : groundH(p.x, p.z) + 0.05), p.z); m.renderOrder = 4;
+    m.rotation.x = -Math.PI / 2; m.position.set(p.x, (o.y != null ? o.y : effectH(p.x, p.z) + 0.05), p.z); m.renderOrder = 4;
     if (o.vertical) { m.rotation.set(0, o.yaw || 0, 0); }
     return this.timed(m, life, k => { const s = 0.05 + r1 * (1 - Math.pow(1 - k, 3)); m.scale.set(s, s, s); m.material.opacity = (1 - k) * (o.intensity || 2); });
   }
   runeCircle(p, col, radius, life, o) {
     o = o || {};
     const m = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), new THREE.MeshBasicMaterial({ map: this.runeTex, color: new THREE.Color(...col), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    m.rotation.x = -Math.PI / 2; m.position.set(p.x, groundH(p.x, p.z) + 0.04, p.z); m.renderOrder = 4;
+    m.rotation.x = -Math.PI / 2; m.position.set(p.x, effectH(p.x, p.z) + 0.04, p.z); m.renderOrder = 4;
     const inner = new THREE.Mesh(m.geometry, m.material.clone()); inner.scale.setScalar(0.62); inner.position.z = 0.002; m.add(inner);
     return this.timed(m, life, (k, dt) => {
       const fadeIn = Math.min(1, k * life / 0.35), fadeOut = Math.min(1, (1 - k) * life / 0.4);
@@ -325,7 +340,7 @@ export class VFX {
         void main(){ float s = n(vec2(vUv.x * 18.0, vUv.y * 4.0 - uT * 3.0)) * 0.6 + n(vec2(vUv.x * 40.0, vUv.y * 9.0 - uT * 6.0)) * 0.4;
           float a = (0.35 + s) * (1.0 - vUv.y) * smoothstep(0.0, 0.08, vUv.y) * uA; gl_FragColor = vec4(uCol * (1.0 + s), a); }`,
     });
-    const m = new THREE.Mesh(geo, mat); m.position.set(p.x, groundH(p.x, p.z), p.z); m.renderOrder = 4;
+    const m = new THREE.Mesh(geo, mat); m.position.set(p.x, effectH(p.x, p.z), p.z); m.renderOrder = 4;
     return this.timed(m, life, (k, dt) => { mat.uniforms.uT.value += dt; mat.uniforms.uA.value = Math.min(1, k * life / 0.2) * Math.min(1, (1 - k) * life / 0.35) * (o.intensity || 1.4); const s = o.grow ? 0.3 + 0.7 * Math.min(1, k * 3) : 1; m.scale.set(s, 1, s); });
   }
   bolt(from, to, col, life, o) {
@@ -392,9 +407,11 @@ export class VFX {
   update(dt, t) {
     this.add.update(dt); this.soft.update(dt); this.flames.update(dt, t); this.smokes.update(dt, t);
     for (let i = this.items.length - 1; i >= 0; i--) {
-      const it = this.items[i]; it.t += dt; const k = Math.min(1, it.t / it.life);
-      it.update && it.update(k, dt, it.t);
-      if (k >= 1) { this.scene.remove(it.mesh); it.mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.items.splice(i, 1); it.onEnd && it.onEnd(); }
+      const it = this.items[i]; it.t += dt; let k = Math.min(1, it.t / it.life);
+      // an effect that throws ends there, and the error is reported off the frame loop: one broken effect must never stop
+      // the game's clock (the user's report: a bug in 火鳳凰's frame update froze the whole battle, its cast never ending)
+      try { it.update && it.update(k, dt, it.t); } catch (e) { k = 1; setTimeout(() => { throw e; }); }
+      if (k >= 1) { this.scene.remove(it.mesh); it.mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.items.splice(i, 1); try { it.onEnd && it.onEnd(); } catch (e) { setTimeout(() => { throw e; }); } }
     }
     for (const s of this.lights) { if (s.life <= 0) continue; s.t += dt; const k = s.t / s.life; s.l.intensity = k >= 1 ? 0 : s.base * (1 - k) * (1 - k); if (k >= 1) s.life = 0; }
     const sc = this.screen;

@@ -217,7 +217,7 @@ export function throne(M, x, z, y) {
   const back = new THREE.Shape(); back.moveTo(-0.62, 0); back.lineTo(0.62, 0); back.lineTo(0.62, 0.7); back.quadraticCurveTo(0.6, 1.05, 0.0, 1.12); back.quadraticCurveTo(-0.6, 1.05, -0.62, 0.7); back.closePath();
   const bk = shade(new THREE.Mesh(new THREE.ExtrudeGeometry(back, { depth: 0.12, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.03, bevelSegments: 2 }), M.gold)); bk.position.set(0, 0.52, -0.48); g.add(bk);
   const inset = new THREE.Shape(); inset.moveTo(-0.45, 0.08); inset.lineTo(0.45, 0.08); inset.lineTo(0.45, 0.68); inset.quadraticCurveTo(0.4, 0.92, 0, 0.96); inset.quadraticCurveTo(-0.4, 0.92, -0.45, 0.68); inset.closePath();
-  const ins = shade(new THREE.Mesh(new THREE.ShapeGeometry(inset), cushion)); ins.position.set(0, 0.52, -0.33); g.add(ins);
+  const ins = shade(new THREE.Mesh(new THREE.ShapeGeometry(inset), cushion)); ins.position.set(0, 0.52, -0.318); g.add(ins);   // (in front of the back's face, at -0.48 + 0.12 deep + 0.03 bevel = -0.33: on it, the two flickered, scene 43 [the user's report])
   for (const sx of [-1, 1]) {
     g.add(box(M.gold, sx * 0.62 - 0.07, 0.52, -0.42, sx * 0.62 + 0.07, 0.82, 0.32));
     const head = shade(new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), M.gold)); head.scale.set(1, 0.9, 1.4); head.position.set(sx * 0.62, 0.86, 0.3); g.add(head);
@@ -282,7 +282,7 @@ export function chest(M, x, z, y, open = false, rot = 0, s = 1) {
   lid.add(box(frame, -W - 0.005, -0.012, D + D - 0.012, W + 0.005, 0.012, D + D + 0.014));   // the lip at the front edge
   if (!open) lid.add(box(M.gold, -0.04, -0.06, D + D + 0.006, 0.04, 0.0, D + D + 0.022));    // the hasp down onto the lock
   lid.position.set(0, H, -D); if (open) lid.rotation.x = -1.95; g.add(lid);
-  g.scale.setScalar(s); g.position.set(x, y, z); g.rotation.y = rot; return shade(g);
+  g.scale.setScalar(s); g.position.set(x, y, z); g.rotation.y = rot; g.userData.chest = 1; return shade(g);   // (chest: tools/qa/sets.js looks into it)
 }
 // a village house: a brick plinth course, plaster walls framed in timber, lattice windows and a pair of plank doors on
 // the front (+z) face, a gable roof of glazed barrel tiles with a ridge and upturned ridge ends.

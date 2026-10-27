@@ -32,6 +32,7 @@ function water(S, p) {
         #include <colorspace_fragment>
       }`,
   }));
+  m.material.userData.water = true;   // (src/battle.js overWater: a body of water lies at one level)
   m.position.set((x0 + x1) / 2, p.y ?? 0.012, (y0 + y1) / 2); S.add(m); return m;
 }
 // a continuous procedural flame on a camera-facing quad: domain-warped fbm noise scrolling upward, shaped into a
@@ -129,7 +130,7 @@ function glow(E, p) {
 
 // ---------------------------------------------------------------- ambient particles around the view
 function particles(E, kind) {
-  let acc = 0;
+  let acc = 0; const gust = { t: 3 };
   E.world.updaters.push(dt => {
     const c = E.cam.target, r = 9; acc += dt;
     if (kind === 'dust') while (acc > 0.05) { acc -= 0.05; E.vfx.smoke(c.x + rand(-r, r), rand(0.3, 3), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(-0.05, 0.05), vy: rand(-0.03, 0.06), life: rand(4, 7), size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.6, a: 0.7, shape: 0, wob: 0.5, ph: rand(0, 6), fadeIn: 1 }); }   // soft round motes (squares read as pixels)
@@ -140,6 +141,24 @@ function particles(E, kind) {
       E.vfx.smoke(c.x + rand(-10, 12), rand(3, 5), c.z + rand(-7, 6), { vx: rand(-0.9, -0.4), vy: rand(-0.55, -0.35), vz: rand(-0.1, 0.1), life: 8, size: 0.12, r: k[0], gg: k[1], b: k[2], a: 1, shape: 2, spin: rand(-0.7, 0.7), wob: 0.6, ph: rand(0, 6), floor: 0.05 }); }
     if (kind === 'grass') while (acc > 0.43) { acc -= 0.43; const k = Math.random(); E.vfx.smoke(c.x + rand(-r, r), rand(2, 3.5), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(0.15, 0.4), vy: -rand(0.25, 0.45), life: rand(5, 7), size: rand(0.22, 0.32), r: 0.85 + k * 0.12, gg: 0.68 + k * 0.1, b: 0.25 + k * 0.08, a: 1, shape: 3, spin: rand(-0.6, 0.6), wob: 1.2, ph: rand(0, 6) }); }   // yellow grass blades on the breeze, as the meadow's (battle 8, the user's call)
     if (kind === 'snow') while (acc > 0.035) { acc -= 0.035; const k = Math.random(); E.vfx.smoke(c.x + rand(-r - 3, r + 1), rand(3.5, 5.5), c.z + rand(-r * 0.8, r * 0.7), { vx: rand(0.12, 0.3), vy: -rand(0.32, 0.55), vz: rand(-0.05, 0.05), life: rand(9, 13), size: 0.06 + k * k * 0.08, r: 0.96, gg: 0.98, b: 1, a: 0.75 + k * 0.25, shape: 0, wob: 0.9, ph: rand(0, 6), fadeIn: 1 }); }   // flakes drifting down on a light wind, the near ones bigger (麒麟山, the user's call)
+    if (kind === 'peach') {   // peach petals on a soft breeze (battle 18's forest, scene 36: the user's call, "a bit more romantic"):
+      // a slow sparse drizzle in five pinks (40% under the first size: the user's call), tumbling down and fading as they reach the grass; now and then a gust lifts a
+      // swirl of them across the view before it lets them drift down again
+      const PINK = [[1, 0.6, 0.75], [0.98, 0.5, 0.68], [1, 0.7, 0.82], [1, 0.8, 0.88], [0.92, 0.42, 0.6]], pink = () => PINK[(Math.random() * PINK.length) | 0];
+      const petal = (x, y, z, o) => { const k = pink(); E.vfx.smoke(x, y, z, Object.assign({ r: k[0], gg: k[1], b: k[2], a: 0.95, shape: 4, spin: rand(-1.1, 1.1), wob: 0.5, ph: rand(0, 6), fadeIn: 0.15, floor: groundH(x, z) + 0.04, settle: 2.5 }, o)); };
+      const n0 = gust.warm ? 0 : (gust.warm = 80);   // (the first frame: the air already full of them, at every height)
+      for (let i = 0; i < n0; i++) acc += 0.12;
+      while (acc > 0.12) { acc -= 0.12;
+        const x = c.x + rand(-r - 2, r), z = c.z + rand(-r * 0.75, r * 0.7), y = n0 ? rand(0.4, 4.8) : rand(3, 4.8), vx = rand(0.2, 0.45), vy = -rand(0.22, 0.36), fall = y / -vy;
+        petal(x, y, z, { vx, vy, vz: rand(-0.06, 0.06), life: rand(10, 13), size: rand(0.12, 0.162), floor: groundH(x + vx * fall, z) + 0.04 });   // (the ground where it comes down)
+      }
+      gust.t -= dt;
+      if (gust.t <= 0) { gust.t = rand(7, 11);   // a gust: a stream of petals lifted from the grass on one side, sweeping across and up
+        const x0 = c.x - r + rand(-1, 2), z0 = c.z + rand(-3, 3);
+        for (let i = 0; i < 26; i++) { const x = x0 + rand(-1.2, 1.2), z = z0 + rand(-1, 1);
+          petal(x, rand(0.3, 1.4), z, { vx: rand(1.2, 1.9), vy: rand(0.35, 0.7), vz: rand(-0.25, 0.25), g: 0.18, drag: 0.22, life: rand(8, 11), size: rand(0.114, 0.15), wob: 0.7 }); }
+      }
+    }
     if (kind === 'leaves') while (acc > 0.18) { acc -= 0.18; E.vfx.smoke(c.x + rand(-r, r), rand(2, 3.5), c.z + rand(-r * 0.7, r * 0.7), { vx: rand(0.15, 0.4), vy: -rand(0.25, 0.45), life: rand(5, 7), size: rand(0.1, 0.15), r: rand(0.6, 0.85), gg: rand(0.55, 0.75), b: 0.25, a: 1, shape: 2, spin: rand(-0.6, 0.6), wob: 1.2, ph: rand(0, 6) }); }   // leaf-shaped, turning as they fall (squares read as pixels: the user)
   });
 }

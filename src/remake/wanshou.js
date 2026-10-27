@@ -103,6 +103,22 @@ function cloudLayer(layer) {
   return m;
 }
 // a boulder (the art's two pale rounded stones on the summit): lumpy, rounded, a little flattened, dusted with earth below
+// the summit's stele (崑崙): a tall slab of violet-grey stone on a stepped plinth, its face carved with a band of cloud
+// scrolls over lines of old script, a pitched cap; as the original's dark tablet
+let STELE = null;
+function stele(x, z, y) {
+  if (!STELE) STELE = { slab: T.material(T.pbr('kunlunStele', 512, (u, v, o) => {
+    const n = T.fbm(u, v, 9, 4, 401), cols = Math.abs(((u * 5) % 1) - 0.5) < 0.08 && v > 0.2 && v < 0.78, glyph = cols && T.fbm(u * 3, v * 9, 6, 2, 402) > 0.55;
+    const scroll = v > 0.82 && v < 0.94 && Math.sin(u * 40 + Math.sin(v * 60) * 2) > 0.3;
+    o.h = 0.5 + (n - 0.5) * 0.12 - (glyph ? 0.25 : 0) + (scroll ? 0.15 : 0) + (v < 0.04 || v > 0.97 ? 0.2 : 0);
+    const g = 0.36 + (n - 0.5) * 0.1; o.c = [g * 0.92, g * 0.86, g * 1.1]; if (glyph) o.c = [g * 0.55, g * 0.5, g * 0.7]; o.r = 0.8; }, 4)),
+    stone: T.material(T.rock(0x6a6474, 'kunlunPlinth', 0.3), {}, [0.5, 0.5]) };
+  const g = new THREE.Group();
+  g.add(box(STELE.stone, x - 0.56, y, z - 0.36, x + 0.56, y + 0.14, z + 0.36, 0.5), box(STELE.stone, x - 0.48, y + 0.14, z - 0.3, x + 0.48, y + 0.26, z + 0.3, 0.5));
+  g.add(box(STELE.slab, x - 0.38, y + 0.26, z - 0.13, x + 0.38, y + 2.3, z + 0.13, 1));
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0, 0.56, 0.34, 4, 1), STELE.stone); cap.rotation.y = Math.PI / 4; cap.scale.set(1, 1, 0.42); cap.position.set(x, y + 2.47, z); g.add(cap);
+  return shade(g);
+}
 function boulder(mat, x, z, y, s, seed) {
   const geo = new THREE.IcosahedronGeometry(1, 4), p = geo.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const f = 0.82 + 0.32 * T.fbm((v.x + 1) / 2, (v.z + v.y + 2) / 4, 3, 3, seed) + 0.06 * T.fbm((v.x + 1) / 2, (v.y + 1) / 2, 10, 2, seed + 3); p.setXYZ(i, v.x * f, Math.max(-0.3, v.y) * f * 0.8, v.z * f); }
@@ -135,7 +151,7 @@ function bridges(cells, H) {
 }
 const PAL = { [CL.ground]: [0xb46c24, 0xd89024, 0xfcb46c, 0x904800], [CL.grass]: [0xb49024, 0xd8b448, 0x242400], [CL.rock]: [0x24006c, 0x000000, 0x482400, 0x906c6c, 0xd8b4b4], [CL.water]: [0xfcfcfc, 0xb4fcfc, 0x00d8fc] };
 
-function setFor(src) {
+function setFor(src, opt = {}) {   // opt: boulders [[x, z, s]], steles [[x, z]] on the summit
   let LV = null, land = null, at = null, clouds = [], voidH = new Map(), bridgeH = new Map(), slopes = [], props = [], chestG = new Map(), M = null, world = null;
   async function build(E, FX) {
     const S = E.world.scene; M = mats(); world = E.world; chestG = new Map();
@@ -166,7 +182,13 @@ function setFor(src) {
     // nearest raised ground down into the clouds over a cell or so (the band the art draws its violet faces in), ragged
     // and broken into crags
     const lay = await readLayout(src, MW, MH, PAL, { [CL.water]: 1.1 }), SR = 4, EX = 8, GW = (MW + EX * 2) * SR, GH = (MH + EX * 2) * SR, LW = MW * SR;
-    const bridgeC = new Set(bridgeH.keys()), isBridge = (x, y) => bridgeC.has(x + ',' + y), stood = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH && walk(x, y) && !isBridge(x, y);
+    // a chest stands on a blocked cell at the cliff's edge: a level pad there at the height of the walk beside it (the
+    // falling cliff left a pit under three of them, the chest sunk to its lid, the user)
+    const chests = D.rooms && G.chests ? G.chests : (D.chests || []).map(c => ({ x: c.x, y: c.y, hidden: c.hidden, open: false })), pads = new Set();   // (G.chests: the last battle's until this one is set up)
+    // (the steles' cells take the same pad)
+    for (const c of chests.concat((opt.steles || []).map(([x, z]) => ({ x: Math.floor(x), y: Math.floor(z) })))) { if (walk(c.x, c.y)) continue; let m = null; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = c.x + dx, y = c.y + dy; if (x >= 0 && y >= 0 && x < MW && y < MH && walk(x, y) && h[y][x] != null && (m === null || h[y][x] > m)) m = h[y][x]; }
+      if (m != null) { h[c.y][c.x] = m; LV.set(c.x, c.y, c.x + 1, c.y + 1, m); voidH.delete(c.x + ',' + c.y); pads.add(c.x + ',' + c.y); } }
+    const bridgeC = new Set(bridgeH.keys()), isBridge = (x, y) => bridgeC.has(x + ',' + y), stood = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH && (walk(x, y) && !isBridge(x, y) || pads.has(x + ',' + y));
     const cellUp = (x, y) => { if (y >= MH && x >= 0 && x < MW) y = MH - 1; if (x < 0 || y < 0 || x >= MW || y >= MH || isBridge(x, y) || (art[y][x] === 'Q' && !walk(x, y))) return null; const v = h[y][x]; return v != null && v > BED + 0.01 ? v : null; };
     const artAt = (i, j) => { const x = Math.max(0, Math.min(LW - 1, i)), y = Math.max(0, Math.min(MH * SR - 1, j)); return lay[y * LW + x]; };
     const inRamp = (x, z) => ramps.some(r => x >= r.x0 && x < r.x1 && z >= r.z0 && z < r.z1);
@@ -214,10 +236,10 @@ function setFor(src) {
     // the sea of cloud, and wisps over it
     clouds = [0, 1, 2].map(L => { const c = new THREE.Mesh(new THREE.PlaneGeometry(MW + 90, MH + 90).rotateX(-Math.PI / 2), cloudLayer(L)); c.position.set(MW / 2, CLOUD + L * 0.75, MH / 2); c.renderOrder = L; S.add(c); return c; });
     const stone = T.material(T.rock(0xb4a8a4, 'beastBoulder2', 0.3), { vertexColors: true, roughness: 0.8 }, [0.6, 0.6]);
-    props = []; for (const [x, z, s] of BOULDERS) { S.add(boulder(stone, x, z, h[Math.floor(z)][Math.floor(x)] ?? 0.6, s * 0.28, x)); props.push([Math.floor(x), Math.floor(z)]); }
+    props = []; for (const [x, z] of opt.steles || []) { S.add(stele(x, z, h[Math.floor(z)][Math.floor(x)] ?? 0.6)); props.push([Math.floor(x), Math.floor(z)]); }
+    for (const [x, z, s] of opt.boulders || BOULDERS) { S.add(boulder(stone, x, z, h[Math.floor(z)][Math.floor(x)] ?? 0.6, s * 0.28, x)); props.push([Math.floor(x), Math.floor(z)]); }
     const tufts = []; for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (walk(x, y) && !isBridge(x, y)) for (let j = 0; j < SR; j++) for (let i = 0; i < SR; i++) if (lay[(y * SR + j) * LW + x * SR + i] === CL.grass && R(x * 31 + y * 7 + i * 3 + j) < 0.45) { const px = x + (i + R(x + y * 3 + i * 5 + j)) / SR, pz = y + (j + R(x * 5 + y + i + j * 7)) / SR; tufts.push([px, at(px, pz), pz]); }
     if (tufts.length) S.add(grass(tufts, { size: 0.32, cols: ['#8a7428', '#6e5c20', '#a08a34', '#5a4a1a'] }));
-    const chests = D.rooms && G.chests ? G.chests : (G.chests || (D.chests || []).map(c => ({ x: c.x, y: c.y, hidden: c.hidden, open: false })));
     for (const c of chests) if (!c.hidden || c.open) { const o = chest(M, c.x + 0.5, c.y + 0.5, ground(c.x + 0.5, c.y + 0.5), !!c.open, 0, 1.4); S.add(o); chestG.set(c.x + ',' + c.y, o); }
     props = props.concat(chests.map(c => [c.x, c.y]));
     E.world.updaters.push((dt, t) => { for (const c of clouds) c.material.userData.u.uTime.value = t; windTick(t); });
@@ -238,3 +260,7 @@ function setFor(src) {
   };
 }
 export const beastMount = setFor('assets/maps/0f53e0.png');
+// 崑崙仙山 (maps 0f9234 and 0f9278, the same art: scene 53 and battle 25): the same tiles as 萬獸山 (earth plateaus, violet
+// cliffs, the sea of cloud, plank bridges, steps cut in the rock), the 東方守護靈's stele on the summit (11, 1) instead of
+// boulders, and the chests the art draws
+export const kunlun = setFor('assets/maps/0f9234.png', { boulders: [], steles: [[11.55, 1.25]] });

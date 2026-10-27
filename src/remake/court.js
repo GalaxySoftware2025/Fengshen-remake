@@ -16,6 +16,7 @@
 //  dragons, cranes, censers and banners the original never had]
 import * as THREE from 'three';
 import * as T from '../kit/tex.js';
+import { D } from '../rules.js';
 import { Levels, mats, merged, box, pillar, parapet, latticeWall, curtain, ding, screen, throne, lantern, stairs, shade } from '../kit/parts.js';
 
 const Y = { hall: 0.6, tier1: 1.3, tier2: 2.0, mid: 0.3, low: -0.95, moat: -0.35, pool: -1.5, base: -2.3 };
@@ -32,7 +33,7 @@ function levels() {
     .set(4, 9.5, 19, 21.6, Y.mid).set(1, 16.9, 22, 19, Y.mid).set(3, 19, 20, 20, Y.mid)   // mid hall and wings
     .set(4, 21, 19, 27, Y.low).set(7, 27, 16, 31, Y.low).set(10, 31, 13, 33, Y.low);      // lower court, entrance
   for (const [a, b, c, d] of [[7, 10, 8, 17], [8, 15.5, 9, 17], [9, 16.5, 10, 18], [10, 17.5, 13, 18], [13, 16.5, 14, 18], [14, 15.5, 15, 17], [15, 10, 16, 17]]) L.set(a, b, c, d, Y.moat);
-  for (const [a, b, c, d] of [[4, 25, 6, 27], [6, 26, 9, 27], [7, 27, 9.5, 31]]) { L.set(a, b, c, d, Y.pool); L.set(mx(c), b, mx(a), d, Y.pool); }
+  for (const [a, b, c, d] of [[4, 25, 6, 27], [6, 26, 9, 27], [7, 27, 9, 31]]) { L.set(a, b, c, d, Y.pool); L.set(mx(c), b, mx(a), d, Y.pool); }
   L.stairs(STAIR.x0, STAIR.z0, STAIR.x1, STAIR.z1, Y.hall, Y.tier2, STEPS, 's');   // the carpeted stair, through both tiers
   L.stairs(4, 9.5, 7, 10.1, Y.mid, Y.hall, 1, 's'); L.stairs(16, 9.5, 19, 10.1, Y.mid, Y.hall, 1, 's'); L.stairs(8, 9.5, 15, 10.1, Y.mid, Y.hall, 1, 's');
   L.stairs(10, 20.2, 13, 21.8, Y.low, Y.mid, LOW_STEPS, 's');   // down to the lower court
@@ -40,6 +41,14 @@ function levels() {
 }
 const LV = levels();
 const groundAt = (x, z) => LV.at(x, z);
+// where the court has no floor (behind its walls, round the hall): the void, for a battle (battle 31); a scene keeps the old 0
+const onFloor = (x, z) => LV.ramps.some(r => x >= r.x0 && x < r.x1 && z >= r.z0 && z < r.z1) || !isNaN(LV.H[Math.floor(z * LV.R) * LV.w * LV.R + Math.floor(x * LV.R)]);
+const groundBattle = (x, z) => (typeof D.n === 'number' && (x < 0 || z < 0 || x >= 24 || z >= 35 || !onFloor(x, z))) ? Y.base : groundAt(x, z);
+// the stairs' cells, as battle 31's grid walks them: the carpeted stair through both tiers, the hall's step, the stair down
+const STAIR_CELLS = [];
+for (let z = 5; z <= 7; z++) for (let x = 10; x <= 12; x++) STAIR_CELLS.push([x, z]);
+for (let x = 4; x <= 18; x++) STAIR_CELLS.push([x, 9]);
+for (const z of [20, 21]) for (let x = 10; x <= 12; x++) STAIR_CELLS.push([x, z]);
 
 async function build(E, FX) {
   const S = E.world.scene, M = mats();
@@ -122,12 +131,12 @@ async function build(E, FX) {
   }
   S.add(latticeWall(M, 1, 3.2, 16.9, Y.mid, 2.8, 2, latt), latticeWall(M, 19.8, 22, 16.9, Y.mid, 2.8, 2, latt));
   S.add(curtain(M, 1.05, 2.2, 16.75, Y.mid + 2.4, 2.3, 'l', 5), curtain(M, 20.8, 21.95, 16.75, Y.mid + 2.4, 2.3, 'r', 5));
-  for (const x of [3.5, 19.5]) S.add(pillar(M, x, 17.15, Y.mid, 2.8, 0.36));
+  for (const x of [3.5, 19.5]) S.add(pillar(M, x, 16.6, Y.mid, 2.8, 0.36));   // (its foot at row 16.95, as drawn: row 17 is walked, battle 31)
   // gold curtains drawn back on the outer bays, as the original hangs them
   S.add(curtain(M, 4.1, 5.4, 5.78, TOP - 0.5, 3.4, 'l', 5), curtain(M, 17.6, 18.9, 5.78, TOP - 0.5, 3.4, 'r', 5));
 
   // ---- the columns: two flanking the alcove on the upper tier, two at the wall's step, up to the frieze
-  for (const [x, z, y, r] of [[9.5, 3.75, Y.tier2, 0.4], [13.5, 3.75, Y.tier2, 0.4], [6.5, 6.2, Y.hall, 0.42], [16.5, 6.2, Y.hall, 0.42]]) {
+  for (const [x, z, y, r] of [[9.5, 3.75, Y.tier2, 0.4], [13.5, 3.75, Y.tier2, 0.4], [6.5, 5.5, Y.hall, 0.42], [16.5, 5.5, Y.hall, 0.42]]) {   // (the outer two with their feet at row 5.9, as drawn: row 6 is walked, battle 31)
     S.add(pillar(Mcol, x, z, y, TOP - y, r));
   }
 
@@ -150,7 +159,7 @@ async function build(E, FX) {
   S.add(parapet(M, stone, 7.0, 9.05, 8.0, 9.6, Y.hall, 0.4), parapet(M, stone, 15.0, 9.05, 16.0, 9.6, Y.hall, 0.4));
   const fires = [];
   for (const x of [9.5, 10.5, 12.5, 13.5]) fires.push([x, 9.3, Y.hall, 0.95]);
-  for (const [a, b, c, dd] of [[4, 24.5, 6, 25], [6, 25.45, 9.5, 25.95]]) { S.add(parapet(M, stone, a, b, c, dd, Y.low, 0.4)); S.add(parapet(M, stone, mx(c), b, mx(a), dd, Y.low, 0.4)); }
+  for (const [a, b, c, dd] of [[4, 24.5, 6, 25], [6, 25.45, 9, 25.95]]) { S.add(parapet(M, stone, a, b, c, dd, Y.low, 0.4)); S.add(parapet(M, stone, mx(c), b, mx(a), dd, Y.low, 0.4)); }
   for (const x of [6.5, 7.5, 8.5]) { fires.push([x, 24.95, Y.low, 0.95]); fires.push([mx(x), 24.95, Y.low, 0.95]); }
   for (const [x, z, y, s] of fires) {
     const dg = ding(M, x, z, y, s); S.add(dg.g);
@@ -158,7 +167,7 @@ async function build(E, FX) {
   }
   edgeTrim(S, M);
   for (const [a, b, c, dd] of [[7, 10, 8, 17], [8, 15.5, 9, 17], [9, 16.5, 10, 18], [10, 17.5, 13, 18], [13, 16.5, 14, 18], [14, 15.5, 15, 17], [15, 10, 16, 17]]) FX.water(S, { r: [a, b, c, dd], y: Y.moat + 0.22 });
-  for (const [a, b, c, dd] of [[4, 25, 6, 27], [6, 26, 9.5, 27], [7, 27, 9.5, 31]]) { FX.water(S, { r: [a, b, c, dd], y: Y.pool + 0.3 }); FX.water(S, { r: [mx(c), b, mx(a), dd], y: Y.pool + 0.3 }); }
+  for (const [a, b, c, dd] of [[4, 25, 6, 27], [6, 26, 9, 27], [7, 27, 9, 31]]) { FX.water(S, { r: [a, b, c, dd], y: Y.pool + 0.3 }); FX.water(S, { r: [mx(c), b, mx(a), dd], y: Y.pool + 0.3 }); }
   // the retaining wall above the lower court: the olive stone under a red-and-gold coping
   for (const [a, b] of [[4, 10], [13, 19]]) S.add(box(lacq, a, Y.mid - 0.1, 21.55, b, Y.mid + 0.02, 21.7, 2), box(gold, a, Y.mid - 0.14, 21.6, b, Y.mid - 0.1, 21.72, 2));
   // hanging lanterns down the mid hall and the lower court (none in the throne end: the original has none there)
@@ -191,10 +200,26 @@ function edgeTrim(S, M) {
   S.add(merged(M.lacquer, out));
 }
 
-export default {
-  build, ground: groundAt, particles: 'dust',
+const COURT = {
+  build, ground: groundBattle, particles: 'dust', slopes: STAIR_CELLS,
   mood: { bg: 0x030202, voidCol: 0x030202, voidY: -2.4, fog: 0x120804, fogD: 0.006, sky: 0xffe6c4, under: 0x3a1a0a, hemi: 0.95,
     sun: 0xffdcb0, sunI: 2.5, sunDir: [-0.35, 0.85, 0.5], sat: 1.04, exposure: 1.12, bloom: 0.38,
     env: { top: 0x9a6a40, mid: 0x6a3a1c, low: 0x2a1408, lights: [[0, 6, -8, 0xfff0d0, 6], [-7, 4, 0, 0xffd090, 4], [7, 4, 0, 0xffd090, 4], [0, 9, 3, 0xffe0b0, 5]] } },
   lights: [{ x: 11.5, y: 3.4, z: 6.5, col: 0xffb070, i: 3, d: 8 }],
 };
+export default COURT;
+// the court at the top of 摘星樓 in the last chapter (scene 63, battle 31: 0fd4b0, 0fd504, the same art): hung in the
+// night the demon's lair floats in next door (src/remake/lair.js), its moat's stars going on past the hall's edges: the
+// dark beyond the floor a starry deep, not black [design: the finale; the wider view than the original's showed the
+// black past the map's border as an unbuilt edge, tools/qa/tour.js void]
+export const courtTower = Object.assign({}, COURT, {
+  async build(E, FX) {
+    await build(E, FX);
+    const S = E.world.scene, deep = 0x06104a, lit = 0x1e2c72;
+    S.traverse(o => { const m = o.material, u = m && !Array.isArray(m) && m.userData.water && m.uniforms; if (u) { u.uDeep.value.set(deep); u.uLit.value.set(lit); } });   // (the moat one night with the deep, as the original draws both)
+    const v = FX.water(S, { r: [-60, -60, 84, 95], y: Y.base - 0.1, deep, lit });
+    delete v.material.userData.water;   // (a backdrop, not water a flier stands over: src/battle.js overWater)
+    v.renderOrder = -2;
+  },
+  mood: Object.assign({}, COURT.mood, { voidCol: false, bg: 0x02040e }),
+});

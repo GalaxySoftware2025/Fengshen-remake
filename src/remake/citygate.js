@@ -241,7 +241,7 @@ function ground(x, z) {
 }
 // cells a model blocks (tools/qa/sets.js): each tree's 2 x 2 cells round its foot, the rocks
 const TREE_CELLS = TREES.flatMap(([x, z]) => { const cx = Math.round(x), cz = Math.round(z); return [[cx - 1, cz - 1], [cx, cz - 1], [cx - 1, cz], [cx, cz]]; });
-export default {
+const CITYGATE = {
   build, openChest, ground, slopes: STAIR_CELLS,
   props: TREE_CELLS.concat(ROCKS.map(([x, z]) => [Math.floor(x), Math.floor(z)]), CHESTS),
   // a clear night: moonlight from the north-west, the gate's torches warm
@@ -249,3 +249,15 @@ export default {
     sun: 0xc0d0ff, sunI: 2.4, sunDir: [-0.35, 0.82, 0.45], sat: 1.0, exposure: 1.15, bloom: 0.5, aoR: 0.8,
     env: { top: 0x3a4a7a, mid: 0x242c48, low: 0x101018, lights: [[4, 8, -6, 0xc8d4ff, 4]] } },
 };
+export default CITYGATE;
+// the same court on the day 朝歌 falls (scene 62 and battle 30: 0fca68, 0fcac0, the same art): dusk, the sky red over the
+// city, smoke going up beyond the walls east and west where the men were drawn off [design: the story's mood]
+export const citygateSiege = Object.assign({}, CITYGATE, {
+  async build(E, FX) {
+    await build(E, FX);
+    for (const [x, z, k] of [[-5, 9, 1.9], [-3, 16, 1.4], [37, 8, 1.8], [35, 15, 1.5], [9, -6, 1.2]]) FX.smoke(E, { x, y: z, z: 0.5, size: k, tint: [0.3, 0.26, 0.24] });
+  },
+  mood: { bg: 0x3a2a30, voidCol: false, fog: 0x6a4a44, fogD: 0.013, sky: 0xf0b890, under: 0x4a3a30, hemi: 1.15,
+    sun: 0xffb478, sunI: 2.6, sunDir: [-0.7, 0.45, 0.25], sat: 1.0, exposure: 1.12, bloom: 0.4, aoR: 0.8,
+    env: { top: 0xc08870, mid: 0x7a5048, low: 0x2a1e1c, lights: [[-8, 4, 2, 0xffb070, 4], [8, 3, 4, 0xff8a50, 2.5]] } },
+});

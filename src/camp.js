@@ -1,4 +1,4 @@
-// The camp between battles: the original's menus (查看人物, 勝利條件, 道具 (裝備物品 here), 選擇人物, 出擊, 儲存記錄; and
+// The camp between battles: the original's menus (查看人物, 勝利條件, 道具 (裝備物品 here), 選擇人物 (出戰人選 here), 出擊, 儲存記錄; and
 // 讀取記錄), drawn as ink-and-gold panels over the next battle's map. Also the save-slot list, shared with the title.
 import * as R from './rules.js';
 import * as K from './campaign.js';
@@ -53,7 +53,9 @@ export function slotList(E, box, mode, state) {
 }
 
 // ---------------------------------------------------------------- the camp
-const MENU = [['people', '查看人物'], ['cond', '勝利條件'], ['pick', '選擇人物'], ['items', '裝備物品'], ['go', '出　　擊'], ['save', '儲存記錄'], ['load', '讀取記錄'], ['title', '回到標題']];   // 選擇人物 before 裝備物品 [the user's call; the original lists 道具 first]
+// (shown only on the camp's menu: the jobs that open it, not every scene the campaign passes on the way)
+// @qa job:hud job:saving job:flow
+const MENU = [['people', '查看人物'], ['cond', '勝利條件'], ['pick', '出戰人選'], ['items', '裝備物品'], ['go', '出　　擊'], ['save', '儲存記錄'], ['load', '讀取記錄'], ['title', '回到標題']];   // 出戰人選 (the original's 選擇人物, renamed: the user's call) before 裝備物品 [the user's call; the original lists 道具 first]
 const statLine = r => `生命 ${r.mhp}　法力 ${r.mmp}　攻 ${r.atk}　防 ${r.df}　速 ${r.spd}　移 ${r.move}`;
 function itemName(id) { const it = C().items[id]; return it.name + (it.equip ? '<i class="eq">裝</i>' : ''); }
 
@@ -111,7 +113,7 @@ function items(E, box, state, refreshParty) {
   let cur = state.roster[0].cid, hover = null;
   const draw = () => {
     box.innerHTML = '<h3>裝備物品</h3>';
-    const tabs = h('div', 'htabs'), out = cid => !(state.pick || []).includes(cid);   // not chosen for the next battle: greyed, as on 選擇人物 [the user's call]
+    const tabs = h('div', 'htabs'), out = cid => !(state.pick || []).includes(cid);   // not chosen for the next battle: greyed, as on 出戰人選 [the user's call]
     for (const r of state.roster) {
       const p = D.party.find(u => u.cid === r.cid), t = h('div', 'pt' + (r.cid === cur ? ' on' : '') + (out(r.cid) ? ' out' : ''));
       t.appendChild(E.bank.portrait(p.sprite, 2)); t.insertAdjacentHTML('beforeend', `<span>${C().heroes[r.cid].name}</span>`);
@@ -152,7 +154,7 @@ function items(E, box, state, refreshParty) {
 }
 
 // resolves to { battle: chosen units }, 'title', or { load: state }
-// 選擇人物 [ROM op 10's cap, forced and unavailable flags], after the original's: 出場人數 n / cap over the roster's
+// 出戰人選 (the original's 選擇人物) [ROM op 10's cap, forced and unavailable flags], after the original's: 出場人數 n / cap over the roster's
 // figures, grey until chosen and in colour once chosen; the pointed hero's level and stats in a box below. The choice
 // stays while the camp is open (the original keeps it between its menus). With `ask` it is 出擊's screen: the lineup
 // shown, not changed, under the confirmation (data/ui.js sortie) 是 / 否 (否 first, as the original's cursor)
@@ -161,7 +163,7 @@ function lineup(E, box, state, ask) {
   const forced = p => P.forced.includes(p.cid), away = p => P.unavailable.includes(p.cid), on = p => state.pick.includes(p.cid);
   return new Promise(res => {
     const draw = (cur = roster[0]) => {
-      box.innerHTML = `<h3>${ask ? '出　擊' : '選擇人物'}</h3>`;
+      box.innerHTML = `<h3>${ask ? '出　擊' : '出戰人選'}</h3>`;
       const head = h('div', 'lhead', `<span>出場人數</span><b>${state.pick.length} / ${max}</b>`);
       const grid = h('div', 'lgrid'), info = h('div', 'linfo');
       const say = p => { const r = K.heroRec(state, p.cid) || p;
@@ -193,11 +195,9 @@ export async function campScene(E, state, onChange) {
   $('c-place').textContent = D.name;
   E.ui.show('camp', true);
   const refreshParty = onChange;
-  // who goes: kept from an earlier visit to this camp if still allowed, else only the heroes this battle must take (the
-  // rest grey and standing until chosen) [the user's call; the original too starts from 林雲 alone]
-  const P = D.partyRules, okCid = c => D.party.some(p => p.cid === c) && !P.unavailable.includes(c);
-  if (!Array.isArray(state.pick) || !state.pick.every(okCid) || state.pick.length > P.deployMax || !P.forced.every(c => !okCid(c) || state.pick.includes(c)))
-    state.pick = autoPick(D.party, P).filter(p => P.forced.includes(p.cid)).map(p => p.cid);
+  // who goes: kept from an earlier visit to this battle's camp if still allowed, else only the heroes it must take
+  // (campaign.js campPick)
+  K.campPick(state, D.n, D.party, D.partyRules);
   const menu = $('c-menu'); menu.innerHTML = '';
   let pick = null;
   const open = id => {

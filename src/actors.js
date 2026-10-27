@@ -96,7 +96,7 @@ export class SpriteBank {
     g.drawImage(e.walk, 0, 0, 32 * HD, 32 * HD, 0, 0, 32 * scale, 32 * scale); return c;
   }
   // the same, marking time facing down as on the map (the walk cycle's down frames, 165 ms each); stops when the canvas
-  // leaves the page. still: standing, not marking time (a hero not chosen on the 選擇人物 page)
+  // leaves the page. still: standing, not marking time (a hero not chosen on the 出戰人選 page)
   walker(n, scale, still) {
     const e = this.sheets[n], c = canvas(32 * scale, 32 * scale), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
     let k = 0, started = false;
@@ -116,17 +116,21 @@ const shadowTex = (() => {
 // sprite material: lit by the scene, never fully dark, with hit flash and an ember dissolve for deaths
 function spriteMaterial(map) {
   const m = new THREE.MeshLambertMaterial({ map, emissiveMap: map, emissive: new THREE.Color(0.42, 0.42, 0.42), alphaTest: 0.5, side: THREE.DoubleSide });
-  m.userData.u = { uDissolve: { value: 0 }, uFlash: { value: 0 }, uTint: { value: new THREE.Color(1, 1, 1) } };
+  m.userData.u = { uDissolve: { value: 0 }, uFlash: { value: 0 }, uTint: { value: new THREE.Color(1, 1, 1) }, uStone: { value: 0 }, uStoneCol: { value: new THREE.Color(1, 1, 1) } };
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, m.userData.u);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      uniform float uDissolve, uFlash; uniform vec3 uTint;
+      uniform float uDissolve, uFlash, uStone; uniform vec3 uTint, uStoneCol;
+      vec3 stone(vec3 c){ float l = dot(c, vec3(0.3, 0.55, 0.15)); return mix(c, vec3(0.1 + 0.82 * l) * uStoneCol, uStone); }
       float hs(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float vn2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hs(i),hs(i+vec2(1,0)),f.x), mix(hs(i+vec2(0,1)),hs(i+vec2(1,1)),f.x), f.y); }`)
       .replace('#include <alphatest_fragment>', `#include <alphatest_fragment>
       float dn = vn2(vMapUv * 48.0) * 0.7 + vn2(vMapUv * 120.0) * 0.3;
       if (uDissolve > 0.0 && dn < uDissolve * 1.15 - 0.05) discard;`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      diffuseColor.rgb = stone(diffuseColor.rgb);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance = stone(totalEmissiveRadiance);
       totalEmissiveRadiance = totalEmissiveRadiance * uTint + vec3(uFlash) * diffuseColor.rgb * 2.5 + vec3(uFlash * 0.4);
       if (uDissolve > 0.0) totalEmissiveRadiance += vec3(1.0, 0.45, 0.1) * 4.0 * (1.0 - smoothstep(0.0, 0.12, dn - (uDissolve * 1.15 - 0.05)));`);
   };
@@ -227,6 +231,8 @@ export class Actor {
     this.blob.material.opacity = this.centre ? 0 : (1 - this.dissolve) * (this.hover ? 0.6 : 1) * fade;
     for (const m of [this.mesh.material, this.big.material]) {
       m.userData.u.uFlash.value = this.flash; m.userData.u.uDissolve.value = this.dissolve;
+      m.userData.u.uTint.value.setScalar(this.glow ?? 1);   // glow: the cast lifted while the land around darkens (src/scene.js, the prologue's red)
+      m.userData.u.uStone.value = this.stone || 0; if (this.stoneCol) m.userData.u.uStoneCol.value.copy(this.stoneCol);   // turned to stone (the prologue's statues)
       const tr = !see || !!this.ghost || !!this.over; if (m.transparent !== tr) { m.transparent = tr; m.depthWrite = !tr; m.needsUpdate = true; }
       m.opacity = (this.ghost ? 0.62 : 1) * fade; m.alphaTest = see ? 0.5 : 0.5 * fade;
     }   // (over: a flier, drawn in the transparent pass, which comes after every opaque thing, and by its render order 6.5 after the see-through effects and flames too, under the turn arrows and emotes: battle.js syncActors)

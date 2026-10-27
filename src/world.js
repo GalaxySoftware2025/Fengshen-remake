@@ -34,6 +34,11 @@ export function groundH(x, z) {
   if (LOOK.set) return LOOK.set.ground(x, z);   // a remade set's own walking surface (src/remake)
   return 0;   // painted map art (a map with no remade set): perfectly flat, so its lines stay straight
 }
+// the ground the effects stand on (spells, casts, level-ups, falls, src/vfx.js): the set's own, but in a battle the level
+// the play has there (battle.js setEffectGround: a blocked cell's floor level, as its units stand), so what spills over a
+// wall stays at the unit's level instead of climbing onto its top, and nothing drops into an abyss [the user's report]
+export let effectH = groundH;
+export function setEffectGround(fn) { effectH = fn || groundH; }
 
 // ---------------------------------------------------------------- textures (pixel-art, generated on canvas)
 export function canvasTex(w, h, draw, opts) {

@@ -1,5 +1,5 @@
 // The sprites some spells show (a port of tools/rom/spellfx.py sprites, without its 磻溪 snapshot):
-//   assets/fx/<name>.png   the summoned beasts (54-57), 觀音 (42) and a skull wisp (36), each cut out of the one layer
+//   assets/fx/<name>.png   the summoned beasts (53-57: 龍王's coiled dragon king among them), 觀音 (42) and a skull wisp (36), each cut out of the one layer
 //                          that draws it (plane A or the sprites) at a frame of the cast
 // The cast is played from a cold boot: scene 0 runs on into battle 1 (its battle op kept), the camp's 出擊 is
 // confirmed, the opening lines clicked through to 林雲's command ring; then he is given the spell and 99 MP, the
@@ -10,7 +10,7 @@ import { bootState, stubs } from './record.js';
 import { tables } from './text.js';
 
 // name, spell, frame after the cast's confirm (battle 1's: summon 57 and 觀音 a frame or six later than on 磻溪), layer ('a' plane A, 's' sprites), a box to clear first
-const SPRITES = [['summon_54', 54, 140, 'a', null], ['summon_55', 55, 150, 'a', null], ['summon_56', 56, 160, 's', null],
+const SPRITES = [['summon_53', 53, 130, 's', null], ['summon_54', 54, 140, 'a', null], ['summon_55', 55, 150, 'a', null], ['summon_56', 56, 160, 's', null],
   ['summon_57', 57, 146, 'a', null], ['guanyin', 42, 186, 's', [0, 0, 100, 224]], ['skull', 36, 190, 's', null]];
 const RING = 'w1500 D w10 D w10 D w10 D w10 A w30 L w10 A w300 A w60 A w60 A w60 A w60 A w60 A w60 A w60';   // camp: 出擊, 是; the lines
 

@@ -344,7 +344,9 @@ export function lotus(src) {
     // balustrades on the blocked flagstone-and-post cells: a turned post at each, a carved panel under a rounded rail to
     // each neighbour at the same height
     const panelM = T.material(panelTex(), {});
-    const rail = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH && !walk(x, y) && cls[y][x] === 'R';
+    // (not a chest's cell: the art's chest reads as pale stone, and its post stood inside the open chest)
+    const chestAt = new Set((G.chests || D.chests || []).map(c => c.x + ',' + c.y));
+    const rail = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH && !walk(x, y) && cls[y][x] === 'R' && !chestAt.has(x + ',' + y);
     const pg0 = postGeo(), posts = [], panels = [], rails = [];
     const span = (ax, az, bx, bz, yy) => {   // a panel from post a to post b
       const along = ax !== bx, len = (along ? bx - ax : bz - az) - 0.2, mx = (ax + bx) / 2, mz = (az + bz) / 2;

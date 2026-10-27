@@ -8,6 +8,7 @@
 import { image, cramRGB } from './png.js';
 
 export const HOOKED = [0x06802a];
+export const SWAPPED = [[0x08ded2, 1]];   // graphics a hook swaps onto a unit, with that unit's attack type: battle 27's 通天教主 back in his true shape, the phoenix (0x0FA93C, slot 10: type 1)
 export const GUESTS = [0x06806a, 0x07f0c2];   // the guests the heroes protect (文王, 伯邑考: battle 22's hook copies their records from 0xF78BE): their death poses too   // units a battle's hook copies in from a record of their own (文王, battles 6 and 7)
 export const LEGACY = new Set([0x04f0fc, 0x05219c, 0x054da8, 0x0581c4, 0x05b120, 0x05e3a8, 0x061a72, 0x0c7c6a, 0x0c550c, 0x0b62ba]);   // src/sprites.js: their act_ sheets were the 磻溪 build's
 
@@ -63,6 +64,7 @@ export function run(R, files, common, battles, { legacy = false } = {}) {
   for (let n = 1; n <= 32; n++) battles[n].enemies.forEach((e, i) => add(e.gfx, bt[n][i]));
   for (let n = 1; n <= 32; n++) for (const r of battles[n].rooms || []) for (const e of r.enemies) add(e.gfx, R.B(e.template + 0x2b));   // the rooms' (battles 10, 11)
   for (const rec of HOOKED) add(R.L(rec + 6), R.B(rec + 0x2b));
+  for (const [g, t] of SWAPPED) add(g, t);
   const keep = g => legacy || !LEGACY.has(g), sorted = [...sheets.keys()].sort((a, b) => a - b);
   for (const g of sorted) if (keep(g)) for (const t of sheets.get(g)) if (t <= 2) files['assets/units/act/' + g.toString(16).padStart(6, '0') + '-' + t + '.png'] = actSheet(R, g, t);
   for (const g of new Set([...common.heroes.map(h => h.gfx), ...GUESTS])) files['assets/units/die/' + g.toString(16).padStart(6, '0') + '.png'] = dieSheet(R, g);

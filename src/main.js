@@ -1,5 +1,5 @@
 // 封神英傑傳 — next-gen remake. Boot and flow.
-//   campaign (no hash): title → camp (選擇人物, 出擊) → battle → result → camp …, with saves (campaign.js, camp.js, save.js)
+//   campaign (no hash): title → camp (出戰人選, 出擊) → battle → result → camp …, with saves (campaign.js, camp.js, save.js)
 //   direct (#battle=N, #auto, #sandbox, #arena): one battle with its default party, as in Phase 1 (test/index.html
 //   adds &test: the test toolbar, src/testkit.js)
 // The engine is battle.js, the rules rules.js, each battle's own parts src/battles/NN-*.js. Phase 3 adds story scenes.
@@ -185,8 +185,9 @@ async function campaign() {
       await Scene.darken();   // the title's or camp's world goes dark before its camera lets go (no snap seen)
       orbit(false); setScreen(null); E.ui.show('hud', false); dirty = true;
       if (state.part === 'intro' && Scene.seekPast(S)) state.part = 'outro';   // #scene=N&at=F past its battle (QA shots of the outro)
-      if (state.part === 'intro' && S.chapter && S.chapter !== state.chapter) { await Scene.chapterCard(E, S.chapter); state.chapter = S.chapter; }
-      const r = await Scene.play(E, tag, state.part, { join: cid => K.join(state, cid), summon: spell => K.summon(state, spell) });
+      if (state.part === 'intro' && S.chapter) state.chapter = S.chapter;   // (no 第X章 card at a new chapter: the original has none [the user's call])
+      // @qa scene:42 scene:54 job:flow
+      const r = await Scene.play(E, tag, state.part, { join: cid => K.join(state, cid), summon: spell => K.summon(state, spell), gifts: K.GIFTS[tag], gift: g => K.gift(state, g) });
       if (r === 'battle' && S.battle) { state.camp = true; state.battle = S.battle; continue; }   // stays dark: the camp fades in once its world is built
       K.nextScene(state); continue;
     }

@@ -10,7 +10,7 @@
 //                 opens under him and he breaks into its petals; it sheds its petals, which rise into the sky (the
 //                 lotus body he was reborn in); the 乾坤圈 falls where he knelt, rolls, settles like a coin and glints
 import * as THREE from 'three';
-import { groundH, rand } from './world.js';
+import { effectH, rand } from './world.js';
 import { world, vfx, cam, ui, anim, wait, V, actorOf, deathSpin, dieTex, activeMark, targetMark, tiles } from './battle.js';
 import { D } from './rules.js';
 import { jingle, sfx } from './audio.js';
@@ -90,7 +90,7 @@ function rain(P) {
   vfx.timed(mesh, 1e9, (k, dt) => {
     mat.uniforms.uT.value += dt; mat.uniforms.uK.value = o.k;
     for (acc += dt * o.k * 60; acc > 1; acc--) {   // splashes: a few small droplets kicked up where drops land
-      const x = P.x + rand(-6, 6), z = P.z + rand(-4, 4), y = groundH(x, z);
+      const x = P.x + rand(-6, 6), z = P.z + rand(-4, 4), y = effectH(x, z);
       vfx.spark(x, y + 0.02, z, { vx: rand(-0.3, 0.3), vy: rand(0.4, 0.9), vz: rand(-0.3, 0.3), g: 5, life: 0.22, size: 0.018, r: 0.8, gg: 0.86, b: 0.95, shape: 1 });
     }
   });
@@ -157,7 +157,7 @@ async function linYun(u) {
     const sp = spiritOf(a, stand, [0.8, 0.92, 1.25]), { up } = axes(); aura(sp, [0.45, 0.7, 1]);
     await anim(1.0, k => { sp.material.opacity = 0.75 * ease(k); sp.position.copy(a.big.position).addScaledVector(up, 0.15 * k); });
     await wait(500);
-    const sword = jian(); sword.position.copy(tipAt).setY(groundH(tipAt.x, tipAt.z) - 0.32); sword.rotation.set(0.08, 0.6, -0.1); sword.scale.setScalar(1.6); world.scene.add(sword);   // (larger than life: a marker)
+    const sword = jian(); sword.position.copy(tipAt).setY(effectH(tipAt.x, tipAt.z) - 0.32); sword.rotation.set(0.08, 0.6, -0.1); sword.scale.setScalar(1.6); world.scene.add(sword);   // (larger than life: a marker)
     const tassel = clothStrip({ col: [0.85, 0.08, 0.06], width: 0.04, n: 14 });
     const pommel = () => sword.localToWorld(V(0, 1.2, 0));
     let T = 0;
@@ -225,7 +225,7 @@ async function nezha(u) {
     await anim(2.2, (k, dt = 1 / 60) => {
       for (const m of lm) m.opacity = 1 - ease(k);
       // the ring: a short drop and bounce, rolling on its edge, wobbling down to lie flat
-      const kr = Math.min(1, k / 0.8), gy = groundH(r0.x, r0.z);
+      const kr = Math.min(1, k / 0.8), gy = effectH(r0.x, r0.z);
       const bounce = Math.abs(Math.sin(Math.min(1, kr * 1.8) * Math.PI * 1.5)) * 0.35 * Math.max(0, 1 - kr * 1.8);
       ring.position.copy(r0).addScaledVector(rv, ease(kr)).setY(gy + 0.3 * (1 - ease(Math.max(0, kr - 0.4) / 0.6)) + 0.06 + bounce);
       const lean = ease(Math.max(0, kr - 0.4) / 0.6) * Math.PI / 2;   // from upright to flat
@@ -300,9 +300,9 @@ async function yanRong(u) {
     const curve = new THREE.QuadraticBezierCurve3(V(0, -0.5, 0), V(0.2, 0, 0), V(0, 0.5, 0));
     const bow = new THREE.Group(); bow.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.02, 6), new THREE.MeshStandardMaterial({ color: 0x8a4a1a, roughness: 0.6 })));
     const str = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 4), new THREE.MeshBasicMaterial({ color: 0xf0e8d0 })); bow.add(str);
-    const at = P.clone().addScaledVector(right, 0.42).addScaledVector(toCam, 0.15); bow.position.copy(at).setY(groundH(at.x, at.z) + 0.5);
+    const at = P.clone().addScaledVector(right, 0.42).addScaledVector(toCam, 0.15); bow.position.copy(at).setY(effectH(at.x, at.z) + 0.5);
     c.add(bow);
-    await anim(0.6, k => { const e = k * k; bow.rotation.set(0, 0, -e * Math.PI / 2); bow.position.y = groundH(at.x, at.z) + 0.5 - e * 0.47; });
+    await anim(0.6, k => { const e = k * k; bow.rotation.set(0, 0, -e * Math.PI / 2); bow.position.y = effectH(at.x, at.z) + 0.5 - e * 0.47; });
     const PT = once('petal', petalTex), drift = () => { const m = pic(c, PT, 0.12, 0.17, { col: [1, rand(0.7, 0.9), rand(0.8, 0.95)] }); const p = P.clone().add(V(rand(-3, 3), rand(3, 4), rand(-2, 2))); m.position.copy(p);
       const v = V(rand(0.1, 0.4), -rand(0.35, 0.6), 0), sp = rand(-3, 3); let t = 0; const it = vfx.items.find(i => i.mesh === m); it.update = (k, dt) => { t += dt; v.x += Math.sin(t * 2 + sp) * dt * 0.3; m.position.addScaledVector(v, dt); faceCam(m, t * sp); m.material.opacity = Math.min(1, t * 2) * Math.max(0, 1 - Math.max(0, t - 3.5)); }; };
     await anim(1.6, k => { c.set(ease(k)); if (Math.random() < 0.12) drift(); });
@@ -328,7 +328,7 @@ async function yangJian(u) {
     await anim(1.6, k => c.set(ease(k)));
     jingle(0x0a);
     let t = 0;
-    await anim(1.5, (k, dt = 1 / 60) => { t += dt; frame(Math.floor(t * 10) % 4); const p = from.clone().lerp(sit, 1 - (1 - k) * (1 - k)); hound.position.copy(p).setY(groundH(p.x, p.z) + 0.45); faceCam(hound); hound.scale.x = 1; hound.material.opacity = Math.min(1, k * 4);
+    await anim(1.5, (k, dt = 1 / 60) => { t += dt; frame(Math.floor(t * 10) % 4); const p = from.clone().lerp(sit, 1 - (1 - k) * (1 - k)); hound.position.copy(p).setY(effectH(p.x, p.z) + 0.45); faceCam(hound); hound.scale.x = 1; hound.material.opacity = Math.min(1, k * 4);
       if (Math.random() < 0.5) vfx.spark(p.x, p.y + 0.3, p.z, { vy: rand(0.2, 0.5), life: 0.8, size: 0.03, r: 0.8, gg: 0.9, b: 1, shape: 1 }); });
     frame(4);
     // the howl: rings of silver going out from its head
@@ -362,7 +362,7 @@ function warBannerTex() { return canvasTex(128, 192, g => {
 async function huangFeihu(u) {
   await fall(u, [0.22, 0.55, 0.78], async c => {
     const { P, right, toCam } = c, H = 2.4, W = 0.8, CH = 1.15;
-    const root = new THREE.Group(), base = P.clone().addScaledVector(right, -0.35).addScaledVector(toCam, -0.45); base.y = groundH(base.x, base.z);
+    const root = new THREE.Group(), base = P.clone().addScaledVector(right, -0.35).addScaledVector(toCam, -0.45); base.y = effectH(base.x, base.z);
     root.rotation.y = Math.atan2(-right.z, right.x);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.032, H, 8), new THREE.MeshStandardMaterial({ color: 0x3a2214, roughness: 0.8 })); pole.position.y = H / 2;
     const cg = new THREE.PlaneGeometry(W, CH, 14, 8); cg.translate(W / 2, H - 0.1 - CH / 2, 0); const rest = cg.attributes.position.array.slice();
@@ -467,7 +467,7 @@ async function jiangZiya(u) {
     const { P, right, toCam } = c;
     // the banner, planted beside him
     const H = 1.9, W = 0.62, CH = 0.86, root = new THREE.Group(); root.rotation.y = Math.atan2(-right.z, right.x);
-    const base = P.clone().addScaledVector(right, -0.4).addScaledVector(toCam, -0.3); base.y = groundH(base.x, base.z); root.position.copy(base);
+    const base = P.clone().addScaledVector(right, -0.4).addScaledVector(toCam, -0.3); base.y = effectH(base.x, base.z); root.position.copy(base);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, H, 6), new THREE.MeshStandardMaterial({ color: 0x5a2a10, roughness: 0.8 })); pole.position.y = H / 2;
     const cg = new THREE.PlaneGeometry(W, CH, 12, 6); cg.translate(W / 2, H - 0.08 - CH / 2, 0); const rest = cg.attributes.position.array.slice();
     const cloth = new THREE.Mesh(cg, new THREE.MeshStandardMaterial({ map: once('banner', bannerTex), side: THREE.DoubleSide, transparent: true, alphaTest: 0.1, roughness: 0.9 })); root.add(pole, cloth);
@@ -526,7 +526,7 @@ async function huangTianhua(u) {
 // mound is left, and from it one small sprout grows and opens a white flower
 async function tuXingsun(u) {
   await fall(u, [0.28, 0.38, 0.52], async c => {
-    const { P, a } = c, R = world.renderer, clip0 = R.localClippingEnabled, gy = groundH(P.x, P.z);
+    const { P, a } = c, R = world.renderer, clip0 = R.localClippingEnabled, gy = effectH(P.x, P.z);
     await anim(1.6, k => c.set(ease(k)));
     jingle(0x0a);
     R.localClippingEnabled = true; const plane = new THREE.Plane(V(0, 1, 0), -(gy - 0.02));
@@ -559,7 +559,7 @@ async function tuXingsun(u) {
 // round her and climbs into the sky; a single pearl is left where she knelt, glowing, and fades
 async function xiaoLongnv(u) {
   await fall(u, [0.5, 0.22, 0.08], async c => {
-    const { P } = c, gy = groundH(P.x, P.z);
+    const { P } = c, gy = effectH(P.x, P.z);
     await anim(1.6, k => c.set(ease(k)));
     jingle(0x0a);
     const water = overlay(c, c.tx, [0.4, 0.75, 1.2], true);
@@ -588,7 +588,7 @@ async function xiaoLongnv(u) {
 // growing as he fades; it flickers, gutters and goes out; a thin curl of smoke rises from the wick
 async function ranDeng(u) {
   await fall(u, [0.62, 0.62, 0.52], async c => {
-    const { P, toCam } = c, at = P.clone().addScaledVector(toCam, 0.4), gy = groundH(at.x, at.z);
+    const { P, toCam } = c, at = P.clone().addScaledVector(toCam, 0.4), gy = effectH(at.x, at.z);
     const bronze = new THREE.MeshStandardMaterial({ color: 0x9a7a3a, metalness: 0.85, roughness: 0.35, transparent: true });
     const lamp = new THREE.Mesh(new THREE.LatheGeometry([[0, 0], [0.12, 0], [0.13, 0.02], [0.04, 0.05], [0.03, 0.3], [0.05, 0.33], [0.15, 0.36], [0.16, 0.4], [0.12, 0.42], [0, 0.42]].map(([r, y]) => new THREE.Vector2(r, y)), 24), bronze);
     lamp.position.set(at.x, gy, at.z); lamp.castShadow = true; lamp.scale.setScalar(0.01); c.add(lamp); const LS = 2.2;   // (larger than life: seen at play distance)
@@ -627,7 +627,7 @@ async function wenWang(u) {
     const { P } = c, cards = [];
     for (let i = 0; i < 8; i++) cards.push(pic(c, once('trigram' + i, () => trigramTex(i)), 0.62, 0.62, { add: true, op: 0, order: 9.4, col: [1.4, 1.2, 0.8] }));
     let rot = 0;
-    const place = (dt, r = 1.45) => { rot += dt * 0.35; cards.forEach((m, i) => { const t = rot + i / 8 * Math.PI * 2; m.position.set(P.x + Math.cos(t) * r, groundH(P.x, P.z) + 0.55 + Math.sin(t * 2 + rot) * 0.04, P.z + Math.sin(t) * r * 0.7); faceCam(m); }); };
+    const place = (dt, r = 1.45) => { rot += dt * 0.35; cards.forEach((m, i) => { const t = rot + i / 8 * Math.PI * 2; m.position.set(P.x + Math.cos(t) * r, effectH(P.x, P.z) + 0.55 + Math.sin(t * 2 + rot) * 0.04, P.z + Math.sin(t) * r * 0.7); faceCam(m); }); };
     await anim(1.6, (k, dt = 1 / 60) => { c.set(ease(k)); place(dt); cards.forEach((m, i) => { m.material.opacity = Math.max(0, Math.min(1, k * 2 - i * 0.1)); }); });
     jingle(0x0a);
     vfx.light(c.head(0.4), [1, 0.85, 0.5], 5, 6, 4);

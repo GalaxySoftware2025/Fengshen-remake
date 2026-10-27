@@ -106,7 +106,7 @@ export function extractBattle(R, rom, n, walk, index) {
     spawns.push(u); a += 8;
   }
   const ops = sc.ops, bi = ops.findIndex(o => o.op === 10);
-  const maps = ops.slice(0, bi).filter(o => o.op === 0 || o.op === 13).map(o => o.op === 0 ? [o.mapIndex, null] : [null, R.L(o.at + 2)]);
+  const maps = ops.slice(0, bi).filter(o => o.op === 0 || o.op === 13 || o.op === 52).map(o => o.op === 0 ? [o.mapIndex, null] : [null, R.L(o.at + 2)]);   // (op 52: a load from white, battle 26's heaven)
   const [mp, img] = mapOf(R, rom, ...maps[maps.length - 1]);
   return { n, name: b.name, scene: si, chapter: sc.chapter, win: b.win, lose: b.lose, deploy: b.deploy, header: h, music: R.W(h + 20),
     camera: [R.B(h + 22), R.B(h + 23)], partyTable: R.W(h + 32),
@@ -115,13 +115,22 @@ export function extractBattle(R, rom, n, walk, index) {
 }
 
 // ---------------------------------------------------------------- export.py
+// one-frame poses that native cuts unpack to RAM (0xFFA000) for a unit (extract/record.js CUT_POSES): named by their pointer
+// table, the packed data at table + its word at +0x12 + 0x1A, unpacked by the game's own routine (0x6BCE)
+const POSES = new Set([0x0802c2, 0x06926a, 0x05339c]);
+// graphics a cut unpacks straight from the address (no table), with its frames: 伯邑考's lunge (0x0F737E, three frames
+// and the blade's streak after them), 姬發 kneeling and weeping (0x0F7BD2, two)
+export const PACKED = { 0x0802dc: 3, 0x061760: 2 };
 export function sheetImage(R, gfx, frames = 9) {   // a unit graphic's 9 frames, 32 px each, unit palette (CRAM line 2), RGBA
   const rgb = Array.from({ length: 16 }, (_, i) => cramRGB(R.W(0x38436 + 2 * i)));
   const img = image(32 * frames, 32, 4);
-  for (let f = 0; f < frames; f++) for (let t = 0; t < 16; t++) {
-    const a = gfx + f * 512 + t * 32, tx = t >> 2, ty = t & 3;
+  let read = a => R.B(a), base = gfx, nf = frames;
+  if (POSES.has(gfx)) { const m = new MD(R.b); m.call(0x6bce, [0xff8000, gfx + R.W(gfx + 0x12) + 0x1a]); read = a => m.ram[0x8000 + a]; base = 0; nf = 1; }   // (frame 0: the pose; the rest empty)
+  else if (PACKED[gfx]) { const m = new MD(R.b); m.call(0x6bce, [0xff8000, gfx]); read = a => m.ram[0x8000 + a]; base = 0; nf = PACKED[gfx]; }
+  for (let f = 0; f < nf; f++) for (let t = 0; t < 16; t++) {
+    const a = base + f * 512 + t * 32, tx = t >> 2, ty = t & 3;
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-      const byte = R.B(a + y * 4 + (x >> 1)), p = x & 1 ? byte & 15 : byte >> 4, o = ((ty * 8 + y) * 32 * frames + f * 32 + tx * 8 + x) * 4;
+      const byte = read(a + y * 4 + (x >> 1)), p = x & 1 ? byte & 15 : byte >> 4, o = ((ty * 8 + y) * 32 * frames + f * 32 + tx * 8 + x) * 4;
       img.px[o] = rgb[p][0]; img.px[o + 1] = rgb[p][1]; img.px[o + 2] = rgb[p][2]; img.px[o + 3] = p ? 255 : 0;
     }
   }
@@ -183,11 +192,12 @@ const enemiesOut = (list, NAMES, sheets, R = null, RS = R) => list.map(e => {   
   if (RS && (e.ai === 0x82 || e.ai === 0x83)) {   // a summoner (AI 0x82, 0x0EFD06) or a phantom (AI 0x83, 0x1EBDE): its waking range (+32) and the record it calls up (+36)
     const t = RS.L(e.template + 0x36), sm = rec(RS.bytes(t, 64)), v = {}; for (const k of UNIT_KEYS) v[k] = sm[k];
     if (e.ai === 0x83) u.calls = [RS.B(e.template + 0x1c), RS.B(e.template + 0x1b)];   // a phantom's calls: made and allowed, two units each (+1C, +1B)
-    u.wake = RS.B(e.template + 0x32); u.summon = Object.assign(v, { name: NAMES[sm.cid], sprite: sm.gfx.toString(16).padStart(6, '0'), atkType: RS.B(t + 0x2b), aip: Array.from(RS.bytes(t + 0x34, 8)), template: t });
+    u.wake = RS.B(e.template + 0x32); u.summon = Object.assign(v, { name: NAMES[sm.cid], sprite: sm.gfx.toString(16).padStart(6, '0'), atkType: RS.B(t + 0x2b), aip: Array.from(RS.bytes(t + 0x34, 8)), template: t }, RS.B(t + 0x32) ? { cellSet: RS.B(t + 0x32) } : {});
     sheets.add(sm.gfx);
   }
   Object.assign(u, { x: e.x, y: e.y, name: NAMES[e.cid], sprite: e.gfx.toString(16).padStart(6, '0') });
   u.aip = Array.from(Buffer_from_hex(e.raw).subarray(0x34, 0x3c));
+  const cells = Buffer_from_hex(e.raw)[0x32]; if (cells && e.ai !== 0x82 && e.ai !== 0x83) u.cellSet = cells;   // +32: the cells round a hero it tries first (0 front, 1 flank, 2 behind; table 0x1F306), but a summoner's waking range
   u.facing = FACING[Buffer_from_hex(e.raw)[1]] || 'down';   // where it faces as the battle opens: its record's +1, copied whole by the spawn loader (0x13322)
   if (e.item !== null) u.drop = e.item;
   sheets.add(e.gfx); return u;
@@ -206,6 +216,33 @@ export function exportBattle(R, b, walk, sheets) {
     rom: { header: b.header.toString(16).padStart(6, '0'), hooks: Object.fromEntries(Object.entries(b.hooks).map(([k, v]) => [k, v.toString(16).padStart(6, '0')])) },
     ...(rooms ? { rooms } : {}) };
 }
+// battle 32's demon: the body its map draws under his head (map 0fdcc0, cells 8-14 of rows 1-3), cut out against the
+// hook's second block grid (the long at 0x100504, loaded at the seal [ROM 0x0FDE48]), which draws the floor there instead:
+// an 8 px tile, or a 4 px quarter of one, that the floor art has anywhere is floor; of the rest, the pixels that differ
+// are the body. The remake stands it in the lair as a sprite of its own (src/remake/lair.js) and lets it go at the seal
+export const DEMON = { desc: 0x0fdcc0, grid: 0x100504, x0: 8, y0: 1, w: 7, h: 3 };
+export function demonBody(R, rom) {
+  const d = DEMON.desc, slots = [0, 1, 2, 3, 4].map(k => R.L(d + 4 * k)), [, a] = mapOf(R, rom, null, null, slots), [, b] = mapOf(R, rom, null, null, [DEMON.grid, ...slots.slice(1)]);
+  const W = a.w, H = a.h, key = (img, x, y, n) => { let k = ''; for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const o = ((y + j) * W + x + i) * 3; k += img.px[o] + ',' + img.px[o + 1] + ',' + img.px[o + 2] + ';'; } return k; };
+  const floor = new Set(); for (const n of [8, 4]) for (let y = 0; y < H; y += n) for (let x = 0; x < W; x += n) floor.add(n + ':' + key(b, x, y, n));
+  const out = image(DEMON.w * 32, DEMON.h * 32, 4), X0 = DEMON.x0 * 32, Y0 = DEMON.y0 * 32, OW = out.w, OH = out.h;
+  const keep = new Uint8Array(OW * OH), same = new Uint8Array(OW * OH);   // in a kept quarter; the floor's own pixel there
+  for (let ty = 0; ty < OH; ty += 8) for (let tx = 0; tx < OW; tx += 8) {
+    if (floor.has('8:' + key(a, X0 + tx, Y0 + ty, 8))) continue;
+    for (const qy of [0, 4]) for (const qx of [0, 4]) if (!floor.has('4:' + key(a, X0 + tx + qx, Y0 + ty + qy, 4)))
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { const x = tx + qx + i, y = ty + qy + j, o = ((Y0 + y) * W + X0 + x) * 3; keep[y * OW + x] = 1; same[y * OW + x] = a.px[o] === b.px[o] && a.px[o + 1] === b.px[o + 1] && a.px[o + 2] === b.px[o + 2] ? 1 : 0; }
+  }
+  // the floor's pixels reached from outside the kept quarters through the floor's own pixels are floor; one enclosed by
+  // the body (a colour the body shares with the floor under it) is the body's
+  const bg = new Uint8Array(OW * OH), q = [];
+  for (let y = 0; y < OH; y++) for (let x = 0; x < OW; x++) { const k = y * OW + x; if (!keep[k] || !same[k]) continue;
+    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const nx = x + dx, ny = y + dy; return nx < 0 || ny < 0 || nx >= OW || ny >= OH || !keep[ny * OW + nx]; })) { bg[k] = 1; q.push(k); } }
+  while (q.length) { const k = q.pop(), x = k % OW, y = (k - x) / OW;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, n = ny * OW + nx; if (nx >= 0 && ny >= 0 && nx < OW && ny < OH && keep[n] && same[n] && !bg[n]) { bg[n] = 1; q.push(n); } } }
+  for (let y = 0; y < OH; y++) for (let x = 0; x < OW; x++) { const k = y * OW + x; if (!keep[k] || bg[k]) continue;
+    const o = ((Y0 + y) * W + X0 + x) * 3; out.px[k * 4] = a.px[o]; out.px[k * 4 + 1] = a.px[o + 1]; out.px[k * 4 + 2] = a.px[o + 2]; out.px[k * 4 + 3] = 255; }
+  return out;
+}
 function Buffer_from_hex(h) { const out = new Uint8Array(h.length / 2); for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(2 * i, 2), 16); return out; }
 
 // everything above, as files: { path: string | image }
@@ -223,6 +260,10 @@ export function run(R, rom, files, log = () => {}) {
     files['data/battles/' + String(n).padStart(2, '0') + '.js'] = '// battle ' + n + ' ' + b.name + ': generated by the extractor from the player\'s ROM.\n(window.BATTLES ||= {})[' + n + '] = ' + JSON.stringify(out) + ';\n';
     log('battle ' + n);
   }
+  // units a battle hook builds in RAM rather than from a record: battle 20's room 2 chains 黃飛虎 up by the dais (its
+  // graphic is the second entry of the table the long at 0x1003BC points to, as the hook reads it [ROM 0x0F5C52]; one pose)
+  sheets.add(R.L(0x1003bc) + 0x40);
   for (const g of sheets) files['assets/units/' + g.toString(16).padStart(6, '0') + '.png'] = sheetImage(R, g);
+  files['assets/fx/demon-body.png'] = demonBody(R, rom);
   return { walk, index, battles, sheets, common: C };
 }

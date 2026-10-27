@@ -7,7 +7,7 @@
 // game without one (it would get the old shared gathering: the cast pose and a rune circle). New to the remake: the
 // original only holds its cast pose.
 import * as THREE from 'three';
-import { rand, groundH } from './world.js';
+import { rand, effectH } from './world.js';
 import { vfx, anim, wait, V } from './battle.js';
 import { swordMesh, pointAlong } from './spellkit.js';
 import { axes, face, canvasTex, once, eyeTex, fireWheel, leiFlapFrames } from './levelup.js';
@@ -58,7 +58,7 @@ function motes(a, col, sec, o = {}) { return during(sec, (k, dt) => { const c = 
   for (let i = 0; i < Math.ceil(dt * (o.rate || 30)); i++) { const t = rand(0, 6.28), r = rand(0.9, 1.4); spark(V(c.x + Math.cos(t) * r, c.y + rand(-0.4, 0.8), c.z + Math.sin(t) * r), col, { seek: { x: c.x, y: c.y, z: c.z, k: 5 }, life: 0.5, size: rand(0.05, 0.08) }); } }); }
 // flames kindling in a ring round his feet
 function flameRing(P, r, n, sec, o = {}) { return during(sec, (k, dt) => { if (Math.random() > dt * (o.rate || 40)) return; const t = rand(0, 6.28), q = V(P.x + Math.cos(t) * r, 0, P.z + Math.sin(t) * r);
-  vfx.flame(q.x, groundH(q.x, q.z) + 0.05, q.z, { size: rand(0.12, 0.2) * (o.size || 1), asp: 1.5, life: rand(0.3, 0.45), vy: 0.7 }); }); }
+  vfx.flame(q.x, effectH(q.x, q.z) + 0.05, q.z, { size: rand(0.12, 0.2) * (o.size || 1), asp: 1.5, life: rand(0.3, 0.45), vy: 0.7 }); }); }
 // smoke winding up round him (a storm, a plague, a corpse's breath)
 function smoke(a, P, tint, sec, o = {}) { let T = 0; return during(sec, (k, dt) => { T += dt; if (Math.random() > dt * (o.rate || 26)) return; const t = T * 6 + rand(0, 6.28), r = o.r || 0.5;
   vfx.smokePuff(P.x + Math.cos(t) * r, P.y + 0.1, P.z + Math.sin(t) * r, { vx: -Math.sin(t) * 1.4, vz: Math.cos(t) * 1.4, vy: rand(0.6, 1.2), drag: 1.2, life: rand(0.7, 1.0), size: 0.18, size1: 0.5, tint }); }); }
@@ -67,7 +67,7 @@ function orb(a, col, sec, o = {}) { const m = new THREE.Mesh(new THREE.SphereGeo
   m.renderOrder = 7; return vfx.timed(m, sec, k => { m.position.copy(a.head().add(V(0, 0.4, 0))); m.scale.setScalar((o.r || 0.16) * Math.min(1, k * 2.5) * (1 + 0.1 * Math.sin(k * 40))); m.material.opacity = k > 0.85 ? (1 - k) / 0.15 : 0.9; },
     () => { const q = a.head().add(V(0, 0.4, 0)); vfx.burst(q, { n: 22, speed: 2.6, cols: [[1, 1, 1], col], size: 0.05, life: 0.4, g: 0, shape: 1 }); vfx.light(q, col, 3, 0.3, 4); }); }
 // lightning crashing down round him
-function bolts(P, col, n, sec) { let fired = 0; return during(sec, k => { while (fired < n * k) { fired++; const t = rand(0, 6.28), l = rand(0.6, 1.1), q = V(P.x + Math.cos(t) * l, 0, P.z + Math.sin(t) * l); q.y = groundH(q.x, q.z);
+function bolts(P, col, n, sec) { let fired = 0; return during(sec, k => { while (fired < n * k) { fired++; const t = rand(0, 6.28), l = rand(0.6, 1.1), q = V(P.x + Math.cos(t) * l, 0, P.z + Math.sin(t) * l); q.y = effectH(q.x, q.z);
   vfx.bolt(q.clone().add(V(rand(-0.3, 0.3), 2.2, rand(-0.3, 0.3))), q, col, 0.15, { width: 0.022, jag: 0.35 }); vfx.burst(q, { n: 6, speed: 1.5, cols: [[1, 1, 1], col], size: 0.04, life: 0.3, g: 0, shape: 0 }); } }); }
 
 // ---------------------------------------------------------------- the casters
@@ -89,7 +89,7 @@ export const CASTS = {
     await anim(0.1, k => { a.hover = 0.45 * (1 - k * k); });
     a.hover = 0;
     slam(P, BOLT, 1.3, { dust: [0.55, 0.55, 0.6] });
-    for (let i = 0; i < 8; i++) { const t = i / 8 * 6.28 + rand(-0.2, 0.2), l = rand(1.0, 1.6), q = P.clone().add(V(Math.cos(t) * l, 0, Math.sin(t) * l)); q.y = groundH(q.x, q.z) + 0.05;
+    for (let i = 0; i < 8; i++) { const t = i / 8 * 6.28 + rand(-0.2, 0.2), l = rand(1.0, 1.6), q = P.clone().add(V(Math.cos(t) * l, 0, Math.sin(t) * l)); q.y = effectH(q.x, q.z) + 0.05;
       vfx.bolt(P.clone().setY(P.y + 0.05), q, BOLT, 0.3, { width: 0.03, jag: 0.25 }); }
     await wait(380);
   },
@@ -108,7 +108,7 @@ export const CASTS = {
     await anim(0.35, () => burn());
     await anim(0.12, k => { a.hover = 0.5 * (1 - k * k); burn(); });
     a.hover = 0;
-    for (let i = 0; i < 16; i++) { const t = i / 16 * 6.28, q = P.clone().add(V(Math.cos(t) * 0.5, 0, Math.sin(t) * 0.5)); vfx.flame(q.x, groundH(q.x, q.z) + 0.05, q.z, { size: rand(0.16, 0.22), asp: 1.5, life: rand(0.35, 0.5), vy: 0.8 }); }
+    for (let i = 0; i < 16; i++) { const t = i / 16 * 6.28, q = P.clone().add(V(Math.cos(t) * 0.5, 0, Math.sin(t) * 0.5)); vfx.flame(q.x, effectH(q.x, q.z) + 0.05, q.z, { size: rand(0.16, 0.22), asp: 1.5, life: rand(0.35, 0.5), vy: 0.8 }); }
     vfx.shake(0.05, 0.15);
     await wait(300);
   },
@@ -137,7 +137,7 @@ export const CASTS = {
     for (let i = 0; i < 18; i++) { const t = i / 18 * 6.28, r = 0.9; vfx.spark(P.x + Math.cos(t) * r, P.y + 0.05, P.z + Math.sin(t) * r, { vy: rand(1.2, 2.2), vx: -Math.cos(t) * 0.5, vz: -Math.sin(t) * 0.5, life: 0.7, size: 0.06, r: 1, gg: 0.85, b: 0.45, shape: 1 }); }
     vfx.pillar(P, GOLD, 0.5, 2.4, 0.8, { taper: 0.8, intensity: 0.35, grow: 1 });
     vfx.light(P.clone().setY(P.y + 0.6), GOLD, 8, 0.9, 5);
-    await anim(0.9, k => { disc.position.y = groundH(P.x, P.z) + 0.04 + Math.sin(k * Math.PI * 0.5) * 0.35; });
+    await anim(0.9, k => { disc.position.y = effectH(P.x, P.z) + 0.04 + Math.sin(k * Math.PI * 0.5) * 0.35; });
     await wait(150);
   },
   // 大力士, Shang's strongman: lifts both fists high and pounds the earth once, stones and dust thrown up round him
@@ -190,7 +190,7 @@ export const CASTS = {
   8: async (a, P) => {
     const COL = [0.55, 0.8, 1];
     pose.atk(a, 0); await wait(260); pose.atk(a, 1);
-    [0, 1, 2, 3].forEach(i => { const t = i / 4 * 6.28 + 0.78, q = V(P.x + Math.cos(t) * 0.75, 0, P.z + Math.sin(t) * 0.75); q.y = groundH(q.x, q.z); const m = swordMesh(COL, 0.5);
+    [0, 1, 2, 3].forEach(i => { const t = i / 4 * 6.28 + 0.78, q = V(P.x + Math.cos(t) * 0.75, 0, P.z + Math.sin(t) * 0.75); q.y = effectH(q.x, q.z); const m = swordMesh(COL, 0.5);
       vfx.timed(m, 0.75, k => { const f = Math.min(1, k / 0.35); m.position.copy(q).add(V(0, 0.3 + (1 - f * f) * 2.4, 0)); pointAlong(m, V(0, -1, 0)); if (f >= 1 && !m.userData.hit) { m.userData.hit = 1; dust(q, 4, 0.8); vfx.burst(q, { n: 6, speed: 1.4, cols: [[1, 1, 1], COL], size: 0.04, life: 0.3, g: 0, shape: 0 }); } }); });
     await wait(300); vfx.shake(0.06, 0.15); await wait(450);
   },
@@ -219,6 +219,68 @@ export const CASTS = {
   48: async (a, P) => { await strike(a, P, [1, 0.8, 0.4], 1.1, { chips: [[0.85, 0.65, 0.3], [0.5, 0.42, 0.33]] }); await wait(450); },
   // 魯雄 (who froze in 姜子牙's snow): a blow, and frost bursts from the ground
   56: async (a, P) => { await strike(a, P, [0.7, 0.9, 1], 1, { dust: [0.75, 0.82, 0.9], chips: [[0.85, 0.95, 1], [0.6, 0.8, 1]] }); swirl(a, P, [0.8, 0.95, 1], 0.45, { rate: 40, shape: 0 }); await wait(450); },
+  // the 魔家四將 of 佳夢關 (battle 24), each by the treasure the legend gives him. 魔禮青: he lifts the 青雲劍 and a great
+  // blade of green light stands over him in a black wind
+  57: async (a, P) => {
+    const JADE = [0.35, 1, 0.75];
+    raise(a, 0); const m = swordMesh(JADE, 1.1), top = () => a.head().add(V(0, 0.15, 0));
+    ribbons(a, P, [[0.1, 0.25, 0.2], [0.15, 0.3, 0.25], [0.2, 0.5, 0.4]], 0.9, { r: 0.6, h: 1.8, spin: 9, width: 0.07 });
+    vfx.timed(m, 0.95, k => { const f = Math.min(1, k / 0.4); m.position.copy(top()).add(V(0, f * 0.35, 0)); pointAlong(m, V(0, 1, 0)); m.scale.setScalar(0.5 + f * 1.3); });
+    await wait(450);
+    const q = top().add(V(0, 2.2, 0)); vfx.light(q, JADE, 9, 0.4, 6); vfx.burst(q, { n: 24, speed: 2.6, cols: [[1, 1, 1], JADE], size: 0.05, life: 0.4, g: 0, shape: 1 });
+    await wait(550);
+  },
+  // 魔禮海: he strikes the 碧玉琵琶, and its four strings send wind and fire running out round him
+  58: async (a, P) => {
+    const { right, toCam } = axes(), FIRE = [1, 0.5, 0.15];
+    pose.cast(a, 1);
+    const lute = flat(once('pipa', () => canvasTex(64, 128, g => {
+      const gr = g.createRadialGradient(28, 86, 6, 32, 84, 34); gr.addColorStop(0, '#9fe0c0'); gr.addColorStop(1, '#2f7a5a'); g.fillStyle = gr;
+      g.beginPath(); g.ellipse(32, 86, 26, 34, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#3a2416'; g.fillRect(28, 6, 8, 56); g.fillStyle = '#c9a24a'; for (const y of [18, 28, 38, 48]) g.fillRect(26, y, 12, 3);
+      g.strokeStyle = 'rgba(255,250,230,0.9)'; g.lineWidth = 1; for (const x of [29, 31, 33, 35]) { g.beginPath(); g.moveTo(x, 8); g.lineTo(x, 112); g.stroke(); } })), 0.28, 0.56, 7);
+    vfx.timed(lute, 0.95, () => { face(lute); lute.position.copy(a.chest()).addScaledVector(toCam, 0.16).addScaledVector(right, 0.05); });
+    await wait(300);
+    for (let s = 0; s < 4; s++) {   // a strum: each string's note goes out as a wave of wind with embers in it
+      const r = vfx.ribbon({ col: s % 2 ? [0.7, 1, 0.85] : FIRE, width: 0.05, n: 20, fade: 0.3 }), t0 = s * 1.57 + 0.4;
+      during(0.6, k => { const t = t0 + k * 2.6, rr = 0.3 + k * 1.1; r.push(V(P.x + Math.cos(t) * rr, P.y + 0.5 + s * 0.12, P.z + Math.sin(t) * rr)); if (Math.random() < 0.4) spark(V(P.x + Math.cos(t) * rr, P.y + 0.5, P.z + Math.sin(t) * rr), FIRE, { vy: rand(0.4, 1), life: 0.4 }); });
+      await wait(70);
+    }
+    vfx.light(a.chest(), FIRE, 6, 0.5, 5);
+    await wait(420);
+  },
+  // 魔禮紅: he opens the 混元傘 over his head; it turns, darkness pours from under it, its pearls glinting at the rim
+  59: async (a, P) => {
+    const RED = 0xa8202a, PEARL = [1, 0.95, 0.85];
+    raise(a, 0);
+    const um = new THREE.Group(), silk = new THREE.MeshBasicMaterial({ color: RED, side: THREE.DoubleSide, transparent: true, depthWrite: false });
+    const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.22, 16, 1, true), silk); canopy.position.y = 0.11; um.add(canopy);
+    for (let i = 0; i < 8; i++) { const t = i / 8 * 6.28, rib = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.66, 4), new THREE.MeshBasicMaterial({ color: 0xd8b25a })); rib.position.set(Math.cos(t) * 0.31, 0.11, Math.sin(t) * 0.31); rib.rotation.z = Math.PI / 2 - 0.34; rib.rotation.y = -t; um.add(rib); }
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.6, 6), new THREE.MeshBasicMaterial({ color: 0x3a2416 })); shaft.position.y = -0.2; um.add(shaft);
+    um.renderOrder = 7;
+    vfx.timed(um, 1.0, (k, dt) => { const o = Math.min(1, k / 0.3); um.position.copy(a.head().add(V(0, 0.3, 0))); um.scale.set(0.2 + o * 0.8, 0.5 + o * 0.5, 0.2 + o * 0.8); um.rotation.y += dt * (2 + k * 6); silk.opacity = k > 0.85 ? (1 - k) / 0.15 : 1;
+      if (o >= 1 && Math.random() < 0.5) { const t = rand(0, 6.28), c = um.position; spark(V(c.x + Math.cos(t) * 0.6, c.y, c.z + Math.sin(t) * 0.6), PEARL, { life: 0.3, size: 0.05 }); } });
+    smoke(a, P, [0.12, 0.08, 0.14], 0.9, { r: 0.45, rate: 30 });
+    await wait(1000);
+  },
+  // 魔禮壽: the 花狐貂 leaps from his sleeve, a white beast of light, runs round him once and springs back
+  60: async (a, P) => {
+    const WHITE = [1, 0.95, 0.85];
+    pose.atk(a, 0);
+    const beast = flat(once('marten', () => canvasTex(128, 64, g => {
+      const gr = g.createLinearGradient(0, 0, 128, 0); gr.addColorStop(0, 'rgba(255,230,170,0)'); gr.addColorStop(0.35, 'rgba(255,240,200,0.9)'); gr.addColorStop(1, 'rgba(255,255,255,1)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(70, 34, 30, 11, -0.1, 0, Math.PI * 2); g.fill();                 // the long body
+      g.beginPath(); g.ellipse(26, 30, 24, 9, 0.3, 0, Math.PI * 2); g.fill();                                     // the brush of a tail
+      g.fillStyle = '#fff'; g.beginPath(); g.ellipse(102, 28, 13, 9, -0.3, 0, Math.PI * 2); g.fill();             // the head
+      g.beginPath(); g.moveTo(100, 20); g.lineTo(104, 10); g.lineTo(108, 21); g.fill(); g.beginPath(); g.moveTo(108, 22); g.lineTo(114, 13); g.lineTo(115, 25); g.fill();   // the ears
+      g.fillStyle = '#c03020'; g.fillRect(108, 26, 3, 3); })), 1.0, 0.5, 8);
+    const trail = vfx.ribbon({ col: WHITE, width: 0.08, n: 26, fade: 0.4 });
+    pose.atk(a, 1);
+    vfx.timed(beast, 0.85, k => { const t = k * 6.28 * 1.05 - 1.57, r = 0.85 * Math.sin(Math.min(1, k * 1.4) * Math.PI / 2) * (k > 0.85 ? (1 - k) / 0.15 : 1), y = 0.35 + Math.abs(Math.sin(k * 6.28 * 3)) * 0.25;
+      beast.position.set(P.x + Math.cos(t) * r, P.y + y, P.z + Math.sin(t) * r); face(beast); beast.scale.x = Math.cos(t + 1.57) > 0 ? -1 : 1; trail.push(beast.position.clone()); });
+    await wait(850);
+    vfx.burst(a.chest(), { n: 16, speed: 2, cols: [[1, 1, 1], WHITE], size: 0.04, life: 0.3, g: 0, shape: 1 });
+    await wait(200);
+  },
   // 超戰將: he braces, and gold sparks pour up round him
   69: async (a, P) => { pose.guard(a); swirl(a, P, [1, 0.8, 0.35], 0.9, { rate: 60, spin: 10 }); vfx.light(P.clone().setY(P.y + 0.6), [1, 0.8, 0.4], 3, 1, 5); await wait(1000); },
   // 魔戰將, the demon general: a blow, and hellfire rings him
