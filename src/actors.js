@@ -113,6 +113,11 @@ const shadowTex = (() => {
   const t = new THREE.CanvasTexture(c); return t;
 })();
 
+// the battle camera's turn (Q / E; battle.js sets it every frame from Cam.turn): the sprites' shadow casters turn with
+// the sun (world.turnLight), and while turned a unit hidden behind scenery shows through it as a pale silhouette (the
+// sets are built so nothing stands between the unturned camera and a unit; turned, walls do: battles 5, 6) [the user's call, 2026-10-29]
+export const VIEW = { turn: 0 };
+const XRAY = (map, g) => new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map, color: new THREE.Color(0.7, 0.85, 1), transparent: true, opacity: 0.5, alphaTest: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth, side: THREE.DoubleSide }));
 // sprite material: lit by the scene, never fully dark, with hit flash and an ember dissolve for deaths
 function spriteMaterial(map) {
   const m = new THREE.MeshLambertMaterial({ map, emissiveMap: map, emissive: new THREE.Color(0.42, 0.42, 0.42), alphaTest: 0.5, side: THREE.DoubleSide });
@@ -163,7 +168,8 @@ export class Actor {
     this.caster.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: this.texWalk, alphaTest: 0.5 });
     this.blob = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.5), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
     this.blob.rotation.x = -Math.PI / 2;
-    this.root = new THREE.Group(); this.root.add(this.mesh, this.big, this.caster, this.blob); scene.add(this.root);
+    this.xray = [XRAY(this.texWalk, g1), XRAY(this.texWalk, g2)]; for (const x of this.xray) { x.renderOrder = 9; x.visible = false; }
+    this.root = new THREE.Group(); this.root.add(this.mesh, this.big, this.caster, this.blob, ...this.xray); scene.add(this.root);
     this.mesh.renderOrder = this.big.renderOrder = 2;
   }
   // which of down/up/left/right to show, given the unit's world facing and the camera yaw
@@ -213,22 +219,27 @@ export class Actor {
     // lean the sprite back toward the camera so it never reads as squashed from high angles (HD-2D trick)
     const tilt = Math.max(0, (this.camPitch || 0.9) - 0.35) * 0.75;
     for (const m of [this.mesh, this.big]) { m.position.set(lx, this.pos.y + bob, lz); m.rotation.set(-tilt, yaw, this.spin || 0, 'YXZ'); m.scale.setScalar(this.size ?? 1); }
-    if (this.centre) {   // a scripted point in the air the sprite's middle sits on, turning about it (the 昌平村 descent)
+    // @qa scene:0 job:lying   (only scene 0's carcass lies: src/sprites.js LYING)
+    if (this.lie) {   // drawn lying on the ground seen from above (scene 0's carcass): laid flat on it, its foot where a standing sprite's feet are
+      for (const m of [this.mesh, this.big]) { m.rotation.set(-Math.PI / 2, 0, 0); m.position.y = groundH(lx, lz) + 0.02; }
+    } else if (this.centre) {   // a scripted point in the air the sprite's middle sits on, turning about it (the 昌平村 descent)
       for (const m of [this.mesh, this.big]) m.position.copy(this.centre).sub(TMP.set(0, 0.5 * (this.size ?? 1), 0).applyEuler(m.rotation));
     } else {
       // keep the sprite in front of the ground it stands on
       const cam2 = TMP.set(cam.position.x - lx, 0, cam.position.z - lz).normalize().multiplyScalar(0.12);
       this.mesh.position.add(cam2); this.big.position.add(cam2);
     }
-    this.caster.visible = !this.centre;
-    const sunYaw = Math.atan2(-0.55, 0.32) + Math.PI;
+    // @qa scene:0 job:lying   (only scene 0's carcass lies: src/sprites.js LYING)
+    this.caster.visible = !this.centre && !this.lie;
+    const sunYaw = Math.atan2(-0.55, 0.32) + Math.PI + VIEW.turn;
     this.caster.position.set(lx, this.pos.y + bob, lz); this.caster.rotation.set(0, sunYaw, 0);
     this.caster.customDepthMaterial.map = tx; this.caster.material.map = tx;
     this.blob.position.set(lx, this.pos.y + 0.025, lz + 0.02); this.blob.scale.setScalar(this.hover ? 0.7 : 1);
     // fade: a quiet fade out and in (0-1; a story actor walking off the original's screen, src/scene.js), unlike the
     // ember dissolve of a death; a ghost keeps its own translucency on top
     const fade = this.fade ?? 1, see = fade > 0.995;
-    this.blob.material.opacity = this.centre ? 0 : (1 - this.dissolve) * (this.hover ? 0.6 : 1) * fade;
+    // @qa scene:0 job:lying   (only scene 0's carcass lies: src/sprites.js LYING)
+    this.blob.material.opacity = this.centre || this.lie ? 0 : (1 - this.dissolve) * (this.hover ? 0.6 : 1) * fade;
     for (const m of [this.mesh.material, this.big.material]) {
       m.userData.u.uFlash.value = this.flash; m.userData.u.uDissolve.value = this.dissolve;
       m.userData.u.uTint.value.setScalar(this.glow ?? 1);   // glow: the cast lifted while the land around darkens (src/scene.js, the prologue's red)
@@ -237,6 +248,8 @@ export class Actor {
       m.opacity = (this.ghost ? 0.62 : 1) * fade; m.alphaTest = see ? 0.5 : 0.5 * fade;
     }   // (over: a flier, drawn in the transparent pass, which comes after every opaque thing, and by its render order 6.5 after the see-through effects and flames too, under the turn arrows and emotes: battle.js syncActors)
     if (fade < 0.5) this.caster.visible = false;
+    const turned = Math.abs(Math.sin(VIEW.turn / 2)) > 0.02 && see && !this.dissolve && !this.lie && !this.centre;
+    [this.mesh, this.big].forEach((m, i) => { const x = this.xray[i]; x.visible = turned && m.visible; if (x.visible) { x.position.copy(m.position); x.rotation.copy(m.rotation); x.scale.copy(m.scale); x.material.map = m.material.map; } });
     this.root.visible = this.dissolve < 1 && !this.hidden && !this.u.away && fade > 0.01;   // (away: a phantom off the map, AI 0x83)
   }
   head() { return new THREE.Vector3(this.pos.x + this.off.x, this.pos.y + 1.05 + this.hover + (this.lift || 0), this.pos.z + this.off.y); }

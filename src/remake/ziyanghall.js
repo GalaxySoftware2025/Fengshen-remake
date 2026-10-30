@@ -85,7 +85,7 @@ async function build(E, FX) {
   }
   S.add(scroll(2.2, WALL - 0.02, 0.9, 0.42, 1.3, inkBamboo), scroll(5.75, WALL - 0.02, 0.9, 0.42, 1.3, inkBamboo));
   // the shrine: a gilt-panelled alcove, the great scroll, the sage on his seat between two red drum cabinets
-  S.add(shade(box(orange, 3.0, 0, 0.6, 5.0, WALL_H + 0.2, 0.75, 2)), shade(box(orange, 2.95, 0, 0.6, 3.1, WALL_H + 0.2, WALL, 2)), shade(box(orange, 4.9, 0, 0.6, 5.05, WALL_H + 0.2, WALL, 2)));
+  S.add(shade(box(orange, 3.0, 0, 0.6, 5.0, WALL_H + 0.2, 0.75, 2)), shade(box(orange, 2.95, 0, 0.6, 3.1, WALL_H + 0.2, WALL + 0.01, 2)), shade(box(orange, 4.9, 0, 0.6, 5.05, WALL_H + 0.2, WALL + 0.01, 2)));   // (the frame 1 cm proud of the wall: flush with the dado, they flickered)
   S.add(shade(box(gold, 3.0, WALL_H + 0.2, 0.55, 5.05, WALL_H + 0.32, WALL)));
   S.add(scroll(4.0, 0.77, 1.0, 0.8, 1.55, greatChar));
   S.add(shade(box(orange, 3.1, 0, 1.4, 4.9, 0.35, 2.75, 2)), shade(box(gold, 3.1, 0.35, 1.4, 4.9, 0.38, 2.75)));   // the platform

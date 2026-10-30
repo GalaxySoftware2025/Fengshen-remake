@@ -162,8 +162,9 @@ function well(x, y) {
   for (let k = 0; k < WELL.n; k++) { const xa = X0 + k * dx, xb = xa + dx, top = -WELL.d * (k + 1) / WELL.n;   // (from the floor at the west lip down eastward)
     risers.push(box(slate, xa, BOT, ZN, xb, top - 0.03, ZS, 2)); treads.push(box(step, xa - 0.012, top - 0.03, ZN, xb, top, ZS, 2)); }
   lining.push(box(slate, X0, BOT, ZN, X1, 0, ZN + 0.02, 2), box(slate, X0, BOT, ZS - 0.02, X1, 0, ZS, 2), box(slate, X1 - 0.02, BOT, ZN, X1, 0, ZS, 2));
-  rim.push(box(cope, X0 - 0.05, -0.01, ZN - 0.05, X1 + 0.05, 0.03, ZN, 2), box(cope, X0 - 0.05, -0.01, ZS, X1 + 0.05, 0.03, ZS + 0.05, 2),
-    box(cope, X1, -0.01, ZN, X1 + 0.05, 0.03, ZS, 2), box(cope, X0 - 0.05, -0.01, ZN, X0, 0.03, ZS, 2));
+  // (the rim's inner faces 3 mm into the opening: on the floor's cut faces round it, they flickered)
+  rim.push(box(cope, X0 - 0.05, -0.01, ZN - 0.05, X1 + 0.05, 0.03, ZN + 0.003, 2), box(cope, X0 - 0.05, -0.01, ZS - 0.003, X1 + 0.05, 0.03, ZS + 0.05, 2),
+    box(cope, X1 - 0.003, -0.01, ZN, X1 + 0.05, 0.03, ZS, 2), box(cope, X0 - 0.05, -0.01, ZN, X0 + 0.003, 0.03, ZS, 2));
   g.add(shade(merged(step, treads)), shade(merged(slate, [...risers, ...lining])), shade(merged(cope, rim)));
   const L = new THREE.PointLight(0x9ad8ff, 0.9, 1.1, 2); L.position.set(x + 0.62, -0.12, y + 0.48); g.add(L);   // (a cold glow down in the well)
   g.userData.stair = true; g.userData.down = true;

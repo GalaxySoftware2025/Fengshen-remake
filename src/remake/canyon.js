@@ -49,7 +49,7 @@ function stairs(s) {
   for (let k = 0; k <= s.n; k++) {   // tread k where the land's ramp rounds to step k (Land.at: round(profile * n))
     const h = s.y0 + (s.y - s.y0) * k / s.n, za = z0 + Math.max(0, k - 0.5) * dz, zb = z0 + Math.min(s.n, k + 0.5) * dz;
     parts.push(box(wood, x0 + 0.08, h - 0.05, za + 0.01, x1 - 0.08, h + 0.025, zb - 0.01, 1));
-    if (k < s.n) beams.push(box(dark, x0 + 0.08, h + (s.y - s.y0) / s.n - 0.02, zb - 0.03, x1 - 0.08, h - 0.02, zb + 0.01));   // the riser down to the next tread
+    if (k < s.n) beams.push(box(dark, x0 + 0.085, h + (s.y - s.y0) / s.n - 0.02, zb - 0.03, x1 - 0.085, h - 0.02, zb + 0.01));   // the riser down to the next tread (its ends 5 mm inside the treads': flush, they flickered)
   }
   g.add(merged(wood, parts), merged(dark, beams));
   for (const x of [x0 + 0.06, x1 - 0.06]) {

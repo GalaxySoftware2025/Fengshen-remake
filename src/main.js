@@ -18,6 +18,8 @@ import * as Arena from './battles/arena.js';
 import titleSet, { W as TITLE_W, H as TITLE_H } from './remake/title.js';
 import { petals } from './ui.js';
 import * as Audio from './audio.js';
+import * as Keys from './keys.js';
+import { keynav } from './keynav.js';
 const { D, G } = R;
 const $ = id => document.getElementById(id);
 const { opts, V, tileCenter } = E;
@@ -62,8 +64,24 @@ function orbit(on, dist) {
   const spin = () => { if (!orbiting) return; E.cam.shot(V(R.MAP_W / 2 + 1, 0, R.MAP_H / 2), { dist: dist || 24, pitch: 0.32, yaw: E.gameT * 0.05, speed: 1, free: true }); requestAnimationFrame(spin); };
   spin(); E.cam.snap();
 }
-const clickOnce = el => new Promise(res => el.addEventListener('click', res, { once: true }));
+// a click on el, or confirm (keys.js)
+const clickOnce = el => new Promise(res => { const key = e => { if (Keys.is(e, 'ok')) done(); }, done = () => { el.removeEventListener('click', done); window.removeEventListener('keydown', key); res(); }; el.addEventListener('click', done); window.addEventListener('keydown', key); });
 
+// the controls page, once a browser: a player's first visit sees it before the title [the user's request, 2026-10-29];
+// remembered in storage when closed (click, I, O or Space). Storage blocked: shown on every visit.
+const SEEN = 'fengshen-remake.controls';
+async function controlsPage() {
+  try { if (localStorage.getItem(SEEN)) return; } catch (e) { /* storage blocked */ }
+  const box = $('controls');
+  box.innerHTML = '<div class="panel"><h3>操作說明</h3><table>' + Keys.HELP.map(h => `<tr><td>${h.pre ? `<small>${h.pre}</small>` : ''}${h.caps.map(c => `<kbd>${c}</kbd>`).join('')}${h.also ? `<small>${h.caps.length ? '或 ' : ''}${h.also}</small>` : ''}</td><td>${h.what}</td></tr>`).join('') +
+    '</table><div class="press">點擊或按 I 繼續</div></div>';
+  box.classList.remove('hidden');
+  await new Promise(res => { const key = e => { if (!['ok', 'cancel', 'fast'].some(a => Keys.is(e, a))) return; e.preventDefault(); done(); },
+    done = () => { box.removeEventListener('click', done); window.removeEventListener('keydown', key); res(); };
+    box.addEventListener('click', done); window.addEventListener('keydown', key); });
+  box.classList.add('hidden');
+  try { localStorage.setItem(SEEN, '1'); } catch (e) { /* not remembered */ }
+}
 // a battle without its own staging: the scene's pre-battle lines over the map, then its name (DESIGN §7: name only)
 async function intro() {
   if (FX.intro) return FX.intro(E);   // the camera stays on the heroes (no swing out over the map first: the user's call)
@@ -80,7 +98,7 @@ async function endScene(res) {
     const end = FX.end || { title: '戰役勝利', sub: '—— 待續 ——' };
     $('end-title').textContent = end.title; $('end-sub').textContent = end.sub;
   } else { $('end-title').textContent = '戰役失敗'; $('end-sub').textContent = (res.why || '') + (direct ? '' : '　·　回到出陣前，保留等級與物品'); }
-  document.querySelector('#end .press').textContent = direct ? '點擊重新開始' : '點擊返回出陣';
+  document.querySelector('#end .press').textContent = direct ? '點擊或按 I 重新開始' : '點擊或按 I 返回出陣';
   setScreen('end'); E.ui.show('hud', false);
   await clickOnce($('end'));
 }
@@ -107,12 +125,15 @@ async function fight(chosen) {
 // the stretch the flight starts over through a dissolve [design: no dark frames, the user's request]: the last frame
 // is kept on a canvas over the view and fades out as the flight resumes from the start. Pink petals drift over the
 // screen as on the original.
+// #title=reimagine: the title reimagined (src/remake/title-reimagine.js), a preview beside the game's title, not in its place
+const REIMAGINE = /[#&]title=reimagine\b/.test(location.hash) && import('./remake/title-reimagine.js');
 async function titleWorld() {
-  const flat = Array.from({ length: TITLE_H }, () => Array(TITLE_W).fill(0));
-  R.loadBattle({ n: 'title', name: '', chapter: 0, mapW: TITLE_W, mapH: TITLE_H, terrain: flat, deploy: [[0, 0]], enemies: [], win: [], lose: [], party: { deployMax: 0, forced: [], unavailable: [], joins: [] }, intro: [], outro: [] }, [], {});
+  const alt = REIMAGINE && await REIMAGINE, set = alt ? alt.default : titleSet, MW = alt ? alt.W : TITLE_W, MH = alt ? alt.H : TITLE_H;
+  const flat = Array.from({ length: MH }, () => Array(MW).fill(0));
+  R.loadBattle({ n: 'title', name: '', chapter: 0, mapW: MW, mapH: MH, terrain: flat, deploy: [[0, 0]], enemies: [], win: [], lose: [], party: { deployMax: 0, forced: [], unavailable: [], joins: [] }, intro: [], outro: [] }, [], {});
   setScreen('loading'); const fill = $('l-fill'); fill.style.width = '0%';
-  await E.loadWorld({ look: { set: titleSet }, sprites: [] }, p => { fill.style.width = (p * 100) + '%'; });
-  await dress(E, titleSet); E.world.calm = true;
+  await E.loadWorld({ look: { set }, sprites: [] }, p => { fill.style.width = (p * 100) + '%'; });
+  await dress(E, set); E.world.calm = true;
   loaded = 0; dirty = true; window.__remake.world = 'title:building';
 }
 const TITLE_VIEW = { dist: 9, pitch: 0.88, fov: 34 }, PAN = 60 / 32;   // the descent's view of a world map; cells a second
@@ -121,6 +142,12 @@ function titlePan(on) {
   if (on === panning) return; panning = on;
   const cam = E.world.camera;
   if (!on) { cam.fov = 30; cam.updateProjectionMatrix(); E.vfx.screen.darkTarget = 0; if (stopPetals) stopPetals(); stopPetals = null; document.querySelectorAll('.title-xfade').forEach(c => c.remove()); return; }
+  if (REIMAGINE) return REIMAGINE.then(alt => {   // its own flight: in from afar, then a slow sway (no loop)
+    const t0 = performance.now(), fly = now => { if (!panning) return; const o = alt.shot((now - t0) / 1000);
+      if (cam.fov !== o.fov) { cam.fov = o.fov; cam.updateProjectionMatrix(); }
+      E.cam.shot(o.target, { free: true, dist: o.dist, pitch: o.pitch, yaw: o.yaw, speed: 100 }); E.cam.snap(); E.cam.update(0, 0); requestAnimationFrame(fly); };
+    fly(t0); alt.overlay($('title'));
+  });
   cam.fov = TITLE_VIEW.fov; cam.updateProjectionMatrix();
   const half = Math.tan(TITLE_VIEW.fov * Math.PI / 360) * TITLE_VIEW.dist * (innerWidth / innerHeight), X0 = Math.min(TITLE_W / 2, half + 0.3), X1 = Math.max(X0, TITLE_W - half - 0.3);
   let x = X0, last = performance.now(), turning = false;
@@ -146,18 +173,20 @@ function titlePan(on) {
 async function titleMenu() {
   if (!/^title/.test(window.__remake.world)) await titleWorld();
   document.title = '封神英傑傳・重製'; document.querySelector('#title .t-sub').textContent = '';
-  titlePan(true); setScreen('title'); window.__remake.world = 'title'; Audio.music(0x16);   // the title's song (0x3644)
-  Scene.clearFade();   // the camera placed before the screen shows (dark when coming from the camp)
+  titlePan(true); Scene.clearFade();   // the camera placed before the screen shows (dark when coming from the camp)
+  window.__remake.world = 'title'; setScreen(null); E.ui.show('hud', false); await controlsPage();   // a first visit: the keys first, over the flight (the title's logo unrolls after)
+  setScreen('title'); Audio.music(0x16);   // the title's song (0x3644)
   const t = $('title'); t.classList.add('menu'); $('t-menu').classList.remove('hidden');
   $('t-cont').disabled = !Save.any();
-  // the sword points at one line: the mouse moves it, and so do the arrow keys; Enter picks the line it points at
+  // the sword points at one line: the mouse moves it, and so do up and down (keys.js); confirm picks the line it points at
   const btns = [$('t-new'), $('t-cont')], point = b => { if (b.disabled) return; for (const x of btns) x.classList.toggle('on', x === b); };
   point(btns[0]); for (const b of btns) b.onmouseenter = () => point(b);
   const key = e => {
     if ($('t-menu').classList.contains('hidden')) return;
     const ok = btns.filter(b => !b.disabled), i = ok.findIndex(b => b.classList.contains('on'));
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { point(ok[(i + (e.key === 'ArrowDown' ? 1 : ok.length - 1)) % ok.length]); e.preventDefault(); }
-    else if (e.key === 'Enter' || e.key === ' ') { if (ok[i]) ok[i].click(); e.preventDefault(); }
+    const d = Keys.dirOf(e);
+    if (d === 'down' || d === 'up') { point(ok[(i + (d === 'down' ? 1 : ok.length - 1)) % ok.length]); e.preventDefault(); }
+    else if (Keys.is(e, 'ok') || Keys.is(e, 'fast')) { if (ok[i]) ok[i].click(); e.preventDefault(); }
   };
   window.addEventListener('keydown', key);
   try {
@@ -165,7 +194,9 @@ async function titleMenu() {
     const pick = await new Promise(res => { $('t-new').onclick = () => res('new'); $('t-cont').onclick = () => res('cont'); });
     if (pick === 'new') { t.classList.remove('menu'); $('t-menu').classList.add('hidden'); await Scene.darken(); titlePan(false); return K.newGame(); }
     const box = $('t-load'); box.classList.remove('hidden'); $('t-menu').classList.add('hidden'); t.classList.add('picking');
-    const s = await slotList(E, box, 'load');
+    const nav = keynav(box, { items: '.sl:not(.head):not(.empty), button', start: () => box.querySelector('.sl:not(.head):not(.empty)') || box.querySelector('button'),
+      back: () => { const ret = [...box.querySelectorAll('.bar button')].find(b => /返回/.test(b.textContent)); if (ret) ret.click(); } });   // the keyboard (keynav.js)
+    const s = await slotList(E, box, 'load'); nav.stop();
     box.classList.add('hidden'); $('t-menu').classList.remove('hidden'); t.classList.remove('picking');
     if (s) { t.classList.remove('menu'); $('t-menu').classList.add('hidden'); await Scene.darken(); titlePan(false); return s; }
   }

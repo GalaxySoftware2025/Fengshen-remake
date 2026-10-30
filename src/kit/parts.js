@@ -106,8 +106,9 @@ export function stairs(r, tread, riser, k = 1) {
     else if (r.from === 'e') { x0 = r.x0; x1 = r.x1 - (r.x1 - r.x0) * f0; }
     else { x0 = r.x0 + (r.x1 - r.x0) * f0; }
     const yb = i ? r.y0 + (r.y1 - r.y0) * i / n : r.y0 - 0.02;   // (each block stacked on the one below, not reaching down to the foot: overlapping blocks shared their side faces and flickered)
-    const b = new THREE.Mesh(boxGeo(x1 - x0, y - yb, z1 - z0, k), [riser, riser, tread, tread, riser, riser]);
-    b.position.set((x0 + x1) / 2, (y + yb) / 2, (z0 + z1) / 2); g.add(b);
+    const yt = i === n - 1 ? y - 0.003 : y;   // (the top tread 3 mm under the floor it meets: a ramp off the floor's grid overlaps the floor's last cell, and the two tops flickered, the temple's step)
+    const b = new THREE.Mesh(boxGeo(x1 - x0, yt - yb, z1 - z0, k), [riser, riser, tread, tread, riser, riser]);
+    b.position.set((x0 + x1) / 2, (yt + yb) / 2, (z0 + z1) / 2); g.add(b);
     void f1; void alongZ;
   }
   return shade(g);
@@ -140,7 +141,7 @@ export function parapet(M, stone, x0, z0, x1, z1, y, h = 0.42) {
 // a back wall bay: lacquered posts and beams framing glowing lattice windows over carved dado panels; runs along x at z
 export function latticeWall(M, x0, x1, z, y, h = 2.6, bays, o = {}) {   // o.lat: grille units per cell (0.8); o.dado: the dado panels' material
   const g = new THREE.Group(), n = bays || Math.max(1, Math.round((x1 - x0) / 1)), w = (x1 - x0) / n;
-  g.add(box(M.lacquerDark, x0, y, z - 0.12, x1, y + h, z - 0.06));   // the wall behind
+  g.add(box(M.lacquerDark, x0, y, z - 0.115, x1, y + h - 0.02, z - 0.06));   // the wall behind (its top and back inside the lintel's, not on them: they flickered)
   for (let i = 0; i < n; i++) {
     const a = x0 + i * w, b = a + w;
     // dado: a panel with a gilt cartouche
@@ -154,9 +155,9 @@ export function latticeWall(M, x0, x1, z, y, h = 2.6, bays, o = {}) {   // o.lat
     const lat = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), lm); lat.position.set((a + b) / 2, y + 0.85 + ph / 2, z - 0.02); shade(lat); g.add(lat);
     g.add(box(M.lacquer, a + 0.04, y + 0.75, z - 0.06, b - 0.04, y + 0.85, z + 0.01));
   }
-  for (let i = 0; i <= n; i++) { const px = x0 + i * w; g.add(box(M.lacquer, px - 0.08, y, z - 0.1, px + 0.08, y + h, z + 0.06)); }
-  g.add(box(M.beam || M.lacquer, x0 - 0.08, y + h - 0.38, z - 0.12, x1 + 0.08, y + h, z + 0.08, M.beam ? 1 / 0.38 : 1));   // lintel (painted beams in a palace)
-  g.add(box(M.gold, x0 - 0.08, y + h - 0.32, z + 0.08, x1 + 0.08, y + h - 0.26, z + 0.1));
+  for (let i = 0; i <= n; i++) { const px = x0 + i * w; g.add(box(M.lacquer, px - 0.08, y, z - 0.1, px + 0.08, y + h - 0.02, z + 0.06)); }   // (the posts' tops inside the lintel)
+  g.add(box(M.beam || M.lacquer, x0 - 0.085, y + h - 0.38, z - 0.12, x1 + 0.085, y + h, z + 0.08, M.beam ? 1 / 0.38 : 1));   // lintel (painted beams in a palace; its ends past the end posts', not flush)
+  g.add(box(M.gold, x0 - 0.085, y + h - 0.32, z + 0.08, x1 + 0.085, y + h - 0.26, z + 0.1));
   return g;
 }
 // a silk curtain hung from a rod at (x0..x1, top y, z), gathered and tied back toward `tie` ('l' or 'r')
@@ -299,9 +300,10 @@ export function house(M, o) {
   g.add(box(plasterM, o.x0 + 0.02, y + 0.55, o.z0 + 0.02, o.x1 - 0.02, y + H, o.z1 - 0.02, 1));
   // timber frame on the front: corner and bay posts, a sill beam, a lintel under the eaves
   const posts = [o.x0, o.x1, ...(o.posts || [])];
-  for (const px of posts) g.add(box(timber, px - 0.07, y + 0.14, o.z1 - 0.06, px + 0.07, y + H, o.z1 + 0.04, 2));
-  for (const px of [o.x0, o.x1]) g.add(box(timber, px - 0.07, y + 0.14, o.z0 - 0.04, px + 0.07, y + H, o.z0 + 0.06, 2));
-  g.add(box(timber, o.x0, y + 0.52, o.z1 - 0.04, o.x1, y + 0.6, o.z1 + 0.03, 2), box(timber, o.x0 - 0.05, y + H - 0.12, o.z1 - 0.05, o.x1 + 0.05, y + H, o.z1 + 0.05, 2));
+  // (the posts' tops 1 cm under the wall's, the lintel's 5 mm over it: the three flush, seen through the gable, flickered)
+  for (const px of posts) g.add(box(timber, px - 0.07, y + 0.14, o.z1 - 0.06, px + 0.07, y + H - 0.01, o.z1 + 0.04, 2));
+  for (const px of [o.x0, o.x1]) g.add(box(timber, px - 0.07, y + 0.14, o.z0 - 0.04, px + 0.07, y + H - 0.01, o.z0 + 0.06, 2));
+  g.add(box(timber, o.x0, y + 0.52, o.z1 - 0.04, o.x1, y + 0.6, o.z1 + 0.03, 2), box(timber, o.x0 - 0.05, y + H - 0.12, o.z1 - 0.05, o.x1 + 0.05, y + H + 0.005, o.z1 + 0.05, 2));
   for (const [xa, xb] of o.windows || []) {   // a lattice window: timber frame, paper behind a grille
     const wy0 = y + 0.66, wy1 = y + H - 0.22;
     const pp = new THREE.Mesh(new THREE.PlaneGeometry(xb - xa - 0.1, wy1 - wy0 - 0.1), new THREE.MeshStandardMaterial({ color: 0xf0e6cc, roughness: 0.9, emissive: 0x2a2010 }));

@@ -119,7 +119,7 @@ export class World {
     S.add(new THREE.HemisphereLight(0xcfe2ff, 0x4a3a22, 1.15));
     const sun = this.sun = new THREE.DirectionalLight(0xffe0b0, 3.1);
     const cx = MAP_W / 2, cz = MAP_H / 2, half = Math.max(30, (MAP_W + MAP_H) * 0.62);
-    sun.position.copy(SUN_DIR).multiplyScalar(60).add(new THREE.Vector3(cx, 0, cz)); sun.target.position.set(cx, 0, cz);
+    sun.position.copy(SUN_DIR).multiplyScalar(60).add(new THREE.Vector3(cx, 0, cz)); sun.target.position.set(cx, 0, cz); this.sunBase = { dir: SUN_DIR.clone(), cx, cz }; this.envSpec = null;
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
     Object.assign(sun.shadow.camera, { left: -half, right: half, top: half * 0.73, bottom: -half * 0.73, near: 1, far: 140 });
     S.add(sun, sun.target);
@@ -139,12 +139,25 @@ export class World {
     const dir = new THREE.Vector3(...(M.sunDir || [-0.45, 0.85, 0.35])).normalize();
     const sun = this.sun = new THREE.DirectionalLight(M.sun ?? 0xffe0b0, M.sunI ?? 2.4);
     const cx = MAP_W / 2, cz = MAP_H / 2, half = Math.max(MAP_W, MAP_H) * 0.75 + 4;
-    sun.position.copy(dir).multiplyScalar(60).add(new THREE.Vector3(cx, 0, cz)); sun.target.position.set(cx, 0, cz);
+    sun.position.copy(dir).multiplyScalar(60).add(new THREE.Vector3(cx, 0, cz)); sun.target.position.set(cx, 0, cz); this.sunBase = { dir, cx, cz };
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.02;
     Object.assign(sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 160 });
     S.add(sun, sun.target);
     progress(0.2);
     return this.finishSet(M, cx, cz, progress);
+  }
+  // the battle's camera turned to yaw (Q / E, battle.js Cam.rotate) [the user's call, 2026-10-29]: the sun and the
+  // reflections turn with it, so every side is lit as the set was made to be seen, from yaw 0 (lit for one view, the
+  // sets from behind threw the sun's glare and the reflections' bright panels straight back off floors and trim:
+  // battles 5, 22, 26, 28, 31 at 180°). The sun turns every frame; the reflections a quarter turn at a time (rebuilt)
+  turnLight(yaw) {
+    const b = this.sunBase; if (!b || !this.sun) return;
+    this.sun.position.copy(b.dir).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).multiplyScalar(60).add(new THREE.Vector3(b.cx, 0, b.cz));
+    const q = ((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4;
+    if (!this.envSpec || q === (this.envTurn || 0)) return;
+    this.envTurn = q; const a = q * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
+    const lights = (this.envSpec.lights || []).map(([x, y, z, ...rest]) => [x * c + z * s, y, -x * s + z * c, ...rest]);
+    this.scene.environment = envMap(this.renderer, Object.assign({}, this.envSpec, { lights }));
   }
   // a remade set's surroundings and finish: the void (darkness or a cloud sea), an environment for reflections on
   // lacquer, gilt and stone, ambient occlusion, and the grade
@@ -155,7 +168,7 @@ export class World {
       const vmat = M.clouds ? cloudMaterial(Object.assign({ cx, cz }, M.clouds)) : new THREE.MeshBasicMaterial({ color: M.voidCol || 0x050403, fog: false });
       const vm = new THREE.Mesh(vg, vmat); vm.position.set(cx, M.clouds ? -1.2 : (M.voidY ?? -1.6), cz); S.add(vm); this.voidMesh = vm;
     }
-    S.environment = envMap(this.renderer, M.env || {});
+    S.environment = envMap(this.renderer, M.env || {}); this.envSpec = M.env || {}; this.envTurn = 0;
     if (M.shafts) this.shafts(); else this.shaftMeshes = [];
     if (!this.composer) this.post();
     this.ao.enabled = M.ao !== false; this.ao.blendIntensity = M.aoI ?? 1;

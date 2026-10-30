@@ -5,7 +5,7 @@ export const MODULES = { 1: '01-fushan', 2: '02-fushan', 3: '03-dungeon', 4: '04
 // experiments: the same battle (its rules, units and board) on another presentation, <stem>-<variant>-fx.js, opened as
 // #battle=N-<variant> (the campaign never plays them)
 // @qa keyed:battle
-export const VARIANTS = { 25: ['reimagine'] };
+export const VARIANTS = { 25: ['reimagine'], 31: ['reimagine'] };
 export const variantOf = n => { const v = (location.hash.match(/battle=\d+-(\w+)/) || [])[1]; return v && (VARIANTS[n] || []).includes(v) ? v : null; };
 export const rulesOf = async n => MODULES[n] ? (await import('./' + MODULES[n] + '.js')).default : {};
 export const fxOf = async n => { if (!MODULES[n]) return {}; const v = typeof location === 'undefined' ? null : variantOf(n);

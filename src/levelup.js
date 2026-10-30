@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { effectH, rand } from './world.js';
 import { tex } from './actors.js';
 import { arrowMesh } from './spells.js';
+import { swirl } from './spellkit.js';
 import { upscale } from '../extract/hd.js';
 import { world, vfx, cam, ui, anim, wait, V } from './battle.js';
 
@@ -501,6 +502,9 @@ export function drawTigerFront(g, roar) {
   g.fillStyle = fur(128, 124, 128, 214); for (const s of [-1, 1]) { g.beginPath(); g.ellipse(128 + s * 66, 188, 48, 28, s * -0.35, 0, 6.28); g.fill(); }
   g.beginPath(); g.ellipse(128, 200, 64, 24, 0, 0, 6.28); g.fill();
   for (const s of [-1, 1]) for (const k of [0, 1, 2, 3]) stripe(128 + s * (66 + k * 13), 166 + k * 3, 128 + s * (60 + k * 13), 208 + k * 2, 3.5, s * 4);
+  // the head and its ears 80% of the size they were drawn at, about the neck where it meets the shoulders [the user's call:
+  // the face 20% smaller, the body and paws as they are]
+  g.save(); g.translate(128, 176); g.scale(0.8, 0.8); g.translate(-128, -176);
   // the ears laid back at the top corners of the skull: short rounded triangles turned outward, their dark backs and
   // the white spot on each showing (a pinned blob at the sides made the head read as a ball [the user's report])
   for (const s of [-1, 1]) { g.save(); g.translate(128 + s * 62, 58); g.rotate(s * 1.5); g.scale(0.8, 0.7);
@@ -570,6 +574,7 @@ export function drawTigerFront(g, roar) {
   // whiskers out from the pads, stiff and fine
   g.strokeStyle = 'rgba(250,244,228,0.75)'; g.lineWidth = 0.7;
   for (const s of [-1, 1]) for (let k = 0; k < 4; k++) { g.beginPath(); g.moveTo(128 + s * 30, 134 + k * 4); g.quadraticCurveTo(128 + s * 56, 130 + k * 5, 128 + s * (82 + k * 3), 124 + k * 8); g.stroke(); }
+  g.restore();   // (the head's scale)
   g.restore();
   // fur over everything: short strokes in each spot's own colour, lighter and darker, running out from the nose
   const W = g.canvas.width, H = g.canvas.height, px = g.getImageData(0, 0, W, H).data;
@@ -593,7 +598,7 @@ async function huangLevel(a, P) {
   await anim(0.7, k => { for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.35, 0.65); vfx.realFire(P.x + Math.cos(t) * r, P.y - 0.05, P.z + Math.sin(t) * r, { size: rand(0.3, 0.45) * (0.5 + k), asp: 1.5, life: 0.6, vy: 0.5 }); }
     a.flash = 0.45 * k; const c = a.chest(); vfx.spark(c.x + rand(-0.5, 0.5), c.y + rand(-0.4, 0.6), c.z, { vx: 0, vy: 0, seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.45, size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.4, shape: 1 }); });
   // the tiger bursts out of his chest, lunging at the camera, growing as it comes
-  const map = once('tigerFront2', () => glowStrip(512, 512, 2, 'rgba(255,150,40,0.7)', (g, i) => drawTigerFront(g, i === 1))).clone(); map.needsUpdate = true; map.repeat.set(0.5, 1);
+  const map = once('tigerFront3', () => glowStrip(512, 512, 2, 'rgba(255,150,40,0.7)', (g, i) => drawTigerFront(g, i === 1))).clone(); map.needsUpdate = true; map.repeat.set(0.5, 1);
   const tiger = card(map, 1, 1, { order: 9.5 }); tiger.material.depthTest = false;   // (solid, its own colours: see-through and brightened, the hero showed through its jaws and it read soft [the user's call: real, ferocious])
   const c0 = a.chest(), cp = world.camera.position, toward = cp.clone().sub(c0).normalize(), dist = cp.distanceTo(c0);
   vfx.flash([1, 0.8, 0.4], 0.15); vfx.burst(c0, { n: 30, speed: 2.5, cols: [[1, 0.95, 0.7], [1, 0.7, 0.25]], size: 0.05, life: 0.5, g: 0, shape: 1 });
@@ -692,10 +697,15 @@ async function jifaLevel(a, P) {
     if (k > 0.45) LV.cast(a, 1);
   });
   // it soars away; a ring of gold spreads at his feet and light falls over him
-  // on round its course: from his front right it sweeps across before him and away up to the left, rising and fading
-  await anim(1.6, k => {
-    const q = round(Math.PI / 4 - k * Math.PI * 1.15, 1.1 + k * 1.4, chest.y + k * 2.2), mv = q.clone().sub(bird.position);   // a long, wide sweep, climbing gently
-    bird.position.copy(q); face(bird, mv.dot(right) < 0 ? -1 : 1); bird.material.map.offset.x = (k * 6) % 1 < 0.5 ? 0 : 0.5;
+  // on round its course: from his front right it sweeps across before him and away up to the left, rising and fading,
+  // at the pace it came down at, evenly along the way (it slowed to a third at the bottom [the user's report])
+  const sweep = k => round(Math.PI / 4 - k * Math.PI * 1.15, 1.1 + k * 1.4, chest.y + k * 2.2);   // a long, wide sweep, climbing gently
+  const S = [0]; for (let i = 1; i <= 64; i++) S.push(S[i - 1] + sweep(i / 64).distanceTo(sweep((i - 1) / 64)));
+  const along = k => { const s = k * S[64]; let i = 1; while (i < 64 && S[i] < s) i++; return (i - 1 + (s - S[i - 1]) / (S[i] - S[i - 1] || 1)) / 64; };
+  const pace = at(1).distanceTo(at(0.995)) / (0.005 * 1.8), dur = S[64] / pace;
+  await anim(dur, k => {
+    const q = sweep(along(k)), mv = q.clone().sub(bird.position);
+    bird.position.copy(q); face(bird, mv.dot(right) < 0 ? -1 : 1); bird.material.map.offset.x = (k * dur * 3.75) % 1 < 0.5 ? 0 : 0.5;   // (wingbeats as before: 6 in 1.6 s)
     bird.material.opacity = 1 - Math.max(0, k - 0.7) / 0.3; tails.forEach((t, j) => t.push(q.clone().add(V(0, -0.05 - j * 0.06, 0))));
   });
   tails.forEach(t => t.end()); drop(bird);
@@ -802,7 +812,8 @@ async function jiangLevel(a, P) {
   a.u.facing = 'down'; LV.cast(a, 0);
   // the banner: it rises out of the ground behind him and unfurls
   const root = new THREE.Group(), H = 1.9, W = 0.62, CH = 0.86;
-  root.rotation.y = Math.atan2(-right.z, right.x); const base = P.clone().addScaledVector(right, -0.28).addScaledVector(toCam, -0.5);   // behind him, the silk spread over his head base.y = effectH(base.x, base.z);
+  root.rotation.y = Math.atan2(-right.z, right.x); const base = P.clone().addScaledVector(right, -0.28).addScaledVector(toCam, -0.5);   // behind him, the silk spread over his head
+  base.y = P.y;   // at his level (behind him may be a void or a wall); was inside the comment above: height 0 on any raised cell
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, H, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.12, 0.06) })); pole.position.y = H / 2;
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.8, 0.3), toneMapped: false })); knob.position.y = H + 0.03;
   const cg = new THREE.PlaneGeometry(W, CH, 12, 6); cg.translate(W / 2, H - 0.08 - CH / 2, 0); const rest = cg.attributes.position.array.slice();
@@ -846,19 +857,21 @@ async function tianhuaLevel(a, P) {
   LV.cast(a, 0); await wait(150);
   const hand = a.chest().add(V(0, 0.3, 0)), th0 = Math.atan2(toCam.z, toCam.x);
   for (let i = 0; i < 7; i++) {
-    const th = th0 + i / 7 * 6.28, end = V(P.x + Math.cos(th) * 0.6, 0, P.z + Math.sin(th) * 0.6);   // a ring half as wide again as his cell end.y = effectH(end.x, end.z);
-    const trail = vfx.ribbon({ col: [0.85, 0.45, 0.04], width: 0.035, n: 12 });
-    const nail = new THREE.Mesh(new THREE.ConeGeometry(0.0525, 0.36, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.8, 0.3), toneMapped: false })); vfx.timed(nail, 1e9, () => {});
+    const th = th0 + i / 7 * 6.28, end = V(P.x + Math.cos(th) * 0.6, 0, P.z + Math.sin(th) * 0.6);   // a ring half as wide again as his cell
+    end.y = P.y;   // at his level, as every level-up keeps (a nail over a void or a wall beside him neither sinks nor perches); was inside the comment above: height 0 on any raised cell
+    const trail = vfx.ribbon({ col: [0.85, 0.45, 0.04], width: 0.05, n: 12 });
+    const nail = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.58, 6),   // (1.6 times the size they were, and thrown higher [the user's call])
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.8, 0.3), toneMapped: false })); vfx.timed(nail, 1e9, () => {});
     nails.push({ nail, end, th });
-    const peak = hand.clone().lerp(end, 0.5).add(V(0, 2.1, 0)), last = V(0, 0, 0);
-    later(() => anim(0.6, k => {   // a high arc, point first, down into the earth
+    const peak = hand.clone().lerp(end, 0.5).add(V(0, 3.6, 0)), last = V(0, 0, 0);   // (the curve's top: half of that over his hand)
+    later(() => anim(0.75, k => {   // a high arc, point first, down into the earth
       const q = hand.clone().lerp(peak, k).lerp(peak.clone().lerp(end, k), k); q.y += 0.11 * (1 - k);
       if (k > 0) nail.quaternion.setFromUnitVectors(V(0, 1, 0), q.clone().sub(last).normalize().negate().multiplyScalar(-1)); last.copy(q);
       nail.position.copy(q); trail.push(q);
-    }).then(() => { trail.end(); nail.position.copy(end).add(V(0, 0.12, 0)); nail.quaternion.setFromUnitVectors(V(0, 1, 0), V(0, -1, 0));
+    }).then(() => { trail.end(); nail.position.copy(end).add(V(0, 0.21, 0)); nail.quaternion.setFromUnitVectors(V(0, 1, 0), V(0, -1, 0));
       vfx.burst(end.clone().setY(end.y + 0.05), { n: 8, speed: 0.7, cols: [[1, 0.95, 0.6], [1, 0.75, 0.25]], size: 0.035, life: 0.35, g: 3, up: 0.6, shape: 0 }); vfx.decal(end, [1, 0.7, 0.3], 0.12, 0.8, { intensity: 0.7 }); }), i * 70);
   }
-  await wait(1000); LV.cast(a, 1);
+  await wait(1200); LV.cast(a, 1);
   // jade light traces a seven-pointed star between the nails, then rises round him
   const star = vfx.ribbon({ col: [0.08, 0.75, 0.3], width: 0.035, n: 60, fade: 0.6 }), order = [0, 3, 6, 2, 5, 1, 4, 0];
   for (const n of nails) n.nail.material.color.setRGB(0.5, 1, 0.65);
@@ -905,8 +918,9 @@ async function tuLevel(a, P) {
 }
 
 // ---------------------------------------------------------------- 小龍女: the sea dragon king's gentle daughter
-// water rings rise round her; a slender blue dragon breaks from the ground, spirals up round her, curls back down and
-// becomes its pearl, glowing over her head, and a soft glittering rain falls
+// water rings rise round her; a slender blue dragon breaks from the ground in a spout of water, spirals up round her
+// in a stream of water and spray and away into the sky [the user's call: up, not back down, with water along it], leaving
+// its pearl glowing over her head, and a soft glittering rain falls from where it went
 export function dragonHeadTex() { return canvasTex(160, 96, g => {   // side on, facing right
   g.shadowColor = 'rgba(120,200,255,0.9)'; g.shadowBlur = 8;
   const scale = g.createLinearGradient(0, 20, 0, 80); scale.addColorStop(0, '#bff0ff'); scale.addColorStop(1, '#2a7ad8');
@@ -924,25 +938,32 @@ async function longnvLevel(a, P) {
   a.u.facing = 'down'; LV.guard(a);   // (her cast frames are a back view and a frame with the original's spell swirl drawn in)
   for (let i = 0; i < 3; i++) later(() => vfx.ring(P, [0.45, 0.8, 1], 1.2 + i * 0.4, 0.8, { intensity: 0.8 }), i * 150);
   await anim(0.4, k => { for (let i = 0; i < 3; i++) { const t = rand(0, 6.28), r = rand(0.6, 0.9); vfx.spark(P.x + Math.cos(t) * r, P.y + 0.05, P.z + Math.sin(t) * r, { vy: rand(1, 2), g: 4, life: 0.6, size: rand(0.04, 0.06), r: 0.75, gg: 0.92, b: 1, shape: 0 }); } });
-  // the dragon: its silken body follows its head round her and back down into the earth
+  // the dragon: its silken body follows its head out of the earth, round her and up into the sky
   const body = clothStrip({ col: [0.2, 0.55, 1], width: 0.1, n: 36 }), glow = vfx.ribbon({ col: [0.35, 0.7, 1], width: 0.05, n: 30 }), head = card(once('dragonhead', dragonHeadTex), 0.65, 0.39);
   const th0 = Math.atan2(toCam.z, toCam.x) + 0.6, pq = a.head().add(V(0, 0.4, 0));
-  const path = k => {   // up out of the ground, two turns climbing round her, then curling down to rest over her head
+  const path = k => {   // up out of the ground, two turns climbing round her, then on up, tighter and faster, into the sky
     if (k < 0.72) { const u = k / 0.72, th = th0 + u * Math.PI * 4, r = 0.75 + Math.sin(u * Math.PI) * 0.1; return V(P.x + Math.cos(th) * r, P.y + 0.1 + u * 2.2, P.z + Math.sin(th) * r); }
-    const u = (k - 0.72) / 0.28, top = path(0.7199), th = th0 + Math.PI * 4 + u * Math.PI * 1.2, r = 0.75 * (1 - ease(u));
-    return V(P.x + Math.cos(th) * r, top.y + (pq.y - top.y) * ease(u) + Math.sin(u * Math.PI) * 0.35, P.z + Math.sin(th) * r);
+    const u = (k - 0.72) / 0.28, th = th0 + Math.PI * 4 + u * Math.PI * 1.5, r = 0.75 * (1 - 0.6 * u);   // (climbing as fast as it was at first: 0.86 over u)
+    return V(P.x + Math.cos(th) * r, P.y + 2.3 + u * 0.86 + u * u * 2.2, P.z + Math.sin(th) * r);
   };
   let prev = path(0);
-  vfx.burst(prev.clone(), { n: 20, speed: 2, cols: [[0.9, 0.97, 1], [0.45, 0.75, 1]], size: 0.05, life: 0.6, g: 6, up: 0.8, shape: 0 });
-  await anim(1.7, (k, dt = 1 / 60) => {
+  vfx.burst(prev.clone(), { n: 20, speed: 2, cols: [[0.9, 0.97, 1], [0.45, 0.75, 1]], size: 0.05, life: 0.6, g: 6, up: 0.8, shape: 0, floor: P.y + 0.02 });
+  swirl(vfx, prev.clone().setY(P.y), [0.15, 0.45, 1], 0.32, 0.26, 1.3, 1.1, { speed: 3, twist: 6, foam: [0.85, 0.95, 1], intensity: 1 });   // the spout it breaks out of
+  // water along it: two streams winding round its body, drops shaken off it falling to the ground, a fine mist behind
+  const streams = [0, 1].map(() => vfx.ribbon({ col: [0.7, 0.92, 1], width: 0.055, n: 26 })), up = V(0, 1, 0), n1 = V(0, 0, 0), n2 = V(0, 0, 0);   // (read at play distance)
+  await anim(1.8, (k, dt = 1 / 60) => {
     const q = path(k), mv = q.clone().sub(prev); prev = q;
     body.push(q); glow.push(q.clone().add(V(0, 0.02, 0)));
     const sx = mv.dot(right), flip = sx < 0 ? -1 : 1, pitch = Math.atan2(mv.y, Math.abs(sx) + 1e-4);
-    head.position.copy(q).addScaledVector(V(0, 1, 0), 0.02); face(head, flip, pitch * flip * 0.8); head.scale.y = 1 - Math.max(0, k - 0.9) * 8;
-    if (Math.random() < dt * 25) vfx.spark(q.x, q.y, q.z, { vy: -0.4, g: 3, life: 0.6, size: 0.045, r: 0.75, gg: 0.92, b: 1, shape: 0 });
+    head.position.copy(q).addScaledVector(up, 0.02); face(head, flip, pitch * flip * 0.8); head.material.opacity = 1 - Math.max(0, k - 0.86) / 0.14;
+    const t = mv.lengthSq() > 1e-8 ? mv.clone().normalize() : up; n1.crossVectors(t, up); if (n1.lengthSq() < 1e-6) n1.copy(right); n1.normalize(); n2.crossVectors(t, n1);
+    streams.forEach((st, j) => { const w = k * 42 + j * Math.PI; st.push(q.clone().addScaledVector(n1, Math.cos(w) * 0.2).addScaledVector(n2, Math.sin(w) * 0.2)); });
+    for (let i = 0; i < 4; i++) if (Math.random() < dt * 30) vfx.spark(q.x + rand(-0.1, 0.1), q.y, q.z + rand(-0.1, 0.1), { vx: rand(-1.2, 1.2), vy: rand(0, 1.2), vz: rand(-1.2, 1.2), g: 6, life: rand(0.6, 1.1), size: rand(0.05, 0.09), r: 0.72, gg: 0.92, b: 1, shape: 0, floor: P.y + 0.02 });
+    if (Math.random() < dt * 20) vfx.smoke(q.x, q.y, q.z, { vy: 0.1, life: 1.1, size: 0.3, size1: 0.7, r: 0.8, gg: 0.9, b: 1, a: 0.45, shape: -1 });
   });
-  drop(head); glow.end(); body.fade(0.3); LV.atk(a, 0);
-  // the dragon becomes its pearl over her head, and a soft glittering rain falls
+  vfx.burst(prev.clone(), { n: 28, speed: 1.8, cols: [[0.9, 0.97, 1], [0.45, 0.75, 1]], size: 0.05, life: 0.9, g: 5, shape: 0, floor: P.y + 0.02 });   // a last spray where it goes
+  drop(head); glow.end(); streams.forEach(st => st.end()); body.fade(0.3); LV.atk(a, 0);
+  // its pearl glows over her head, and a soft glittering rain falls from the sky it went up into
   vfx.flash([0.8, 0.9, 1], 0.15); vfx.burst(pq, { n: 26, speed: 1.6, cols: [[0.9, 0.97, 1], [0.45, 0.75, 1]], size: 0.05, life: 0.7, g: 1, shape: 0 });
   vfx.ring(pq, [0.5, 0.8, 1], 0.5, 0.6, { vertical: true, yaw: cam.yaw, y: pq.y, intensity: 1 });
   const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 1.4, 1.6), toneMapped: false, transparent: true }));
@@ -950,7 +971,7 @@ async function longnvLevel(a, P) {
   vfx.light(pq, [0.6, 0.85, 1], 8, 1.2, 5);
   await anim(1.1, (k, dt = 1 / 60) => {
     pearl.position.copy(pq).add(V(0, Math.sin(k * 6) * 0.04, 0)); pearl.material.opacity = Math.min(1, (1 - k) * 4);
-    if (Math.random() < dt * 40) { const t = rand(0, 6.28), r = rand(0, 1.2); vfx.spark(P.x + Math.cos(t) * r, P.y + 2.2, P.z + Math.sin(t) * r, { vy: -rand(1.5, 2.2), life: 1, size: rand(0.03, 0.05), r: 0.8, gg: 0.93, b: 1, shape: 0, flicker: 1, ph: rand(0, 9) }); }
+    if (Math.random() < dt * 40) { const t = rand(0, 6.28), r = rand(0, 1.2); vfx.spark(P.x + Math.cos(t) * r, P.y + 2.8, P.z + Math.sin(t) * r, { vy: -rand(1.5, 2.2), life: 1.3, size: rand(0.03, 0.05), r: 0.8, gg: 0.93, b: 1, shape: 0, flicker: 1, ph: rand(0, 9) }); }
   });
   drop(pearl); await wait(300);
 }

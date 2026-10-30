@@ -181,8 +181,10 @@ function island(spec) {
       if (edge(x, y + 1) && kind(x, y + 1) === k) { P.push(box(stone, cx - 0.05, y0 + 0.12, cz, cx + 0.05, y0 + 0.2, cz + 1, 2), box(stone, cx - 0.06, y0 + RAIL - 0.14, cz, cx + 0.06, y0 + RAIL - 0.04, cz + 1, 2));
         for (let t = 0.25; t < 1; t += 0.25) P.push(box(stone, cx - 0.03, y0 + 0.2, cz + t - 0.025, cx + 0.03, y0 + RAIL - 0.14, cz + t + 0.025, 2)); } }
     if (P.length) S.add(shade(merged(stone, P)));
-    // the diagonal flight's steps
-    for (const [key, h] of Object.entries(D)) { const [x, y] = key.split(',').map(Number); S.add(shade(box(slab, x, BASE, y, x + 1, h, y + 1, 0.6))); }
+    // the diagonal flight's steps: slab blocks over the terrace mesh's own cells there, 3 mm over its top and 5 mm out from
+    // its sides (on them, the two flickered), flush only with a step of the same height beside
+    for (const [key, h] of Object.entries(D)) { const [x, y] = key.split(',').map(Number), o = (dx, dy) => D[(x + dx) + ',' + (y + dy)] === h ? 0 : 0.005;
+      S.add(shade(box(slab, x - o(-1, 0), BASE, y - o(0, -1), x + 1 + o(1, 0), h + 0.003, y + 1 + o(0, 1), 0.6))); }
     // guardians (and the stele)
     for (const [x0, z0, x1, z1, tall] of spec.guards || []) S.add(guardian(x0, z0, x1, z1, H.U, tall));
     if (spec.gate) gate(S, spec.gate, H.U);

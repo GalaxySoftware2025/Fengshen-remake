@@ -101,7 +101,7 @@ export function makeMansion(L) {
       rails.push(box(lacq, x0, 0, z0, x1, RAIL_H, z1, 2)); railTops.push(box(gold, x0 - 0.01, RAIL_H, z0 - 0.01, x1 + 0.01, RAIL_H + 0.03, z1 + 0.01, 2));
       for (const p of [a, b]) { const k = p.join(); ends.set(k, (ends.get(k) || []).concat([[a, b]])); }
     };
-    const cap = (x, z) => caps.push(box(stone, x - 0.2, 0, z - 0.2, x + 0.2, RAIL_H + 0.1, z + 0.2, 0.5));
+    const cap = (x, z) => caps.push(box(stone, x - 0.205, 0, z - 0.205, x + 0.205, RAIL_H + 0.1, z + 0.205, 0.5));   // (0.205: at 0.2 a cap's face fell on the cell line, flush with the dark's, and flickered)
     const mid = (a, b) => (a + b) / 2;
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       if (kind(x, y) !== 'f') continue;
@@ -131,7 +131,7 @@ export function makeMansion(L) {
       const h = TERRACE_H;
       S.add(shade(box(brick, x0, 0, z0, x1, h, z1, 1.5)));
       S.add(shade(box(stone, x0 - 0.05, h, z0 - 0.06, x1 + 0.05, h + 0.08, z0 + 0.3, 0.5)), shade(box(stone, x0 - 0.05, h, z1 - 0.16, x1 + 0.05, h + 0.06, z1 + 0.04, 0.5)));
-      S.add(shade(box(stone, x0, 0, z1 - 0.02, x1, 0.12, z1 + 0.06, 0.5), false));   // the plinth along its foot
+      S.add(shade(box(stone, x0 - 0.01, 0, z1 - 0.02, x1 + 0.01, 0.12, z1 + 0.06, 0.5), false));   // the plinth along its foot (1 cm past the wall's ends, not flush with them)
     }
     // the steps: pale stone treads let into the carpet, stone newels at the corners
     for (const st of L.steps) {

@@ -5,11 +5,12 @@
 // Space plays at 4x, Esc skips to the end of the part. Court scenes (only 紂王's court speaking) get the cutaway look.
 import * as THREE from 'three';
 import * as R from './rules.js';
-import { spriteKey, FLYING_FOES, FLOATERS } from './sprites.js';
+import { spriteKey, FLYING_FOES, FLOATERS, LYING } from './sprites.js';
 import { emoteTexture, FRAMES as EMOTE_FRAMES } from './emotes.js';
 import { registerSets, setFor, dress } from './sets.js';
 import REMADE from './remake/index.js';
 import * as Audio from './audio.js';
+import * as Keys from './keys.js';
 import { speed } from './speed.js';
 import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff } from './tracks.js';
 import * as CUT from './cutfx.js';
@@ -51,12 +52,19 @@ function fade(to, sec, white) {
 async function card(E, lines, cls, beforeHide) {
   const c = $('card-screen'); c.className = 'screen ' + (cls || ''); c.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
   c.classList.remove('hidden'); if (window.__qa) window.__qa.shown.push({ t: performance.now(), kind: 'card' });
-  await new Promise(res => { const go = () => { c.removeEventListener('click', go); window.removeEventListener('keydown', key); res(); }; const key = e => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'z') go(); }; c.addEventListener('click', go); window.addEventListener('keydown', key); });
+  await new Promise(res => { const go = () => { c.removeEventListener('click', go); window.removeEventListener('keydown', key); res(); }; const key = e => { if (Keys.is(e, 'ok') || Keys.is(e, 'fast')) go(); }; c.addEventListener('click', go); window.addEventListener('keydown', key); });
   if (beforeHide) beforeHide();
-  c.classList.add('hidden');
+  if (c.classList.contains('over')) { c.style.transition = 'opacity .6s'; c.style.opacity = '0'; await new Promise(r => setTimeout(r, 600)); }   // a page over the map clears off it (no jump to the lit map)
+  c.classList.add('hidden'); c.style.transition = c.style.opacity = '';
 }
 // what the screen shows next, from event i: the first event that changes the picture ('end' if none)
 const CARDS = ['narrate', 'place'], DARK_AFTER = ['fadeOut', 'map', 'narrate', 'place', 'battle', 'end'];
+// a page straight after a map load rolls over that map, lit: the original fades the court in under the prologue's first
+// page [the user's report]; one after lines or a fade-out is on black (the prologue's second, scene 3, prologue2)
+function overMap(evs, i) {
+  for (let k = i - 1; k >= 0; k--) { const p = evs[k]; if (p.kind === 'map') return true; if (['say', 'fadeIn', 'fadeOut', 'narrate', 'place', 'descent', 'battle'].includes(p.kind)) return false; }
+  return false;
+}
 function nextVisual(evs, i) {
   for (; i < evs.length; i++) if (['say', 'fadeIn', 'fadeOut', 'map', 'narrate', 'place', 'battle', 'emote', 'appear'].includes(evs[i].kind)) return evs[i].kind;
   return 'end';
@@ -150,8 +158,8 @@ export async function play(E, tag, part, hooks) {
     // the unit's sprite stands up from its cell's centre (map y + 16); the prop's rows above that are height on it
     const P = E.tileCenter((mx + 8) / 32 - 0.5, Math.floor((my + 8) / 32) - 0.5 + 0.5), up = (Math.floor((my + 8) / 32) * 32 + 32 - (my + 8)) / 32;
     spr.position.set(P.x, P.y + up * 1.1, P.z + 0.05); spr.scale.set(0.62, 0.62, 1); spr.visible = true; };
-  const keydown = e => { if (e.key === ' ') { fast = true; e.preventDefault(); } if (e.key === 'Escape') skip = true; };
-  const keyup = e => { if (e.key === ' ') fast = false; };
+  const keydown = e => { if (Keys.is(e, 'fast')) { fast = true; e.preventDefault(); } if (Keys.is(e, 'skip')) skip = true; };
+  const keyup = e => { if (Keys.is(e, 'fast')) fast = false; };
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
   E.ui.show('hud', false);
   const atLabel = document.getElementById('scene-at'); atLabel.classList.remove('hidden');
@@ -206,6 +214,8 @@ export async function play(E, tag, part, hooks) {
       if (q && q.length > 1 && q[3] === p[3] && q[0] > p[0]) { const k = (t - p[0]) / (q[0] - p[0]); x += (q[1] - p[1]) * k; y += (q[2] - p[2]) * k; moving = q[1] !== p[1] || q[2] !== p[2]; }
       if (stand && stand[p[3]] && stand[p[3]](E, x / 32 + 0.5, y / 32 + 0.5, moving, { tag, t }) !== false) { act.hidden = true; act.root.visible = false; a.standGfx = p[3]; continue; }   // a remade set plays this sprite with a model (valley: the cart), or hides it; false: the sprite as it is
       a.u.still = p[5];   // a sheet the original never walk-cycles (export_scenes.py stills): the frame it shows
+      // @qa scene:0 job:lying   (only scene 0's carcass lies: src/sprites.js LYING)
+      act.lie = LYING.has(p[3]);   // drawn lying on the ground: laid flat on it
       act.stone = p[6] ? 1 : 0;   // turned to stone (the prologue's fox army, 0x278E): bluish white at the flash, grey by 16 frames on
       if (p[6]) { const k = Math.min(1, Math.max(0, (t - p[0]) / 16)); act.stoneCol = (act.stoneCol || new THREE.Color()).setRGB(1.12 - 0.12 * k, 1.16 - 0.16 * k, 1.3 - 0.3 * k); }
       a.u.gfx = p[3]; a.u.facing = p[4] || 'down'; a.u.x = Math.round(x / 32); a.u.y = Math.round(y / 32);
@@ -308,7 +318,7 @@ export async function play(E, tag, part, hooks) {
           else if (e.kind === 'map') { await setMap(e.map, false, e.white); lit = false; }
           else if (e.kind === 'descent') { await setMap(e.map, true); await fade(1, 0); lit = false; }
           else if (e.kind === 'fadeIn' || e.kind === 'say' || (e.kind === 'native' && e.name === 'vision' && seek > e.show)) lit = true;
-          else if (e.kind === 'fadeOut' || CARDS.includes(e.kind)) lit = e.kind !== 'fadeOut' && lit;
+          else if (e.kind === 'fadeOut' || CARDS.includes(e.kind)) lit = e.kind !== 'fadeOut' && (lit || (e.kind === 'narrate' && overMap(evs, ei - 1)));
           else if (e.kind === 'emote' && worldReady) { if (!emote) emote = emoteSprite(E.world.scene); emote.visible = true; emoteEv = e; if (window.__remake) window.__remake.emote = emote; }
           else if (e.kind === 'emoteOff' && emote) { emote.visible = false; emoteEv = null; }
           else if (e.kind === 'emotes' && worldReady) groupEv = e;
@@ -361,7 +371,9 @@ export async function play(E, tag, part, hooks) {
         }
         else if (e.kind === 'descent') { await setMap(e.map, true); if (!skip) await descend(E, e, () => clock().then(dt => fast ? dt / 4 : dt), () => skip); await fade(1, 0); }   // the 2 s cut at its own pace (space does not hurry it; Esc skips)
         else if (CARDS.includes(e.kind)) {   // a narration page (op 54) or a location card (the original's map cut), over this stretch
-          await card(E, e.lines, e.kind, () => { if (DARK_AFTER.includes(nextVisual(evs, ei))) fade(1, 0); });   // nothing to see next: stay dark
+          const over = e.kind === 'narrate' && worldReady && overMap(evs, ei - 1);
+          if (over) { t = Math.max(t, e.f); pose(fresh); if (fresh) { warm(E); await clock(); } fresh = false; fade(0, 2); }   // the map comes up under the page as it shows
+          await card(E, e.lines, e.kind + (over ? ' over' : ''), () => { if (DARK_AFTER.includes(nextVisual(evs, ei))) fade(1, 0); });   // nothing to see next: stay dark
           if (ei < evs.length) t = Math.max(t, evs[ei].f);
         }
         else if (e.kind === 'emote' && worldReady) { if (!emote) emote = emoteSprite(E.world.scene); emote.visible = true; emoteEv = e; if (window.__remake) window.__remake.emote = emote; }
@@ -383,7 +395,7 @@ export async function play(E, tag, part, hooks) {
           t = Math.max(t, e.f); pose(fresh); if (fresh) { warm(E); await clock(); } fresh = false;
           CUT.vision(E, e, () => t, slotActor);
         }
-        else if (e.kind === 'hold' && !skip) await new Promise(res => { let tm = null; const go = () => { clearTimeout(tm); window.removeEventListener('click', go); window.removeEventListener('keydown', key); res(); }; const key = k => { if (['Enter', ' ', 'z', 'Escape'].includes(k.key)) go(); }; window.addEventListener('click', go); window.addEventListener('keydown', key); tm = setTimeout(go, 15000); });   // the epilogue's last page held (the original: 0x7FFF frames, then the reset): until a click, or 15 s
+        else if (e.kind === 'hold' && !skip) await new Promise(res => { let tm = null; const go = () => { clearTimeout(tm); window.removeEventListener('click', go); window.removeEventListener('keydown', key); res(); }; const key = k => { if (['ok', 'fast', 'cancel', 'skip'].some(a => Keys.is(k, a))) go(); }; window.addEventListener('click', go); window.addEventListener('keydown', key); tm = setTimeout(go, 15000); });   // the epilogue's last page held (the original: 0x7FFF frames, then the reset): until a click, or 15 s
         else if (e.kind === 'native' && e.name === 'flash') E.vfx.flash([1, 0.97, 0.9], 0.85);   // a native cut's palette flash to white and back (scene 43 f1438)
         else if (e.kind === 'native' && worldReady && CUT[e.name]) CUT[e.name](E, e, () => t, slotActor);   // a native cut the player acts out (src/cutfx.js: scene 42's wisp, scene 43's slash)
         else if (e.kind === 'native' && worldReady) setFor(mapKeyOf(S, e.f))?.native?.(E, e, () => t);   // a native cut a remade set acts out (scene 6's bridge): it reads the scene clock

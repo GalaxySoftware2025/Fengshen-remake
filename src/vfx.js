@@ -1,4 +1,4 @@
-// Effects engine: particles, rings, rune circles, pillars, lightning, lights, screen beats, and the fire wall.
+// Effects engine: particles, rings, pillars, lightning, lights, screen beats, and the fire wall.
 import * as THREE from 'three';
 import { effectH, rand } from './world.js';
 
@@ -78,21 +78,6 @@ class Particles {
 
 // ---------------------------------------------------------------- textures
 function ctex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
-const RUNES = '乾坤震巽坎離艮兌天地風雷水火山澤';
-function runeTexture() {
-  return ctex(512, 512, (g, W) => {
-    const c = W / 2; g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineWidth = 6;
-    g.beginPath(); g.arc(c, c, 240, 0, Math.PI * 2); g.stroke(); g.lineWidth = 3;
-    g.beginPath(); g.arc(c, c, 222, 0, Math.PI * 2); g.stroke();
-    g.beginPath(); g.arc(c, c, 150, 0, Math.PI * 2); g.stroke();
-    g.font = 'bold 34px "LXGW WenKai TC", serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; g.save(); g.translate(c + Math.cos(a) * 186, c + Math.sin(a) * 186); g.rotate(a + Math.PI / 2); g.fillText(RUNES[i], 0, 0); g.restore(); }
-    for (let tri = 0; tri < 2; tri++) { g.beginPath(); for (let k = 0; k <= 3; k++) { const a = tri * Math.PI / 3 + k * Math.PI * 2 / 3 - Math.PI / 2; const x = c + Math.cos(a) * 150, y = c + Math.sin(a) * 150; k ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); }
-    // trigram bars around the inner circle
-    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; g.save(); g.translate(c + Math.cos(a) * 112, c + Math.sin(a) * 112); g.rotate(a + Math.PI / 2); for (let b = 0; b < 3; b++) { if ((i >> b) & 1) g.fillRect(-16, -12 + b * 9, 32, 5); else { g.fillRect(-16, -12 + b * 9, 13, 5); g.fillRect(3, -12 + b * 9, 13, 5); } } g.restore(); }
-    g.beginPath(); g.arc(c, c, 40, 0, Math.PI * 2); g.stroke();
-  });
-}
 function ringTexture() { return ctex(256, 256, (g, W) => { const gr = g.createRadialGradient(128, 128, 60, 128, 128, 128); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.75, 'rgba(255,255,255,1)'); gr.addColorStop(0.85, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, W); }); }
 function beamTexture() { return ctex(64, 256, (g, W, H) => { const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); const f = g.createLinearGradient(0, 0, 0, H); f.addColorStop(0, 'rgba(0,0,0,1)'); f.addColorStop(0.35, 'rgba(0,0,0,0)'); f.addColorStop(1, 'rgba(0,0,0,0)'); g.globalCompositeOperation = 'destination-out'; g.fillStyle = f; g.fillRect(0, 0, W, H); }); }
 
@@ -258,7 +243,7 @@ export class VFX {
     this.soft = new Particles(S, 4000, THREE.NormalBlending);
     this.flames = new Flames(S, 2500, false); this.smokes = new Flames(S, 700, true);
     this.items = [];                 // timed meshes: { mesh, t, life, update(k, dt) }
-    this.runeTex = runeTexture(); this.ringTex = ringTexture(); this.beamTex = beamTexture();
+    this.ringTex = ringTexture(); this.beamTex = beamTexture();
     this.glowTex = ctex(128, 128, (g, W) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, W); });
     this.lights = [];
     for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 1.6); l.position.set(0, -50, 0); S.add(l); this.lights.push({ l, t: 0, life: 0, base: 0 }); }
@@ -314,18 +299,6 @@ export class VFX {
     m.rotation.x = -Math.PI / 2; m.position.set(p.x, (o.y != null ? o.y : effectH(p.x, p.z) + 0.05), p.z); m.renderOrder = 4;
     if (o.vertical) { m.rotation.set(0, o.yaw || 0, 0); }
     return this.timed(m, life, k => { const s = 0.05 + r1 * (1 - Math.pow(1 - k, 3)); m.scale.set(s, s, s); m.material.opacity = (1 - k) * (o.intensity || 2); });
-  }
-  runeCircle(p, col, radius, life, o) {
-    o = o || {};
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), new THREE.MeshBasicMaterial({ map: this.runeTex, color: new THREE.Color(...col), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    m.rotation.x = -Math.PI / 2; m.position.set(p.x, effectH(p.x, p.z) + 0.04, p.z); m.renderOrder = 4;
-    const inner = new THREE.Mesh(m.geometry, m.material.clone()); inner.scale.setScalar(0.62); inner.position.z = 0.002; m.add(inner);
-    return this.timed(m, life, (k, dt) => {
-      const fadeIn = Math.min(1, k * life / 0.35), fadeOut = Math.min(1, (1 - k) * life / 0.4);
-      m.material.opacity = inner.material.opacity = fadeIn * fadeOut * (o.intensity || 1.6);
-      m.rotation.z += dt * (o.spin || 0.8); inner.rotation.z -= dt * (o.spin || 0.8) * 2.2;
-      const s = 0.6 + 0.4 * Math.min(1, k * life / 0.35); m.scale.setScalar(s);
-    });
   }
   pillar(p, col, radius, height, life, o) {
     o = o || {};

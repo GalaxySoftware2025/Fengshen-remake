@@ -128,16 +128,15 @@ export const CASTS = {
     vfx.burst(E, { n: 30, speed: 3.2, cols: [[1, 1, 0.9], GOLD], size: 0.05, life: 0.45, g: 0, shape: 1 });
     await wait(420);
   },
-  // 姜子牙: he lifts his staff and the eight trigrams turn under him and rise as gold (Kunlun's bagua is his, so the
-  // circle stays his)
+  // 姜子牙: he lifts his staff and gold rises round him (no trigram circle under him: every magic circle went at the
+  // user's call, 2026-10-30)
   7: async (a, P) => {
     const GOLD = [1, 0.85, 0.45];
     pose.cast(a, 0);
-    const disc = vfx.runeCircle(P, GOLD, 1.25, 1.2, { spin: 2.6, intensity: 1.5 });   // the eight trigrams round the taiji (vfx.js runeTexture)
     for (let i = 0; i < 18; i++) { const t = i / 18 * 6.28, r = 0.9; vfx.spark(P.x + Math.cos(t) * r, P.y + 0.05, P.z + Math.sin(t) * r, { vy: rand(1.2, 2.2), vx: -Math.cos(t) * 0.5, vz: -Math.sin(t) * 0.5, life: 0.7, size: 0.06, r: 1, gg: 0.85, b: 0.45, shape: 1 }); }
     vfx.pillar(P, GOLD, 0.5, 2.4, 0.8, { taper: 0.8, intensity: 0.35, grow: 1 });
     vfx.light(P.clone().setY(P.y + 0.6), GOLD, 8, 0.9, 5);
-    await anim(0.9, k => { disc.position.y = effectH(P.x, P.z) + 0.04 + Math.sin(k * Math.PI * 0.5) * 0.35; });
+    await anim(0.9, () => {});
     await wait(150);
   },
   // 大力士, Shang's strongman: lifts both fists high and pounds the earth once, stones and dust thrown up round him

@@ -3,9 +3,10 @@
 // module (E) so it can use the same camera, effects and animations.
 import * as THREE from 'three';
 import { World, groundH, rand, setLook, setEffectGround } from './world.js';
-import { SpriteBank, Actor } from './actors.js';
+import { SpriteBank, Actor, VIEW } from './actors.js';
 import { LEVEL_POSE } from './levelup.js';
 import { speed } from './speed.js';
+import * as Keys from './keys.js';
 import { VFX } from './vfx.js';
 import { playSpell, playItem, arrowMesh, scripted } from './spells.js';
 import { spriteKey } from './sprites.js';
@@ -48,6 +49,7 @@ export class Cam {
     this.camera = camera; this.target = V(4, 0, 4); this.yaw = 0; this.pitch = 1.0; this.dist = 13;
     this.goal = { target: this.target.clone(), yaw: this.yaw, pitch: this.pitch, dist: this.dist };
     this.user = { yaw: 0, pitch: 1.0, dist: 13 }; this.inShot = false; this.speed = 5.5;   // yaw 0: map x runs left to right, like the original
+    this.turn = 0;   // the player's turn (Q / E) as drawn: user.yaw eased, without a shot's own angle (world.turnLight)
   }
   focus(p, snap) { this.goal.target.copy(p); if (!this.inShot) Object.assign(this.goal, { yaw: this.user.yaw, pitch: this.user.pitch, dist: this.user.dist }); if (snap) this.snap(); }
   shot(p, o) {
@@ -60,11 +62,12 @@ export class Cam {
     this.goal.yaw = free ? this.user.yaw + (o.yaw || 0) : this.user.yaw; this.goal.pitch = free ? (o.pitch || 0.5) : this.user.pitch;
   }
   release(p) { this.inShot = false; this.speed = 5.5; Object.assign(this.goal, { yaw: this.user.yaw, pitch: this.user.pitch, dist: this.user.dist }); if (p) this.goal.target.copy(p); }
-  rotate() {}   // camera rotation removed: the battle keeps one fixed angle
-  zoom(f) { this.user.dist = THREE.MathUtils.clamp(this.user.dist * f, 7, 26); if (!this.inShot) this.goal.dist = this.user.dist; }
-  snap() { this.target.copy(this.goal.target); this.yaw = this.goal.yaw; this.pitch = this.goal.pitch; this.dist = this.goal.dist; }
+  // a quarter turn round the map (keys.js Q / E) [the user's call, 2026-10-29; the battle kept one fixed angle before]: -1 Q, +1 E
+  rotate(dir) { this.user.yaw += dir * Math.PI / 2; if (!this.inShot) this.goal.yaw = this.user.yaw; }
+  snap() { this.turn = this.user.yaw; this.target.copy(this.goal.target); this.yaw = this.goal.yaw; this.pitch = this.goal.pitch; this.dist = this.goal.dist; }
   update(dt, shake) {
     const k = 1 - Math.exp(-dt * this.speed);
+    this.turn += (this.user.yaw - this.turn) * (1 - Math.exp(-dt * 5.5));
     this.target.lerp(this.goal.target, k); this.yaw += (this.goal.yaw - this.yaw) * k; this.pitch += (this.goal.pitch - this.pitch) * k; this.dist += (this.goal.dist - this.dist) * k;
     const c = Math.cos(this.pitch) * this.dist, look = this.target.clone().add(V(0, 0.55, 0));
     this.camera.position.set(look.x + Math.sin(this.yaw) * c, look.y + Math.sin(this.pitch) * this.dist, look.z + Math.cos(this.yaw) * c);
@@ -656,23 +659,23 @@ export function setupInput() {
     if (drag && e.button === drag.b) { if (drag.moved <= 6 && e.button === 2) push({ k: 'B' }); drag = null; return; }
     if (e.button === 0 && e.target === cv) { const t = pick(e); if (t) push({ k: 'click', t }); else push({ k: 'clickoff' }); }
   });
-  cv.addEventListener('wheel', e => { e.preventDefault(); cam.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
+  cv.addEventListener('wheel', e => e.preventDefault(), { passive: false });   // no zoom [the user's call, 2026-10-29: the wheel zoomed 7-26]; nor the page's (a trackpad pinch is a ctrl-wheel)
   window.addEventListener('keydown', e => {
-    const k = e.key;
-    if (k === ' ') { timeScale = 3; e.preventDefault(); return; }
-    if (k === 'Tab') { e.preventDefault(); return push({ k: 'TAB' }); }
-    if (k === 'Enter' || k === 'z' || k === 'Z') { ui.advance(); return push({ k: 'A' }); }
-    if (k === 'Escape' || k === 'x' || k === 'X' || k === 'Backspace') return push({ k: 'B' });
-    const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] }[k];
+    if (Keys.is(e, 'fast')) { timeScale = 3; e.preventDefault(); return; }
+    if (Keys.is(e, 'danger')) { e.preventDefault(); return push({ k: 'TAB' }); }
+    if ((Keys.is(e, 'turnLeft') || Keys.is(e, 'turnRight')) && !$('hud').classList.contains('hidden')) return cam.rotate(Keys.is(e, 'turnLeft') ? -1 : 1);   // (only while the battle is on screen)
+    if (Keys.is(e, 'ok')) { ui.advance(); return push({ k: 'A' }); }
+    if (Keys.is(e, 'cancel')) return push({ k: 'B' });
+    const k = Keys.dirOf(e), dir = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[k];
     if (dir) {
       e.preventDefault();
       // screen-relative: rotate the key direction by the camera yaw, snapped to the grid
-      const yaw = Math.round(cam.yaw / (Math.PI / 2)) * (Math.PI / 2), c = Math.cos(yaw), s = Math.sin(yaw);
+      const yaw = Math.round(cam.user.yaw / (Math.PI / 2)) * (Math.PI / 2), c = Math.cos(yaw), s = Math.sin(yaw);   // (the turn it is going to: a key pressed mid-turn)
       const gx = Math.round(dir[0] * c + dir[1] * s), gy = Math.round(-dir[0] * s + dir[1] * c);
       push({ k: 'DIR', d: [gx, gy], raw: k });
     }
   });
-  window.addEventListener('keyup', e => { if (e.key === ' ') timeScale = 1; });
+  window.addEventListener('keyup', e => { if (Keys.is(e, 'fast')) timeScale = 1; });
   document.addEventListener('click', () => ui && ui.advance());
 }
 
@@ -1332,6 +1335,7 @@ export async function playerTurn(u) {
       const ev = await input();
       if (ev.k === 'PG') { dest = 'PG'; break; }
       if (ev.k === 'B' && opts.arena) { PG.popup = false; return 'cancel'; }
+      if (ev.k === 'B') { cursorTile = [u.x, u.y]; tiles.setCursor(...cursorTile); tiles.setPath(null); cam.focus(a.pos); ui.card(u); continue; }   // cancel: the cursor back on the hero whose turn it is [the user's call]
       if (ev.k === 'TAB') { danger = !danger; redraw(); continue; }
       if (ev.k === 'hover' || ev.k === 'DIR') {
         // @qa battles
@@ -1382,7 +1386,7 @@ export async function commandMenu(u) {
       if (ev.k === 'B') { ui.menu(null); menuAnchor = null; cam.release(); return false; }
       if (ev.k === 'MENU') pick = ev.i;
       if (ev.k === 'A') pick = sel;
-      if (ev.k === 'DIR') { sel = { ArrowUp: 0, w: 0, ArrowLeft: 1, a: 1, ArrowRight: 2, d: 2, ArrowDown: 3, s: 3 }[ev.raw] ?? sel; draw(); }
+      if (ev.k === 'DIR') { sel = { up: 0, left: 1, right: 2, down: 3 }[ev.raw] ?? sel; draw(); }
     }
     ui.menu(null); menuAnchor = null;
     const choice = MENU[pick].id;
@@ -1404,7 +1408,7 @@ export async function commandMenu(u) {
       const sp = D.spells[u.spells[k]];
       if (sp.mp > u.mp) { ui.toast('法力不足', 800); continue; }
       if (R.spellEffect(u, sp).kind === 3) {   // 還魂咒
-        const p = await pickRaise(u, R.cellsInShape(u.x, u.y, sp.range), rows[k].icon); if (!p) continue;
+        const p = await pickRaise(u, R.cellsInShape(u.x, u.y, sp.range)); if (!p) continue;
         u.mp -= sp.mp; await raiseFx(u, p.who, p.at, sp.name, c => playSpell(sp.id, c, sp.kind)); return true;
       }
       const range = R.cellsInShape(u.x, u.y, sp.range), cells = opts.test ? range : R.castCells(u, range, sp.kind === 13);
@@ -1419,7 +1423,7 @@ export async function commandMenu(u) {
       const it = D.items[u.items[k]], eff = R.itemEffect(u, it);
       if (!eff || it.equip) { ui.toast('無法使用', 800); continue; }
       if (eff.kind === 3) {   // 玄天聖水
-        const p = await pickRaise(u, R.cellsInShape(u.x, u.y, it.range), rows[k].icon); if (!p) continue;
+        const p = await pickRaise(u, R.cellsInShape(u.x, u.y, it.range)); if (!p) continue;
         const id = u.items[k]; u.items.splice(k, 1); await itemUse(u, id, p.at);
         await raiseFx(u, p.who, p.at, it.name, c => playSpell(43, c, 3)); return true;
       }
@@ -1433,12 +1437,12 @@ export async function commandMenu(u) {
 }
 // a fallen hero back (還魂咒, 玄天聖水 [ROM 0x28300]): an empty cell in the cast's range, then who, from the fallen of
 // the heroes' slots; it stands up there at half its HP, the caster gaining 10
-async function pickRaise(u, range, icon) {
+async function pickRaise(u, range) {
   const dead = R.fallen(); if (!dead.length) { ui.toast('沒有陣亡的同伴', 800); return null; }
   const cells = range.filter(([x, y]) => !R.unitAt(x, y));
   if (!cells.length) { ui.toast('範圍內沒有空位', 800); return null; }
   const at = await pickTarget(u, cells, range, 0, C.help, 'ally'); if (!at) return null;
-  const k = await pickRing(actorOf(u), dead.map(d => ({ icon, label: d.name, right: 'Lv ' + d.lv, ok: true, desc: '' }))); if (k == null) return null;
+  const k = await pickRing(actorOf(u), dead.map(d => ({ icon: bank.portrait(d.sprite, 4).toDataURL(), label: d.name, right: 'Lv ' + d.lv, ok: true, desc: '' }))); if (k == null) return null;   // (each one's own picture, not the spell's or the item's icon [the user's call, 2026-10-30])
   return { at, who: dead[k] };
 }
 // a raise cast straight at a cell (the test toolbar, tools/qa/spells.js): the first of the fallen, if the cell is free
@@ -1470,7 +1474,7 @@ export async function pickRing(a, rows) {
     if (ev.k === 'B') return done(null);
     if (ev.k === 'RING') return done(ev.i);
     if (ev.k === 'A') return done(sel);
-    if (ev.k === 'DIR') { const d = { ArrowRight: 1, d: 1, ArrowDown: 1, s: 1, ArrowLeft: -1, a: -1, ArrowUp: -1, w: -1 }[ev.raw]; if (d) { sel = top = (sel + d + rows.length) % rows.length; draw(); } }
+    if (ev.k === 'DIR') { const d = { right: 1, down: 1, left: -1, up: -1 }[ev.raw]; if (d) { sel = top = (sel + d + rows.length) % rows.length; draw(); } }
   }
 }
 export async function pickTarget(u, cells, range, area, color, prefer, attack) {
@@ -1568,6 +1572,7 @@ export async function runBattle() {
     if (G.round > 40) G.over = { win: false, why: '時間耗盡' };
   }
   if (G.over && G.over.win && (G.over.lines || G.over.rout || G.over.after)) await winBeats(G.over);
+  cam.user.yaw = 0; if (!cam.inShot) cam.goal.yaw = 0;   // the player's turn (Q / E) ends with the battle: the story's shots are made from yaw 0
   return G.over;
 }
 // a battle line: the camera on its speaker (R.speakerOf: the unit the line names, else whoever stands there by that
@@ -1630,7 +1635,7 @@ export function frame(now) {
     canvasRect = world.renderer.domElement.getBoundingClientRect();
     cam.update(rdt, vfx ? vfx.screen.shake : 0);
     const f = G.active && actorOf(G.active) ? actorOf(G.active).pos : cam.target;   // see-through follows the acting unit, never the cursor
-    world.shadowsLive = tweens.length > 0; for (const a of actors.values()) if (a.walking) world.shadowsLive = true;   // anything animating (a walk, a blow): shadows every frame, or they trail the sprites at half rate
+    world.turnLight(cam.turn); VIEW.turn = cam.turn; world.shadowsLive = tweens.length > 0 || Math.abs(cam.turn - cam.user.yaw) > 1e-3; for (const a of actors.values()) if (a.walking) world.shadowsLive = true;   // anything animating (a walk, a blow): shadows every frame, or they trail the sprites at half rate
     world.update(dt, gameT);
     vfx.update(dt, gameT); if (!world.calm) vfx.ambient(dt, cam.target);
     vfx.add.mat.uniforms.uScale.value = vfx.soft.mat.uniforms.uScale.value = world.renderer.domElement.height / (2 * Math.tan(world.camera.fov * Math.PI / 360));
@@ -1659,6 +1664,7 @@ export async function swingAt(au, x, y, onHit) {
 export function hudRound() { ui.round(G.round, R.H.hud ? R.H.hud(G) : null); }
 // lay out a battle: units on their cells, then the battle's own staging (磻溪's burning forest)
 export function stage(chosen) {
+  cam.user.yaw = 0; cam.turn = 0;   // every battle starts unturned (Q / E)
   R.setupBattle(chosen); ui.clearUnits(); syncActors();
   for (const a of actors.values()) { placeActor(a); a.dissolve = a.u.alive ? 0 : 1; }
   if (FX.stage) FX.stage(E);

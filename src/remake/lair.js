@@ -360,12 +360,13 @@ function buildSanctum(S) {
     const g = new THREE.PlaneGeometry(b - a, fh), uv = g.attributes.uv; for (let q = 0; q < uv.count; q++) uv.setX(q, uv.getX(q) * (b - a) / (fh * 2));
     const p = new THREE.Mesh(g, fr); p.position.set((a + b) / 2, fy - fh / 2, FACE + 0.006); S.add(shade(p));
   }
-  // the stair: five steps of the flags' stone, bronze on their noses, cheeks of dressed stone
+  // the stair: five steps of the flags' stone, bronze on their noses, cheeks of dressed stone (the top step 3 mm under the
+  // court's flags it meets: level with them, the two flickered)
   const stepM = alt(T.material(slabTex(), { roughness: 0.8 }, [0.5, 0.5]), 'lrStep'), M = mats(), steps = [], noses = [];
   for (let k = 0; k < STAIR.n; k++) { const za = STAIR.z0 + (STAIR.z1 - STAIR.z0) * k / STAIR.n, zb = za + (STAIR.z1 - STAIR.z0) / STAIR.n, y = UP * (STAIR.n - k) / STAIR.n;
-    steps.push(box(stepM, STAIR.x0, LOW - 0.3, za, STAIR.x1, y, zb, 1)); noses.push(box(M.bronze, STAIR.x0 + 0.02, y - 0.03, zb - 0.025, STAIR.x1 - 0.02, y + 0.004, zb + 0.004, 4)); }
+    steps.push(box(stepM, STAIR.x0, LOW - 0.3, za, STAIR.x1, k ? y : y - 0.003, zb, 1)); noses.push(box(M.bronze, STAIR.x0 + 0.02, y - 0.03, zb - 0.025, STAIR.x1 - 0.02, y + 0.004, zb + 0.004, 4)); }
   S.add(shade(merged(stepM, steps)), shade(merged(M.bronze, noses)));
-  for (const x of [STAIR.x0 - 0.07, STAIR.x1 - 0.01]) S.add(shade(box(copeM, x, LOW - 0.3, STAIR.z0 - 0.05, x + 0.08, UP + 0.05, STAIR.z1, 1)));
+  for (const x of [STAIR.x0 - 0.07, STAIR.x1 - 0.01]) S.add(shade(box(copeM, x, LOW - 0.3, STAIR.z0 - 0.05, x + 0.08, UP + 0.05, STAIR.z1 + 0.01, 1)));   // (1 cm proud of the wall's face)
   // buttresses down the outer faces to the sea, every few cells (never against the landing's faces, where the pier is)
   const but = [], bm = sideMaterial(), bt = (x0, z0, x1, z1) => { const b = box(bm, x0, SEA - 0.4, z0, x1, UP - 0.16, z1, 0.5), g = b.geometry, n = g.attributes.position.count; g.setAttribute('aWl', new THREE.Float32BufferAttribute(new Array(n).fill(SEA), 1)); return b; };
   for (let z = 1.5; z < FACE - 1; z += 3.2) { but.push(bt(-WT - 0.32, z - 0.3, -WT + 0.02, z + 0.3), bt(MW + WT - 0.02, z - 0.3, MW + WT + 0.32, z + 0.3)); }

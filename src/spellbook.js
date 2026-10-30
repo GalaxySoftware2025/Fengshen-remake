@@ -10,7 +10,7 @@ import { NOISE } from './vfx.js';
 import { wait } from './battle.js';   // (used at run time only: battle.js imports this module)
 import { houndRunTex } from './levelup.js';   // (the 哮天犬's gallop: run time only)
 import { iceMaterial, shardGeometry, chunkGeometry, shatter, frost } from './elements.js';
-import { V, ease, basis, swordMesh, pointAlong, bezier, intro, outro, DARK, ticker, cueAt, channel, facing, yawOf, swirl, arrowMesh, flameRing, talismanTex, petalGeo } from './spellkit.js';
+import { V, ease, basis, swordMesh, pointAlong, bezier, intro, outro, DARK, ticker, cueAt, shotAt, yawToward, channel, facing, yawOf, swirl, arrowMesh, flameRing, talismanTex, petalGeo } from './spellkit.js';
 
 // ---------------------------------------------------------------- shared pieces
 // the area, nearest the aimed cell first, each point on the ground
@@ -46,7 +46,7 @@ function shadowDisc(v, p, r, life, o) {
 function crack(v, a, b, col, life, o) {
   o = o || {};
   const n = 14, pts = [], d = b.clone().sub(a), side = V(-d.z, 0, d.x).normalize();
-  for (let i = 0; i <= n; i++) { const t = i / n, p = a.clone().lerp(b, t).add(side.clone().multiplyScalar(i && i < n ? rand(-0.18, 0.18) : 0)); p.y = effectH(p.x, p.z) + 0.04; pts.push(p); }
+  for (let i = 0; i <= n; i++) { const t = i / n, p = a.clone().lerp(b, t).add(side.clone().multiplyScalar(i && i < n ? rand(-0.18, 0.18) : 0)); p.y = (o.y ?? effectH(p.x, p.z)) + 0.04; pts.push(p); }   // (o.y: one level, the target's: a crack running to a cliff would climb its wall)
   const strip = (w, mat) => {
     const pos = []; for (const p of pts) pos.push(p.x - side.x * w, p.y, p.z - side.z * w, p.x + side.x * w, p.y, p.z + side.z * w);
     const idx = []; for (let i = 0; i < n; i++) { const q = i * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
@@ -150,8 +150,7 @@ async function swordStorm(ctx, col) {
   DARK(ctx, 0.4, 1, 0.85, 0.6);
   await ctx.until(F - 0.1);
   const sky = c0.clone().setY(c0.y + 4.6), L = E - ctx.now() - 0.3;
-  const disc = v.runeCircle(sky, col, 3.4, L, { spin: 1.2, intensity: 1.6 }); disc.position.y = sky.y;
-  v.light(sky, col, 35, L, 14);
+  v.light(sky, col, 35, L, 14);   // (light from above; no magic circle in the sky [the user's call, 2026-10-30])
   for (const c of cells) shadowDisc(v, c, 0.45, L, { grow: 0.9, a: 0.55 });
   ctx.cue();
   await ctx.until(F + 0.7);
@@ -171,40 +170,146 @@ async function swordStorm(ctx, col) {
   v.flash([0.85, 0.95, 1], 0.45); v.impact(c0, col, 1.3); v.ring(c0, col, 5, 0.8, { intensity: 1.2 }); glowTargets(ctx, 0.8);
   ctx.hit(); await ctx.until(E - 0.2); outro(ctx);
 }
-// 天劍訣 / 怒劍式: [ROM fx 3, 7] swords fan out into a spinning wheel over the target as soon as he has cast, then dive into it one after another from every side, one dive on each of the original's eight
-// sounds (F s after the cast begins, data/spellsound.js apart), each strike flashing; a white flash after the last, the
-// effect over at E
-async function swordWheel(ctx, col, n, rounds, F, E) {
-  const v = ctx.vfx, at = ctx.at.clone(), B = basis(ctx);
-  await intro(ctx, col, { dur: 900, dist: 9.5, pitch: 0.36 });
-  DARK(ctx, 0.5, 1, 0.85, 0.65);
-  const T = ctx.now(), tr = ctx.track.length ? ctx.track : [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75], last = F + tr[tr.length - 1], W = last + 0.4 - T;   // (W: the wheel's time, to the last dive)
-  const hub = at.clone().setY(at.y + 2.6), R = 1.5, swords = [];
-  v.light(hub, col, 22, W, 8);
-  const hubGlow = glowCard(v, col, 1.4); hubGlow.position.copy(hub); v.timed(hubGlow, W, (k, dt, t) => { hubGlow.material.opacity = Math.min(1, t * 2) * (0.6 + 0.2 * Math.sin(t * 20)) * (1 - k * k); });
-  let spin = 0, spinV = 1;
-  ticker(v, W, (k, dt, t) => { spinV = t < 1.2 ? 1 + t * 5 : 7; spin += dt * spinV; });
+// 天劍訣: [ROM fx 3] the original fans its swords out over the target and dives them into it one after another, one on
+// each of its eight sounds (4.4 s after the cast begins, data/spellsound.js apart), the blow at 7 s. Remade as 姬發's
+// last spell [the user's call, 2026-10-30: next-gen]: night-blue; a beam of light pierces the sky over the target and a
+// dome of twenty-four spectral blades forms round it, turning slowly, all aimed in at it; on each sound three of them
+// streak through it, each cut leaving a crescent of light; then one colossal blade of light drops down the beam and
+// pierces it, the cuts all flaring at once
+function slashArc(v, p, col, size, life) {   // a crescent cut of light at p, any way round, flashing and fading
+  const g = new THREE.Group(), arc = 2.3, tube = (r, w, a) => new THREE.Mesh(new THREE.TorusGeometry(r, w, 4, 40, arc), new THREE.MeshBasicMaterial({ color: new THREE.Color(...col), transparent: true, opacity: a, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  const soft = tube(size, size * 0.08, 0.45), sharp = tube(size, size * 0.022, 1); sharp.material.color.setRGB(1, 1, 1); g.add(soft, sharp);
+  g.position.copy(p); g.rotation.set(rand(0, 6.28), rand(0, 6.28), rand(0, 6.28)); g.rotateZ(-arc / 2);
+  return v.timed(g, life, k => { const s2 = 0.75 + 0.5 * Math.sqrt(k); g.scale.setScalar(s2); soft.material.opacity = 0.45 * (1 - k); sharp.material.opacity = 1 - k * k; });
+}
+async function skySwords(ctx) {
+  const v = ctx.vfx, at = ctx.at.clone(), col = [0.55, 0.85, 1], F = 4.4, E = 7.0, N = 24;
+  await intro(ctx, col, { dur: 900, dist: 9.5, pitch: 0.4 });
+  DARK(ctx, 0.6, 0.85, 0.6, 0.3);
+  const T = ctx.now(), tr = ctx.track.length ? ctx.track : [0, 0.27, 0.53, 0.8, 1.07, 1.33, 1.6, 1.87], last = F + tr[tr.length - 1], fin = last + 0.3, W = fin - T;
+  const ctr = at.clone().setY(at.y + 0.55), R = 1.9;
+  [[T + 0.1, -0.8, 1.1], [T + 1.3, 0, 1], [T + 2.5, 0.8, 1]].forEach(([s2, yaw, sp]) => shotAt(ctx, s2, ctr.clone(), { dist: 10, pitch: 0.42, yaw, speed: sp }));   // a slow orbit round the dome
+  shotAt(ctx, fin - 0.6, at.clone().add(V(0, 2.5, 0)), { dist: 11, pitch: 0.25, yaw: 0.2, speed: 2 });   // up the beam as the great blade drops
+  shotAt(ctx, fin + 0.2, at.clone().add(V(0, 0.6, 0)), { dist: 10, pitch: 0.5, yaw: -0.2, speed: 1.5 });
+  // the beam over the target, and motes of light drawn in to it
+  v.pillar(at, [0.6, 0.85, 1], 0.28, 14, W + 0.4, { intensity: 0.7 });
+  v.light(ctr.clone().setY(ctr.y + 2), col, 20, W + 0.4, 8);
+  ticker(v, W, (k, dt) => { if (Math.random() < dt * 30) { const d = V(rand(-1, 1), rand(0, 1), rand(-1, 1)).normalize(), p = ctr.clone().addScaledVector(d, rand(2.2, 3)); v.spark(p.x, p.y, p.z, { vx: -d.x * 2, vy: -d.y * 2, vz: -d.z * 2, life: 0.6, size: 0.04, r: 0.75, gg: 0.92, b: 1, shape: 0 }); } });
+  // the dome: blades on a sphere round it (its upper part: the lowest at the ground), aimed in, turning slowly
+  const base = Array.from({ length: N }, (_, i) => { const y = -0.28 + (i + 0.5) / N * 1.25, r = Math.sqrt(Math.max(0, 1 - y * y)), f = i * 2.39996; return V(Math.cos(f) * r, y, Math.sin(f) * r); });
+  let turn = 0; ticker(v, W + 0.5, (k, dt) => { turn += dt * 0.5; });
+  const seat = i => { const b = base[i], c = Math.cos(turn), sn = Math.sin(turn); return ctr.clone().add(V((b.x * c - b.z * sn) * R, b.y * R, (b.x * sn + b.z * c) * R)); };
+  const blades = base.map((_, i) => {
+    const s = swordMesh(col, 0.8), b = { s, gone: false, flying: false }, appear = 0.2 + i * 0.05; s.visible = false;
+    v.timed(s, W + 0.6, (k, dt, t) => {
+      if (b.gone) { s.visible = false; return; } if (b.flying || t < appear) return;
+      const g = Math.min(1, (t - appear) / 0.3), p = seat(i); s.visible = true; s.position.copy(p); pointAlong(s, ctr.clone().sub(p)); s.scale.setScalar(0.8 * g + 0.01);
+      if (g < 1 && Math.random() < 0.3) v.spark(p.x, p.y, p.z, { life: 0.3, size: 0.06, size1: 0.01, r: 0.8, gg: 0.95, b: 1, shape: 0 });
+    });
+    return b;
+  });
+  // the cuts: on each sound three blades streak through it to the far side, each leaving a crescent of light
   cueAt(ctx, F);
-  for (let i = 0; i < n; i++) {
-    const s = swordMesh(col, 1.05), rib = v.ribbon({ col, width: 0.08, n: 14 }); swords.push(s);
-    const a0 = i / n * Math.PI * 2, launch = F + tr[i % tr.length] - 0.22 - T, appear = i * 0.05;   // (a dive takes 0.22 s: it strikes on its sound)
-    let from = null, hit = false;
-    v.timed(s, launch + 0.5, (k, dt, t) => {
-      if (t < appear) { s.visible = false; return; } s.visible = true;
-      if (t < launch) {   // on the wheel: blades pointing outwards, the wheel in the camera's plane
-        const a = a0 + spin, out = B.right.clone().multiplyScalar(Math.cos(a)).add(V(0, Math.sin(a), 0)), g = Math.min(1, (t - appear) / 0.25);
-        s.position.copy(hub).add(out.clone().multiplyScalar(R * (0.3 + 0.7 * g))); pointAlong(s, out); s.scale.setScalar(1.05 * g + 0.01); from = s.position.clone();
-        return;
-      }
-      const f = Math.min(1, (t - launch) / 0.22), tg = at.clone().setY(at.y + 0.5), ctrl = from.clone().add(from.clone().sub(hub).multiplyScalar(1.2));
-      const p = bezier(from, ctrl, tg, ease(f)), nx = bezier(from, ctrl, tg, Math.min(1, ease(f) + 0.05));
-      s.position.copy(p); pointAlong(s, p.clone().sub(nx)); rib.push(p);
-      if (f >= 1 && !hit) { hit = true; s.visible = false; rib.end(); v.burst(tg, { n: 16, speed: 3.5, cols: [[1, 1, 1], col], size: 0.05, life: 0.45, shape: 1 }); v.ring(tg, col, 1.1, 0.25, { vertical: true, yaw: yawOf(facing(from, tg)), y: tg.y }); v.flash(col, 0.06); v.shake(0.06, 0.1); glowTargets(ctx, 0.6, 0.2); }
+  tr.forEach((d, i) => {
+    for (const j of [i, i + 8, i + 16]) {
+      const b = blades[j];
+      ctx.until(F + d - 0.06).then(() => {
+        b.flying = true; const from = b.s.position.clone(), to = ctr.clone().multiplyScalar(2).sub(from), dir = to.clone().sub(from).normalize(), rib = v.ribbon({ col, width: 0.09, n: 10 }), core = v.ribbon({ col: [1, 1, 1], width: 0.025, n: 8 });
+        let cut = false;
+        v.timed(new THREE.Object3D(), 0.12, k => { const p = from.clone().lerp(to, k); b.s.position.copy(p); pointAlong(b.s, dir); rib.push(p); core.push(p);
+          if (k > 0.45 && !cut) { cut = true; slashArc(v, ctr, [0.6, 0.9, 1], rand(0.55, 0.8), 0.35); v.burst(ctr, { n: 10, speed: 3, cols: [[1, 1, 1], col], size: 0.045, life: 0.35, shape: 1 }); v.flash(col, 0.05); v.shake(0.05, 0.08); glowTargets(ctx, 0.6, 0.15); } },
+          () => { rib.end(); core.end(); b.gone = true; v.burst(to, { n: 8, speed: 1.2, cols: [col, [1, 1, 1]], size: 0.04, life: 0.5, g: 0 }); });
+      });
+    }
+  });
+  // the blow: a colossal blade of light drops down the beam and pierces it; every cut flares at once
+  await ctx.until(fin - 0.35);
+  const big = swordMesh([0.7, 0.95, 1], 3.4), top = at.clone().setY(at.y + 11), end = at.clone().setY(at.y - 0.5), rib = v.ribbon({ col, width: 0.5, n: 14 });
+  big.rotation.x = Math.PI;
+  v.timed(big, 1.4, (k, dt, t) => { const f = Math.min(1, t / 0.35); big.position.copy(top).lerp(end, f * f); if (f < 1) rib.push(big.position.clone().setY(big.position.y + 2.6)); else rib.end(); if (t > 1.1) big.scale.setScalar(3.4 * Math.max(0.001, (1.4 - t) / 0.3)); });
+  await ctx.until(fin);
+  v.flash([0.85, 0.95, 1], 0.8); v.impact(at, col, 1.8); v.hitstop = 0.16; v.screen.chroma = 0.5;
+  v.pillar(at, [0.6, 0.85, 1], 0.7, 9, 1.0, { intensity: 2, grow: 1 }); v.ring(at, col, 5, 0.9, { intensity: 1.6 }); v.ring(at, [1, 1, 1], 2.5, 0.5);
+  for (let i = 0; i < 8; i++) slashArc(v, ctr, [0.6, 0.9, 1], rand(0.7, 1.2), 0.6);
+  for (let i = 0; i < 40; i++) v.spark(ctr.x, ctr.y, ctr.z, { vx: rand(-4, 4), vy: rand(-1, 4), vz: rand(-4, 4), g: 5, life: rand(0.6, 1), size: rand(0.03, 0.06), r: 0.8, gg: 0.95, b: 1, shape: 0, flicker: 1, ph: rand(0, 9), floor: at.y + 0.02 });   // glittering shards
+  ctx.hit(); await ctx.until(E + 0.3); outro(ctx);
+}
+// 怒劍式: [ROM fx 7] (林雲's, at Lv 48) the original raises his swords into a spinning star over the target and strikes it with them one
+// by one, one on each of its eight sounds (3.42 s after the cast begins, data/spellsound.js apart), the blow at 6.52 s.
+// Remade [the user's call, 2026-10-30: next-gen, no wheel]: the sky turns blood-red and the ground under the target glows
+// hot; sixteen blades burst out of the earth round it on trails of fire and spiral up into a crown of swords aimed down
+// at it, red lightning crackling between them, embers rising. On each sound two opposite blades tear free and plunge
+// through the target into the ground, where they stay, a cage of glowing blades; after the last, the cage flares and
+// erupts in a column of fire, the blades shatter into sparks: the blow.
+async function furySwords(ctx) {
+  const v = ctx.vfx, at = ctx.at.clone(), col = [1, 0.26, 0.05], hot = [1, 0.55, 0.15], F = 3.42, E = 6.52, N = 16;   // (deep: additive light blooms toward white)
+  await intro(ctx, col, { dur: 900, dist: 10, pitch: 0.4 });
+  DARK(ctx, 0.6, 0.3, 0.85, 0.9);   // (the grade darkens each channel by these: red least, a blood-red sky)
+  const T = ctx.now(), tr = ctx.track.length ? ctx.track : [0, 0.35, 0.7, 1.05, 1.4, 1.75, 2.1, 2.45], last = F + tr[tr.length - 1], fin = last + 0.15, W = fin - T;
+  const hub = at.clone().setY(at.y + 2.7), R = 1.25, tg = at.clone().setY(at.y + 0.5);
+  cueAt(ctx, F);
+  // the heat: the ground glows under the target, embers rise round it, a dull red light swells over it
+  v.decal(at, [1, 0.32, 0.08], 1.5, W + 0.6, { in: 1.2, intensity: 0.75, flicker: true });
+  v.light(hub, col, 26, W + 0.3, 9);
+  const core = glowCard(v, col, 1.1); core.position.copy(hub); v.timed(core, W, (k, dt, t) => { const g = Math.min(1, t / 1.5); core.scale.setScalar(0.4 + 0.9 * g + 0.08 * Math.sin(t * 23)); core.material.opacity = 0.45 + 0.35 * g; });
+  ticker(v, W, (k, dt) => { if (Math.random() < dt * 40) { const a = rand(0, 6.28), r = rand(0, 1.3); v.spark(at.x + Math.cos(a) * r, at.y + 0.05, at.z + Math.sin(a) * r, { vy: rand(0.8, 2.2), vx: rand(-0.2, 0.2), vz: rand(-0.2, 0.2), life: rand(0.8, 1.4), size: rand(0.03, 0.055), r: 1, gg: rand(0.4, 0.7), b: 0.15, shape: 0, flicker: 1, ph: rand(0, 9) }); } });
+  // the crown: each blade bursts from the ground at its own bearing, spirals in and up to its place, tip down at the target
+  let spin = 0; ticker(v, W, (k, dt, t) => { spin += dt * Math.min(3.2, 0.6 + t * 1.4); });
+  const blades = [], seat = j => { const a = j / N * Math.PI * 2 + spin; return hub.clone().add(V(Math.cos(a) * R, Math.sin(a * 3 + spin) * 0.06, Math.sin(a) * R)); };
+  for (let j = 0; j < N; j++) {
+    const a0 = j / N * Math.PI * 2, from = at.clone().add(V(Math.cos(a0) * 3.0, 0, Math.sin(a0) * 3.0)), appear = 0.15 + j * 0.055, rise = 0.95;
+    from.y = effectH(from.x, from.z);
+    const s = swordMesh(col, 0.95), fire = v.ribbon({ col, width: 0.11, n: 18 }), core2 = v.ribbon({ col: hot, width: 0.03, n: 12 }), b = { s, stuck: null, gone: false };
+    blades.push(b); s.visible = false;
+    later(appear * 1000, () => { v.burst(from.clone().setY(from.y + 0.1), { n: 12, speed: 2.4, cols: [hot, col], size: 0.05, life: 0.5, g: 5, up: 0.8, shape: 1, floor: from.y + 0.02 }); v.decal(from, col, 0.35, 0.8, { intensity: 0.8 }); });
+    v.timed(s, W + 0.6, (k, dt, t) => {
+      if (b.gone) { s.visible = false; return; }
+      if (b.stuck) return;
+      if (t < appear) return;
+      s.visible = true;
+      const f = Math.min(1, (t - appear) / rise), e = ease(f), place = seat(j);
+      if (f < 1) {   // out of the ground, round and up: a spiral that closes on its seat
+        const a = a0 + (1 - e) * -1.6 + spin * e, r = 3.0 + (R - 3.0) * e, p = at.clone().add(V(Math.cos(a) * r, 0, Math.sin(a) * r)); p.y = from.y + (place.y - from.y) * Math.sin(e * Math.PI / 2) + Math.sin(e * Math.PI) * 0.6;
+        s.position.copy(p); pointAlong(s, V(0, 1, 0).lerp(tg.clone().sub(p).normalize(), e)); fire.push(p); core2.push(p);
+      } else { s.position.copy(place); pointAlong(s, tg.clone().sub(place)); fire.push(place); core2.push(place); if (t - appear > rise + 0.25) { fire.end(); core2.end(); } }
     });
   }
-  await ctx.until(last + 0.1);
-  v.flash([1, 1, 1], 0.5); v.impact(at, col, 1.5); v.decal(at, col, 1.5, 1.4, { intensity: 0.8 }); v.hitstop = 0.12;
-  ctx.hit(); await ctx.until(E - 0.2); outro(ctx);
+  // red lightning crackling between neighbouring blades of the crown
+  ticker(v, W - 0.2, (k, dt, t) => { if (t > 1.6 && Math.random() < dt * 9) { const j = (Math.random() * N) | 0, A = blades[j], B = blades[(j + 1) % N]; if (!A.stuck && !B.stuck && A.s.visible && B.s.visible) v.bolt(A.s.position.clone(), B.s.position.clone(), [1, 0.35, 0.2], 0.09, { width: 0.025, jag: 0.25 }); } });
+  later(Math.max(0, (F - 0.7 - ctx.now()) * 1000), () => ctx.cam.shot(at.clone().add(V(0, 1.3, 0)), { cine: true, dist: 8.5, pitch: 0.5, yaw: 0.35, speed: 1.6 }));   // in on the crown (not lower: a cliff by the target would come between)
+  // the strikes: on each sound two opposite blades tear free and plunge through the target into the ground
+  tr.forEach((d, i) => {
+    for (const j of [i % N, (i + N / 2) % N]) {
+      const b = blades[j], launch = F + d - 0.16;
+      ctx.until(launch).then(() => {
+        const from = b.s.position.clone(), out = from.clone().sub(hub).setY(0).normalize(), stick = at.clone().addScaledVector(out, -0.42); stick.y = at.y - 0.12;   // (through him: it lands on his far side)
+        const dir = stick.clone().sub(from).normalize(), fire = v.ribbon({ col, width: 0.16, n: 14 }), white = v.ribbon({ col: [1, 0.75, 0.4], width: 0.045, n: 10 });
+        b.stuck = true;
+        v.timed(new THREE.Object3D(), 0.16, (k) => {
+          const p = from.clone().addScaledVector(out, 0.25 * Math.sin(Math.min(1, k * 3) * Math.PI)).lerp(stick, Math.max(0, (k - 0.3) / 0.7) ** 1.6);   // a hitch back, then the plunge
+          b.s.position.copy(p); pointAlong(b.s, dir); fire.push(p); white.push(p);
+        }, () => {
+          b.s.position.copy(stick); pointAlong(b.s, dir); fire.end(); white.end();
+          v.burst(tg, { n: 18, speed: 3.6, cols: [[1, 1, 1], hot, col], size: 0.05, life: 0.45, shape: 1 });
+          v.ring(tg, col, 1.2, 0.22, { vertical: true, yaw: yawOf(out), y: tg.y, intensity: 2.2 });
+          v.decal(stick, hot, 0.3, 1.2, { intensity: 0.9 }); v.smokePuff(stick.x, at.y + 0.1, stick.z, { vy: 0.5, life: 0.9, size: 0.2, size1: 0.6, tint: [0.35, 0.22, 0.18] });
+          v.flash(col, 0.07); v.shake(0.08, 0.1); v.hitstop = Math.max(v.hitstop, 0.035); glowTargets(ctx, 0.7, 0.18);
+          for (const c of b.s.children) if (c.material && c.material.emissive) c.material.emissiveIntensity = 1.4;   // (stuck: glowing hot)
+        });
+      });
+    }
+  });
+  // the blow: the cage flares, then erupts in a column of fire; the blades shatter into sparks
+  await ctx.until(fin - 0.18);
+  for (const b of blades) for (const c of b.s.children) if (c.material && c.material.emissive) { c.material.emissive.setRGB(1, 0.4, 0.1); c.material.emissiveIntensity = 3; }
+  v.light(tg, hot, 40, 0.5, 6);
+  await ctx.until(fin);
+  v.flash([1, 0.55, 0.3], 0.5); v.impact(at, col, 1.9); v.hitstop = 0.15; v.shake(0.3, 0.45);
+  v.pillar(at, [1, 0.22, 0.03], 0.62, 6.5, 1.0, { intensity: 1.6, grow: 1 }); v.pillar(at, [1, 0.55, 0.15], 0.3, 7, 0.7, { intensity: 1.1 });
+  v.ring(at, col, 4.2, 0.9, { intensity: 1.6, y: at.y + 0.05 }); v.ring(at, [1, 1, 1], 2.4, 0.5, { y: at.y + 0.05 });
+  v.explode(at.clone().setY(at.y + 0.3), 0.7, { tint: [1, 0.6, 0.3] });
+  for (const b of blades) { const p = b.s.position.clone().add(V(0, 0.4, 0)); v.burst(p, { n: 10, speed: 3, cols: [[1, 1, 1], hot, col], size: 0.045, life: 0.6, g: 6, shape: 1, floor: at.y + 0.02 }); b.gone = true; b.s.visible = false; }
+  ctx.hit(); await ctx.until(E + 0.3); outro(ctx);
 }
 // 長虹貫日: [ROM fx 6] one sword streaks back and forth across the area like a rainbow, cutting every cell, until the
 // original's one sound (4.13 s after the cast begins): a flash; the effect over at 5.1 s
@@ -308,32 +413,168 @@ async function bladeOrbit(ctx) {
   glowTargets(ctx, 0.8);
   ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
-// 龍嘯九天: [ROM fx 11] blades whirl up around the target in a dragon's spiral and keep whirling, as long as the original's
-// do (3.5 s), then pour back down onto it, the last on its one sound (5.63 s after the cast begins); over at 6.5 s
-async function bladeCyclone(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone(), n = 14, col = [1, 0.78, 0.4], F = 5.63, E = 6.5;
-  await intro(ctx, col, { dur: 900, dist: 10.5, pitch: 0.34 });
-  DARK(ctx, 0.5, 0.6, 0.8, 0.95);
-  const D = Math.max(1.9, F - 0.2 - (n - 1) * 0.03 - ctx.now());   // (D: until the first blade comes down)
-  swirl(v, at, [1, 0.75, 0.4], 0.5, 1.6, 6, D + 0.3, { speed: 6, twist: 6, foam: [1, 0.95, 0.8], intensity: 0.6 });
-  for (let w = 0; w < D - 1; w += 1.6) later(w * 1000, () => {   // the dragon's spiral climbs again and again while they whirl
-    const dragon = v.ribbon({ col: [1, 0.6, 0.2], width: 0.28, n: 40, fade: 0.5 }), dcore = v.ribbon({ col: [1, 0.95, 0.7], width: 0.07, n: 30 });
-    ticker(v, 1.7, (k, dt, t) => { const a = t * 7, r = 1.2 - k * 0.4; const p = at.clone().add(V(Math.cos(a) * r, 0.2 + k * 6, Math.sin(a) * r)); dragon.push(p); dcore.push(p); }, () => { dragon.end(); dcore.end(); });
+// a Chinese dragon's head, facing +z, about 1.7 long: a sculpted skull and snout (brow ridges over the eyes, cheekbones,
+// a nose bulb, scales), a hinged lower jaw with teeth and fangs, slit-pupilled eyes, branching antlers, cheek frills, a
+// flowing mane, a beard and long whiskers that sway. Returns { group, jaw (the hinge: rotation.x opens it), sway(t) }.
+const scaleTex = once2('dragonScales', () => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#e8c070'; g.fillRect(0, 0, 128, 128);
+  for (let y = -1; y < 9; y++) for (let x = -1; x < 9; x++) { const cx = x * 16 + (y % 2) * 8, cy = y * 14; const gr = g.createRadialGradient(cx, cy - 4, 1, cx, cy, 11); gr.addColorStop(0, '#fff4d0'); gr.addColorStop(0.6, '#f0cc78'); gr.addColorStop(1, '#a87a30');   // (the body's pale gold)
+    g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, 10, 0, Math.PI); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 4); t.colorSpace = THREE.SRGBColorSpace; return t; });
+function once2(k, f) { return () => (once2.c[k] || (once2.c[k] = f())); } once2.c = {};
+function sculpt(geo, fn) { const P = geo.attributes.position, v = V(0, 0, 0); for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); fn(v); P.setXYZ(i, v.x, v.y, v.z); } geo.computeVertexNormals(); return geo; }
+function dragonHead() {
+  const gold = new THREE.MeshStandardMaterial({ map: scaleTex(), color: 0xfff0d0, metalness: 0.55, roughness: 0.38, emissive: 0x6a4a18, emissiveIntensity: 0.8 });
+  const pale = new THREE.MeshStandardMaterial({ color: 0xffe8b0, metalness: 0.35, roughness: 0.45, emissive: 0x5a4818, emissiveIntensity: 0.7 });
+  const ivory = new THREE.MeshStandardMaterial({ color: 0xfff6e0, metalness: 0.1, roughness: 0.4, emissive: 0x403830, emissiveIntensity: 0.5 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xd8401a, metalness: 0.3, roughness: 0.5, emissive: 0x7a1808, emissiveIntensity: 0.9, side: THREE.DoubleSide });
+  const mouthM = new THREE.MeshBasicMaterial({ color: 0x5a0a06 });
+  const g = new THREE.Group();
+  // the skull and upper jaw: a sphere drawn out into a long snout, flat beneath, with brows, cheekbones and a nose
+  const skull = sculpt(new THREE.SphereGeometry(1, 40, 28), v => {
+    let { x, y, z } = v; const f = Math.max(0, z);   // (f: how far into the snout)
+    x *= 0.42 * (1 - 0.42 * f ** 1.2); y *= (y < 0 ? 0.16 : 0.36) * (1 - 0.35 * f ** 1.1); z = z < 0 ? z * 0.45 : z * 0.5 + f ** 1.3 * 0.78;
+    y -= 0.05 * f;
+    const brow = Math.exp(-((Math.abs(x) - 0.22) ** 2 / 0.006 + (z - 0.24) ** 2 / 0.02)) * (y > 0 ? 1 : 0); y += brow * 0.15; x += Math.sign(x) * brow * 0.05;   // brow ridges, jutting over the eyes
+    y += Math.exp(-(x * x) / 0.003) * (y > 0 ? 1 : 0) * Math.max(0, Math.min(1, (0.95 - z) * 3)) * Math.max(0, Math.min(1, (z + 0.1) * 4)) * 0.035;   // a ridge down the snout
+    const cheek = Math.exp(-((z + 0.02) ** 2) / 0.03) * (Math.abs(y) < 0.15 ? 1 : 0.4); x += Math.sign(x) * cheek * 0.08;   // cheekbones
+    const nose = Math.exp(-((Math.abs(x) - 0.09) ** 2 + (z - 1.12) ** 2) / 0.006) * (y > -0.02 ? 1 : 0); y += nose * 0.06;   // nostril bulbs
+    v.set(x, y, z);
   });
-  v.light(at.clone().setY(at.y + 2), col, 24, D + 1, 9);
-  for (let i = 0; i < n; i++) {
-    const s = swordMesh(col, 0.75), rib = v.ribbon({ col, width: 0.06, n: 12 }), ph = i / n * 6.28, down = D + i * 0.03;
-    let top = null, hit = false;
-    v.timed(s, down + 0.4, (k, dt, t) => {
-      if (t < down) { const f = Math.min(1, t / 1.7), a = ph + t * 6, r = 0.9 + f * 0.6; s.position.copy(at).add(V(Math.cos(a) * r, 0.2 + f * 2.8 + Math.sin(ph * 3 + t * 2) * 0.3, Math.sin(a) * r)); pointAlong(s, V(-Math.sin(a), 0.6, Math.cos(a))); top = s.position.clone(); rib.push(s.position); return; }   // (they whirl in view round the target, as the original's)
-      const f = Math.min(1, (t - down) / 0.2), tg = at.clone().add(V(rand(-0.2, 0.2), 0.4, rand(-0.2, 0.2))), p = top.clone().lerp(tg, f * f);
-      s.position.copy(p); pointAlong(s, top.clone().sub(tg)); rib.push(p);
-      if (f >= 1 && !hit) { hit = true; s.visible = false; rib.end(); v.burst(tg, { n: 10, speed: 3, cols: [[1, 1, 1], col], size: 0.05, life: 0.4 }); v.shake(0.06, 0.1); }
-    });
+  g.add(new THREE.Mesh(skull, gold));
+  for (const sg of [-1, 1]) {   // nostrils
+    const n = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), mouthM); n.scale.set(1, 0.45, 0.8); n.position.set(sg * 0.085, 0.07, 1.19); g.add(n);   // (set into the nose)
   }
+  // the lower jaw on its hinge, its mouth dark red inside, teeth along both jaws, two fangs
+  const jaw = new THREE.Group(); jaw.position.set(0, -0.06, -0.05); g.add(jaw);
+  const jawG = sculpt(new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), v => { const f = Math.max(0, v.z); v.set(v.x * 0.3 * (1 - 0.45 * f), v.y * 0.13, v.z * 0.62 + 0.42 + f * 0.25); });
+  jaw.add(new THREE.Mesh(jawG, pale));
+  const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.02, 0.7), mouthM); tongue.position.set(0, -0.03, 0.55); jaw.add(tongue);
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 1.1), mouthM); roof.rotation.x = Math.PI / 2; roof.position.set(0, -0.045, 0.55); g.add(roof);
+  for (const sg of [-1, 1]) for (let i = 0; i < 6; i++) {
+    const z = 0.32 + i * 0.13, w = 0.27 * (1 - 0.42 * Math.max(0, (z - 0.3) / 1.1));
+    const up = new THREE.Mesh(new THREE.ConeGeometry(0.022, i === 4 ? 0.2 : 0.09, 5), ivory); up.position.set(sg * w * 0.85, -0.08 - (i === 4 ? 0.05 : 0), z); up.rotation.x = Math.PI; g.add(up);   // (the fifth: the fang)
+    const lo = new THREE.Mesh(new THREE.ConeGeometry(0.02, i === 2 ? 0.16 : 0.07, 5), ivory); lo.position.set(sg * w * 0.75, 0.02, z - 0.02); jaw.add(lo);
+  }
+  // the eyes: amber, slit-pupilled, glowing, under the brows
+  const eyeM = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.2, 0.5), toneMapped: false }), pupilM = new THREE.MeshBasicMaterial({ color: 0x100400 });
+  for (const sg of [-1, 1]) {
+    const eye = new THREE.Group(); eye.position.set(sg * 0.33, 0.1, 0.26); eye.rotation.y = sg * 1.25; g.add(eye);   // (on the sides, under the brow)
+    eye.add(new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), eyeM));
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), pupilM); pupil.scale.set(0.12, 0.85, 0.3); pupil.position.z = 0.055; eye.add(pupil);
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.095, 14, 8, 0, Math.PI * 2, 0, Math.PI / 5), gold); lid.rotation.x = 0.5; eye.add(lid);   // (a heavy upper lid: a frown)
+  }
+  // antlers: a beam sweeping back and up with two tines; cheek frills; a mane flowing back; a beard
+  const tube = (pts, r, m) => new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, r, 6, false), m);
+  for (const sg of [-1, 1]) {
+    const base = V(sg * 0.17, 0.28, 0.02);
+    g.add(tube([base, base.clone().add(V(sg * 0.1, 0.3, -0.25)), base.clone().add(V(sg * 0.16, 0.5, -0.65)), base.clone().add(V(sg * 0.12, 0.62, -1.05))], 0.032, ivory));
+    g.add(tube([base.clone().add(V(sg * 0.12, 0.38, -0.4)), base.clone().add(V(sg * 0.2, 0.62, -0.38)), base.clone().add(V(sg * 0.22, 0.78, -0.5))], 0.02, ivory));
+    g.add(tube([base.clone().add(V(sg * 0.15, 0.55, -0.75)), base.clone().add(V(sg * 0.28, 0.72, -0.72)), base.clone().add(V(sg * 0.32, 0.86, -0.85))], 0.016, ivory));
+    const frill = new THREE.Shape(); frill.moveTo(0, 0); frill.quadraticCurveTo(-0.15, 0.25, -0.55, 0.22); frill.lineTo(-0.38, 0.1); frill.lineTo(-0.62, 0.02); frill.lineTo(-0.4, -0.06); frill.lineTo(-0.55, -0.18); frill.quadraticCurveTo(-0.2, -0.15, 0, 0);   // a cheek fin, its points streaming back
+    const fr = new THREE.Mesh(new THREE.ShapeGeometry(frill), pale); fr.position.set(sg * 0.38, -0.02, -0.08); fr.rotation.set(0, sg * -1.35 + (sg > 0 ? Math.PI : 0), 0); g.add(fr);
+  }
+  const mane = [];
+  for (let i = 0; i < 9; i++) {   // flowing spines, red with pale roots, fanning back from the crown and down the neck
+    const a = (i - 4) / 4, pts = [V(a * 0.22, 0.22 - Math.abs(a) * 0.08, -0.25), V(a * 0.4, 0.3 - Math.abs(a) * 0.15, -0.7), V(a * 0.55, 0.15 - Math.abs(a) * 0.2, -1.15), V(a * 0.6, -0.05 - Math.abs(a) * 0.2, -1.5)];
+    const m = tube(pts, 0.035 - Math.abs(a) * 0.008, i % 2 ? red : pale); g.add(m); mane.push(m);
+  }
+  for (let i = 0; i < 3; i++) { const b = tube([V((i - 1) * 0.06, -0.1, 0.45), V((i - 1) * 0.09, -0.24, 0.2), V((i - 1) * 0.12, -0.32, -0.15), V((i - 1) * 0.14, -0.3, -0.5)], 0.025, pale); jaw.add(b); }   // the beard, flowing back under the jaw
+  // whiskers: long, from beside the nose, curling back; they sway
+  const whiskers = [-1, 1].map(sg => { const w = new THREE.Group(); w.position.set(sg * 0.13, 0.03, 1.1); g.add(w);
+    w.add(tube([V(0, 0, 0), V(sg * 0.25, -0.05, -0.1), V(sg * 0.5, -0.2, -0.45), V(sg * 0.6, -0.45, -0.95), V(sg * 0.5, -0.7, -1.4)], 0.012, pale)); return w; });
+  return {
+    group: g, jaw,
+    sway(t) { whiskers.forEach((w, i) => { w.rotation.set(Math.sin(t * 3 + i) * 0.25, Math.sin(t * 2.3 + i * 2) * 0.2, 0); }); mane.forEach((m, i) => { m.rotation.x = Math.sin(t * 4 + i * 0.7) * 0.06; }); },
+  };
+}
+// a golden dragon [the user's call, 2026-10-30: large, a real dragon]: a scaled body tapering to its tail, drawn through
+// the points given each frame (head first), its spine crested with blades; a head with antlers, a mane, glowing eyes,
+// whiskers and jaws that open (roar). update(pts) places it; jaw(k) opens the mouth; dispose() takes it away.
+function goldDragon(v, R = 0.32) {
+  const N = 56, S = 140, RS = 12;
+  const mat = new THREE.ShaderMaterial({
+    transparent: false, depthWrite: true, toneMapped: false, side: THREE.DoubleSide, uniforms: { uT: { value: 0 } },
+    vertexShader: `varying vec2 vUv; varying vec3 vN, vV; void main(){ vUv = uv; vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position,1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform float uT; varying vec2 vUv; varying vec3 vN, vV;
+      void main(){
+        vec2 sc = vec2(vUv.x * 150.0, vUv.y * 8.0); sc.y += mod(floor(sc.x), 2.0) * 0.5; vec2 c = fract(sc) - 0.5;
+        float scale = 1.0 - smoothstep(0.2, 0.5, length(c * vec2(1.0, 1.4))), edge = smoothstep(0.32, 0.48, length(c * vec2(1.0, 1.4)));
+        float belly = smoothstep(0.32, 0.48, abs(vUv.y - 0.5));
+        vec3 back = vec3(0.55, 0.32, 0.06), bel = vec3(1.0, 0.86, 0.5), base = mix(back, bel, belly);
+        float ridge = belly < 0.5 ? 1.0 : 0.6;
+        float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2), shine = 0.5 + 0.5 * sin(vUv.x * 60.0 - uT * 6.0);
+        vec3 col = base * (0.55 + 0.6 * scale) - vec3(0.12, 0.08, 0.02) * edge * ridge + vec3(1.0, 0.8, 0.4) * rim * 1.3 + vec3(1.0, 0.7, 0.25) * shine * 0.12;
+        gl_FragColor = vec4(col * 1.25, 1.0); }`,
+  });
+  const body = new THREE.Mesh(new THREE.BufferGeometry(), mat); body.frustumCulled = false; body.renderOrder = 5;
+  // the head, facing +z [the user's call, 2026-10-30: a real dragon's head]: dragonHead below
+  const H = dragonHead(), head = H.group, jawPivot = H.jaw; head.scale.setScalar(R / 0.32 * 1.05);   // (wider than the neck behind it)
+  // the crest: blades along its spine
+  const crest = Array.from({ length: 12 }, (_, i) => swordMesh([1, 0.78, 0.35], 0.5 - i * 0.022));
+  const g = new THREE.Group(); g.add(body, head, ...crest); v.timed(g, 1e9, () => {});
+  const up = V(0, 1, 0), tmp = V(0, 0, 0);
+  return {
+    head,
+    update(pts, t) {
+      mat.uniforms.uT.value = t || 0; H.sway(t || 0);
+      const curve = new THREE.CatmullRomCurve3(pts), geo = new THREE.TubeGeometry(curve, S, R, RS, false), P = geo.attributes.position;
+      for (let i = 0; i <= S; i++) {   // taper: a neck, the full body, a tail thinning to a point
+        const u = i / S, w = u < 0.12 ? 0.62 + u / 0.12 * 0.38 : u < 0.45 ? 1 : Math.max(0.08, 1 - (u - 0.45) / 0.55 * 0.92), c = curve.getPointAt(u);
+        for (let j = 0; j <= RS; j++) { const k = i * (RS + 1) + j; tmp.set(P.getX(k), P.getY(k), P.getZ(k)).sub(c).multiplyScalar(w).add(c); P.setXYZ(k, tmp.x, tmp.y, tmp.z); }
+      }
+      body.geometry.dispose(); body.geometry = geo;
+      const h = pts[0], nx = pts[1]; head.position.copy(h); head.lookAt(h.clone().sub(nx).add(h));
+      crest.forEach((c2, i) => {
+        const u = 0.1 + i * 0.045, p = curve.getPointAt(u), tg = curve.getTangentAt(u), side = tg.clone().cross(up).normalize(), dorsal = side.lengthSq() < 1e-6 ? up.clone() : side.cross(tg).normalize();
+        if (dorsal.y < 0) dorsal.negate();
+        c2.position.copy(p).addScaledVector(dorsal, R * 0.7); pointAlong(c2, dorsal.clone().addScaledVector(tg, 0.6));
+      });
+    },
+    jaw(k) { jawPivot.rotation.x = 0.55 * k; },
+    sway(t) { H.sway(t); },
+    dispose() { g.visible = false; body.geometry.dispose(); },
+  };
+}
+// 龍嘯九天: [ROM fx 11] blades whirl up round the target in a dragon's spiral and keep whirling (3.5 s), then pour back
+// down onto it, the last on its one sound (5.63 s after the cast begins); over at 6.5 s. Remade as 黃天化's last spell
+// [the user's calls, 2026-10-30: next-gen; a large, real dragon]: a great golden dragon, its spine crested with his
+// blades, bursts up out of the ground beside the target, coils twice round it and climbs into the sky, rears and roars;
+// then it dives: its head strikes the target on the sound and its whole body pours down after it into the earth
+async function bladeCyclone(ctx) {
+  const v = ctx.vfx, at = ctx.at.clone(), col = [1, 0.78, 0.35], F = 5.63, E = 6.5, gold = [1, 0.85, 0.45];
+  await intro(ctx, col, { dur: 900, dist: 11, pitch: 0.34 });
+  DARK(ctx, 0.55, 0.6, 0.8, 0.95);
+  const T0 = ctx.now(), dive = 0.4, D = F - dive - T0, top = at.clone().setY(at.y + 7.5), R0 = 2.3, start = at.clone().add(V(R0, 0, 0));   // (D: the head's climb, to the top of its dive)
+  // the head's way: up out of the ground, two coils round the target, up into the sky in a loop, then straight down and on into the earth
+  const path = t => {
+    if (t <= 0) return start.clone().add(V(0, t * 5, 0));
+    if (t < D * 0.55) { const u = t / (D * 0.55), a = u * Math.PI * 4, r = R0 - u * 0.3; return at.clone().add(V(Math.cos(a) * r, u * 3.6, Math.sin(a) * r)); }
+    if (t < D) { const u = (t - D * 0.55) / (D * 0.45), a = Math.PI * 4 + u * Math.PI * 1.6, r = (R0 - 0.3) + Math.sin(u * Math.PI) * 1.8; return at.clone().add(V(Math.cos(a) * r, 3.6 + Math.sin(u * Math.PI * 0.5) * 3.9, Math.sin(a) * r)).lerp(top, u * u); }
+    const u = (t - D) / dive; return u <= 1 ? top.clone().lerp(at.clone().setY(at.y + 0.5), u * u) : at.clone().setY(at.y + 0.5 - (u - 1) * dive * 14);
+  };
+  shotAt(ctx, T0 + 0.3, at.clone().add(V(0, 1.6, 0)), { dist: 12, pitch: 0.3, yaw: 0.5, speed: 1.2 });   // round the coils
+  shotAt(ctx, T0 + D * 0.55, at.clone().add(V(0, 4.5, 0)), { dist: 14, pitch: 0.22, yaw: -0.3, speed: 1.4 });   // up as it climbs into the sky
+  shotAt(ctx, F - 0.55, at.clone().add(V(0, 1.4, 0)), { dist: 11, pitch: 0.6, yaw: 0.2, speed: 2.5 });   // over the top for the dive
+  v.light(at.clone().setY(at.y + 2.5), col, 26, F + 1 - T0, 11);
+  crack(v, start.clone().add(V(-0.6, 0, -0.5)), start.clone().add(V(0.6, 0, 0.5)), col, 1.4, { open: 0.15, y: effectH(start.x, start.z) }); dustBurst(v, start, 1.2); v.shake(0.2, 0.4);   // where it bursts out
+  const dragon = goldDragon(v, 0.34), N = 56, lag = 0.022;   // (its length: N * lag seconds of its own way)
+  let roared = false, entered = false;
+  v.timed(new THREE.Object3D(), F - T0 + N * lag + 0.2, (k, dt, t) => {
+    const pts = []; for (let i = 0; i < N; i++) pts.push(path(t - i * lag));
+    dragon.update(pts, t);
+    const h = pts[0];
+    if (Math.random() < dt * 30) v.spark(h.x + rand(-0.2, 0.2), h.y, h.z + rand(-0.2, 0.2), { vx: rand(-0.5, 0.5), vy: rand(-0.6, 0.3), vz: rand(-0.5, 0.5), life: 0.7, size: rand(0.04, 0.07), r: 1, gg: 0.85, b: 0.45, shape: 0, flicker: 1, ph: rand(0, 9) });   // gold dust off it
+    if (t < 0.6 && Math.random() < dt * 20) v.smokePuff(start.x + rand(-0.4, 0.4), start.y + 0.1, start.z + rand(-0.4, 0.4), { vy: rand(0.5, 1.2), life: 1.2, size: 0.4, size1: 1.0, tint: [0.45, 0.4, 0.32] });   // the earth it broke out of
+    const roar = t - (D - 0.55); dragon.jaw(roar > 0 && roar < 0.6 ? Math.sin(roar / 0.6 * Math.PI) : t > D ? 0.8 : 0.15);   // it rears and roars, and dives jaws open
+    if (!roared && roar > 0.15) { roared = true; v.ring(h, gold, 2.6, 0.6, { vertical: true, yaw: ctx.cam.yaw || 0, y: h.y, intensity: 2 }); v.flash(gold, 0.15); v.shake(0.12, 0.4); }
+    if (t > D + dive && Math.random() < dt * 25) { if (!entered) entered = true; v.smokePuff(at.x + rand(-0.3, 0.3), at.y + 0.1, at.z + rand(-0.3, 0.3), { vx: rand(-1.5, 1.5), vy: rand(0.4, 1), vz: rand(-1.5, 1.5), drag: 2, life: 1, size: 0.4, size1: 1.1, tint: [0.5, 0.42, 0.3] }); v.spark(at.x, at.y + 0.2, at.z, { vx: rand(-3, 3), vy: rand(2, 5), vz: rand(-3, 3), g: 10, life: 0.8, size: 0.06, r: 1, gg: 0.8, b: 0.4, shape: 1, floor: at.y + 0.02 }); }   // its body pouring into the earth
+  }, () => dragon.dispose());
   await ctx.until(F);
-  v.flash([1, 0.9, 0.6], 0.5); v.impact(at, col, 1.6); v.ring(at, col, 4, 0.8, { intensity: 1.2 }); dustBurst(v, at, 1.2); glowTargets(ctx, 0.9);
-  ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
+  v.flash([1, 0.9, 0.6], 0.65); v.impact(at, col, 1.9); v.hitstop = 0.16; v.screen.chroma = 0.45;
+  v.pillar(at, gold, 0.85, 7, 1.0, { intensity: 1.6, grow: 1 }); v.ring(at, col, 5.5, 0.9, { intensity: 1.5 }); v.ring(at, [1, 1, 1], 2.6, 0.4); dustBurst(v, at, 1.6); glowTargets(ctx, 0.9);
+  for (let i = 0; i < 4; i++) { const a2 = i / 4 * 6.28 + 0.4; crack(v, at.clone(), at.clone().add(V(Math.cos(a2) * 2, 0, Math.sin(a2) * 2)), col, 1.8, { open: 0.12, y: at.y }); }
+  ctx.hit(); await ctx.until(E + 0.4); outro(ctx);
 }
 
 // ---------------------------------------------------------------- arrows (黃飛虎)
@@ -391,29 +632,58 @@ async function arrowStorm(ctx) {
   v.ring(at, wind, spreadOf(cells) * 2 + 2, 0.7);
   ctx.hit(); await ctx.until(E - 0.2); outro(ctx);
 }
-// 颶風矢: [ROM fx 15] three arrows fly with the original's first sound (2.13 s after the cast begins); a towering
-// water-blue cyclone lifts the target, spins it high and drops it, slamming down on the second (4.23 s); over at 5.3 s
+// 颶風矢: [ROM fx 15] an arrow flies with the original's first sound (2.13 s after the cast begins); a cyclone lifts the
+// target, spins it high and drops it, slamming down on the second (4.23 s); over at 5.3 s. Remade as 黃飛虎's last spell
+// [the user's call, 2026-10-30: next-gen]: wind gathers round him and winds onto the arrow; one great arrow flies in a
+// corkscrew of wind, rings of air bursting off it; where it strikes a towering cyclone tears up out of the ground,
+// stones and dust whirling up it, the target lifted and spun at its heart; on the second sound the cyclone slams down
+// and bursts out across the ground
 async function hurricane(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone(), col = [0.5, 0.85, 1], c = ctx.caster.chest(), B = basis(ctx), F = 2.13, E = 5.27;
+  const v = ctx.vfx, at = ctx.at.clone(), col = [0.55, 0.9, 1], c = ctx.caster.chest(), F = 2.13, E = 5.27;
   await intro(ctx, col, { dur: 600, dist: 10, pitch: 0.4, yaw: -0.5 });
-  await channel(ctx, col, F); ctx.cue();
+  const cp = ctx.caster.pos.clone();
+  shotAt(ctx, ctx.now() + 0.05, cp.clone().lerp(at, 0.3).add(V(0, 0.8, 0)), { dist: 7.5, pitch: 0.3, yaw: yawToward(ctx, cp, at, 1.1), speed: 1.8 });   // over his shoulder for the draw
+  shotAt(ctx, F + 0.05, at.clone().add(V(0, 2.6, 0)), { dist: 12, pitch: 0.3, yaw: -0.3, speed: 1.6 });   // up the cyclone
+  shotAt(ctx, F + (ctx.track[1] || 2.1) - 0.5, at.clone().add(V(0, 0.7, 0)), { dist: 9, pitch: 0.5, yaw: 0.45, speed: 2.2 });   // down, swung round, for the slam
+  // the draw: wind gathers round him and winds in onto the arrow
+  const W = Math.max(0.5, F - 0.25 - ctx.now()), winds = [0, 1, 2].map(() => v.ribbon({ col, width: 0.05, n: 18 }));
+  ticker(v, W, (k, dt, t) => {
+    winds.forEach((r, i) => { const a = t * 9 + i * 2.09, rr = 1.3 * (1 - k) + 0.2; r.push(c.clone().add(V(Math.cos(a) * rr, Math.sin(t * 4 + i) * 0.3 * (1 - k), Math.sin(a) * rr))); });
+    if (Math.random() < dt * 30) { const a = rand(0, 6.28), r = rand(1, 1.8); v.spark(c.x + Math.cos(a) * r, c.y + rand(-0.5, 0.8), c.z + Math.sin(a) * r, { vx: -Math.cos(a) * 2.2, vz: -Math.sin(a) * 2.2, life: 0.45, size: 0.04, r: 0.8, gg: 0.95, b: 1, shape: 0 }); }
+  }, () => winds.forEach(r => r.end()));
+  v.light(c, col, 10, W + 0.3, 5);
+  await ctx.until(F - 0.25);
   ctx.pose(null); ctx.caster.act = { kind: 'atk', frame: 2 };
-  const tg = at.clone().setY(at.y + 0.6);
-  for (let i = -1; i <= 1; i++) {
-    const g = arrowMesh(col, 0.7), rib = v.ribbon({ col, width: 0.07, n: 16 }), off = B.right.clone().multiplyScalar(i * 0.5).add(V(0, i * 0.15, 0));
-    v.timed(g, 0.4, k => { const p = bezier(c, c.clone().lerp(tg, 0.5).add(off), tg, k); g.position.copy(p); pointAlong(g, tg.clone().sub(p)); rib.push(p); }, () => { rib.end(); g.visible = false; });
-  }
-  await ctx.wait(400); ctx.caster.act = null;
-  v.impact(tg, col, 0.9);
-  const a = tgts(ctx)[0];
-  swirl(v, at, [0.2, 0.55, 0.9], 0.6, 1.3, 5.5, 2.6, { speed: 7, twist: 6, foam: [0.85, 0.95, 1], intensity: 0.75, normal: true });
-  swirl(v, at, [0.5, 0.8, 1], 0.4, 0.9, 6, 2.6, { speed: -8, twist: 3, intensity: 0.35 });
-  for (let i = 0; i < 60; i++) later(i * 35, () => { const ang = rand(0, 6.28), r = rand(0.5, 1.4); v.spark(at.x + Math.cos(ang) * r, at.y + rand(0.1, 3), at.z + Math.sin(ang) * r, { vy: rand(2, 4), life: 1, size: 0.06, r: 0.8, gg: 0.95, b: 1, shape: 1, orb: { x: at.x, z: at.z, w: 9 } }); });
-  const face0 = a ? a.u.facing : null, S = F + (ctx.track[1] || 2.1), drop = S - 0.25 - ctx.now();   // (S: the slam, on the second sound; it falls for 0.25 s)
-  if (a) ticker(v, drop + 0.55, (k, dt, t) => { a.lift = t < drop ? ease(Math.min(1, t / 1.2)) * 2.6 : 2.6 * (1 - ((t - drop) / 0.25) ** 2); a.lift = Math.max(0, a.lift); a.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * 16) % 4]; },
+  // the shot: one great arrow in a corkscrew of wind, rings of air bursting off it
+  const tg = at.clone().setY(at.y + 0.6), dir = tg.clone().sub(c).normalize(), side = V(-dir.z, 0, dir.x).normalize(), up = side.clone().cross(dir).normalize();
+  const g = arrowMesh(col, 1.1), core = v.ribbon({ col: [1, 1, 1], width: 0.05, n: 14 }), helix = [0, 1].map(() => v.ribbon({ col, width: 0.07, n: 26 }));
+  v.timed(g, 0.25, k => {
+    const p = c.clone().lerp(tg, k); g.position.copy(p); pointAlong(g, dir); core.push(p);
+    helix.forEach((r, i) => { const a = k * 26 + i * Math.PI; r.push(p.clone().addScaledVector(side, Math.cos(a) * 0.22).addScaledVector(up, Math.sin(a) * 0.22)); });
+    if (Math.random() < 0.5) v.ring(p, col, 0.6, 0.25, { vertical: true, yaw: yawOf(dir), y: p.y, intensity: 1 });
+  }, () => { core.end(); helix.forEach(r => r.end()); g.visible = false; });
+  await ctx.until(F); ctx.cue(); ctx.caster.act = null;
+  v.impact(tg, col, 1.0);
+  // the cyclone: towering, stones and dust whirling up it, the target lifted and spun at its heart
+  const a = tgts(ctx)[0], S = F + (ctx.track[1] || 2.1), L = S - ctx.now() + 0.25;
+  swirl(v, at, [0.2, 0.55, 0.9], 0.55, 1.6, 7, L, { speed: 8, twist: 7, foam: [0.85, 0.95, 1], intensity: 0.8, normal: true, sway: true });
+  swirl(v, at, [0.55, 0.85, 1], 0.4, 1.1, 7.5, L, { speed: -9, twist: 3, intensity: 0.4 });
+  swirl(v, at, [0.85, 0.95, 1], 0.9, 2.2, 2.2, L, { speed: 5, twist: 2, intensity: 0.3 });
+  const streaks = [0, 1, 2, 3].map(() => v.ribbon({ col: [0.85, 0.97, 1], width: 0.04, n: 20 }));
+  ticker(v, L, (k, dt, t) => {
+    streaks.forEach((r, i) => { const ang = t * (7 + i) + i * 1.57, rr = 0.7 + i * 0.25, h = ((t * 1.6 + i * 0.25) % 1) * 6; r.push(at.clone().add(V(Math.cos(ang) * rr * (1 + h * 0.12), 0.2 + h, Math.sin(ang) * rr * (1 + h * 0.12)))); });
+    if (Math.random() < dt * 50) { const ang = rand(0, 6.28), r = rand(0.5, 1.4); v.spark(at.x + Math.cos(ang) * r, at.y + rand(0.05, 0.6), at.z + Math.sin(ang) * r, { vy: rand(1.5, 3.5), life: rand(1, 1.5), size: rand(0.05, 0.09), r: 0.55, gg: 0.5, b: 0.42, shape: 1, orb: { x: at.x, z: at.z, w: 6 } }); }   // stones
+    if (Math.random() < dt * 14) { const ang = rand(0, 6.28), r = rand(0.8, 1.6); v.smokePuff(at.x + Math.cos(ang) * r, at.y + 0.2, at.z + Math.sin(ang) * r, { vy: rand(0.8, 1.6), life: 1.2, size: 0.4, size1: 1.1, tint: [0.5, 0.46, 0.4], orb: { x: at.x, z: at.z, w: 4 } }); }   // dust
+  }, () => streaks.forEach(r => r.end()));
+  const face0 = a ? a.u.facing : null, drop = S - 0.25 - ctx.now();   // (it falls for 0.25 s: the slam on the second sound)
+  if (a) ticker(v, drop + 0.55, (k, dt, t) => { a.lift = t < drop ? ease(Math.min(1, t / 1.2)) * 2.8 : 2.8 * (1 - ((t - drop) / 0.25) ** 2); a.lift = Math.max(0, a.lift); a.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * 16) % 4]; },
     () => { a.lift = 0; a.u.facing = face0; });
+  // the slam: the cyclone comes down with it and bursts out across the ground
   await ctx.until(S);
-  v.flash([0.85, 0.95, 1], 0.55); v.shake(0.25, 0.4); v.ring(at, col, 4, 0.7); dustBurst(v, at, 1); v.hitstop = 0.1;
+  v.flash([0.85, 0.95, 1], 0.6); v.shake(0.3, 0.45); v.hitstop = 0.12;
+  v.ring(at, col, 5, 0.8, { intensity: 1.6 }); v.ring(at, [1, 1, 1], 2.4, 0.4); dustBurst(v, at, 1.4); crack(v, at.clone().add(V(-0.7, 0, 0.3)), at.clone().add(V(0.7, 0, -0.3)), col, 1.4, { open: 0.1, y: at.y });
+  for (let i = 0; i < 24; i++) { const ang = i / 24 * 6.28; v.smokePuff(at.x, at.y + 0.15, at.z, { vx: Math.cos(ang) * 5, vz: Math.sin(ang) * 5, vy: 0.2, drag: 2.5, life: 0.9, size: 0.4, size1: 1.0, tint: [0.75, 0.85, 0.9] }); }   // the gust out along the ground
+  glowTargets(ctx, 0.8, 0.5);
   ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
 
@@ -491,28 +761,61 @@ async function quake(ctx) {
   await ctx.until(E - 0.1); outro(ctx);
 }
 // 昇龍拳: [ROM fx 21] he leaps; a dragon of fire bursts up out of the ground under the target and climbs to the sky,
-// then falls back on it as a fireball, striking on the original's one sound (3.12 s after the cast begins); over at 5 s
+// then falls back on it as a fireball, striking on the original's one sound (3.12 s after the cast begins); over at 5 s.
+// Remade as 土行孫's last spell [the user's calls, 2026-10-30: next-gen; he goes up with it and comes down on the ground]:
+// fire gathers round him while the ground under the target splits with glowing cracks and trembles; a dragon of fire
+// tears up out of it round a column of flame and he leaps into it, uppercutting the target, the two carried up spinning;
+// at the top he turns and dives back down wrapped in a great fireball and drives his fist into the ground beside it: a
+// crater of fire; then he hops back to his cell
 async function risingDragon(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone(), a = ctx.caster, F = 3.12, E = 4.98;
+  const v = ctx.vfx, at = ctx.at.clone(), a = ctx.caster, F = 3.12, E = 4.98, P0 = a.pos.clone();
   await intro(ctx, FIRE, { dur: 600, dist: 10, pitch: 0.32 });
-  ctx.pose(null); a.act = { kind: 'atk', frame: 2 };
-  await new Promise(res => ticker(v, 0.35, k => { a.lift = Math.sin(k * Math.PI) * 0.9; }, () => { a.lift = 0; res(); }));
-  crack(v, at.clone().add(V(-0.5, 0, 0.2)), at.clone().add(V(0.5, 0, -0.2)), FIRE, 2.6, { open: 0.15 });
-  v.shake(0.15, 0.3);
-  const rib = v.ribbon({ col: [1, 0.45, 0.1], width: 0.45, n: 36, fade: 0.5 }), core = v.ribbon({ col: [1, 0.9, 0.6], width: 0.12, n: 28 });
-  ticker(v, 0.9, (k, dt, t) => {
-    const ang = t * 11, r = 0.45 * (1 - k * 0.5), p = at.clone().add(V(Math.cos(ang) * r, 0.2 + ease(k) * 9, Math.sin(ang) * r)); rib.push(p); core.push(p);
-    for (let i = 0; i < 3; i++) v.flame(at.x + rand(-0.3, 0.3), at.y, at.z + rand(-0.3, 0.3), { size: rand(0.6, 0.9) * (1 - k * 0.4), asp: 3, life: 0.45, vy: rand(4, 6) });
-    v.light(at.clone().setY(at.y + 1.5), FIRE, 25, 0.06, 8);
-  }, () => { rib.end(); core.end(); });
-  glowTargets(ctx, 0.7, 0.9);
-  await ctx.wait(1000); await ctx.until(F - 0.45);
-  const ball = v.fireball(0.55, { heat: 1.3 }), from = at.clone().setY(at.y + 9), tg = at.clone().setY(at.y + 0.4), tail = v.ribbon({ col: FIRE, width: 0.45, n: 18 });
-  v.timed(ball, 0.45, (k, dt, t) => { ball.userData.mat.uniforms.uT.value = t; ball.position.copy(from).lerp(tg, k * k); tail.push(ball.position); }, () => { tail.end(); ball.visible = false; });
-  await ctx.wait(450);
-  v.explode(tg, 0.9, { n: 26 }); v.flash([1, 0.7, 0.4], 0.45); v.shake(0.25, 0.4); v.hitstop = 0.12; v.ring(at, FIRE, 4, 0.8); v.decal(at, [1, 0.35, 0.06], 1.6, 2, { flicker: true });
-  ticker(v, 0.9, k => { for (let i = 0; i < 2; i++) v.realFire(at.x + rand(-0.4, 0.4), at.y, at.z + rand(-0.4, 0.4), { size: rand(0.7, 1.1) * (1 - k * 0.6), asp: rand(1.3, 1.7), life: rand(0.4, 0.6), vy: rand(1.5, 3) }); });   // (the fire burns on, as the original's)
-  ctx.hit(); await ctx.wait(400); a.act = null; await ctx.until(E - 0.1); outro(ctx);
+  ctx.pose(null); a.act = { kind: 'atk', frame: 0 };
+  // the gathering: fire round him; under the target the ground splits and trembles
+  const up = Math.max(0.6, 1.5 - ctx.now());
+  shotAt(ctx, ctx.now() + 0.05, P0.clone().lerp(at, 0.6).add(V(0, 0.5, 0)), { dist: 9, pitch: 0.35, yaw: -0.4, speed: 1.6 });   // low on the cracking ground, him in frame
+  ticker(v, up + 0.3, (k, dt) => { if (Math.random() < dt * 30) { const ang = rand(0, 6.28); v.realFire(P0.x + Math.cos(ang) * 0.35, P0.y, P0.z + Math.sin(ang) * 0.35, { size: rand(0.3, 0.5), asp: 2, life: 0.4, vy: rand(1.5, 2.5) }); } });
+  for (let i = 0; i < 5; i++) { const ang = i / 5 * 6.28 + rand(-0.3, 0.3); crack(v, at.clone(), at.clone().add(V(Math.cos(ang) * 1.8, 0, Math.sin(ang) * 1.8)), FIRE, E - ctx.now(), { open: 0.12, y: at.y }); }
+  ticker(v, up, (k, dt) => { v.shake(0.03 + k * 0.1, 0.1); if (Math.random() < dt * 40) { const ang = rand(0, 6.28), r = rand(0.2, 1.6); v.spark(at.x + Math.cos(ang) * r, at.y + 0.05, at.z + Math.sin(ang) * r, { vy: rand(0.8, 2), life: 0.7, size: 0.05, r: 1, gg: 0.55, b: 0.15, shape: 0, flicker: 1, ph: rand(0, 9) }); } });
+  v.decal(at, [1, 0.35, 0.06], 1.6, E - ctx.now(), { flicker: true, in: 1 });
+  await ctx.wait(up * 1000);
+  // the dragon tears up round a column of flame; he leaps into it under the target and they are carried up spinning
+  const climb = Math.max(0.8, F - 0.45 - ctx.now()), tg = tgts(ctx)[0], face0 = tg ? tg.u.facing : null, myFace = a.u.facing, TOP = 4.2;
+  const d = new THREE.Vector2(at.x - P0.x, at.z - P0.z), len = d.length() || 1, beside = d.clone().multiplyScalar(Math.max(0, 1 - 0.42 / len));   // (his offset: beside the target, on his own side)
+  shotAt(ctx, ctx.now() + 0.15, at.clone().add(V(0, 3.2, 0)), { dist: 11.5, pitch: 0.18, yaw: 0.35, speed: 1.8 });   // looking up as they rise
+  v.flash([1, 0.6, 0.25], 0.3); v.shake(0.25, 0.4); v.explode(at.clone().setY(at.y + 0.2), 0.6, { n: 14, tint: [1, 0.7, 0.4] });
+  v.pillar(at, [1, 0.42, 0.08], 0.55, 9, climb + 0.2, { intensity: 1.6, grow: 1 });
+  const rib = v.ribbon({ col: [1, 0.42, 0.08], width: 0.7, n: 40, fade: 0.5 }), core = v.ribbon({ col: [1, 0.9, 0.6], width: 0.18, n: 30 });
+  const head = v.fireball(0.45, { heat: 1.2 });
+  v.timed(head, climb, (k, dt, t) => { head.userData.mat.uniforms.uT.value = t; const ang = t * 9, r = 0.9 * (1 - k * 0.3), p = at.clone().add(V(Math.cos(ang) * r, 0.3 + ease(k) * 8.5, Math.sin(ang) * r)); head.position.copy(p); rib.push(p); core.push(p); v.light(p, FIRE, 25, 0.06, 8); }, () => { rib.end(); core.end(); head.visible = false; });
+  for (let i = 0; i < 30; i++) v.spark(at.x + rand(-0.5, 0.5), at.y + 0.2, at.z + rand(-0.5, 0.5), { vx: rand(-2, 2), vy: rand(5, 9), vz: rand(-2, 2), g: 9, life: rand(1, 1.6), size: rand(0.06, 0.12), r: 0.4, gg: 0.32, b: 0.26, shape: 1, floor: at.y + 0.02 });   // rocks
+  ticker(v, climb, (k, dt, t) => {   // him: a leap across to the target (0.3 s), then up the column with it, spinning, fire round him
+    const j = Math.min(1, t / 0.3); a.off.copy(beside).multiplyScalar(ease(j));
+    a.lift = j < 1 ? Math.sin(j * Math.PI / 2) * 0.8 : 0.8 + (TOP - 0.8) * ease(Math.min(1, (t - 0.3) / Math.max(0.3, climb - 0.3)));
+    a.act = { kind: 'atk', frame: j < 1 ? 1 : 2 }; if (j >= 1) a.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * 12) % 4];
+    const c = a.chest(); if (Math.random() < dt * 40) v.realFire(c.x + rand(-0.15, 0.15), c.y - 0.3, c.z + rand(-0.15, 0.15), { size: rand(0.35, 0.55), asp: 1.8, life: 0.3, vy: -1 });
+  });
+  if (tg) ticker(v, climb + 0.45, (k, dt, t) => { tg.lift = t < climb ? ease(Math.min(1, t / 0.6)) * (TOP - 0.6) : (TOP - 0.6) * Math.max(0, 1 - ((t - climb) / 0.42) ** 2); tg.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * 14) % 4]; }, () => { tg.lift = 0; tg.u.facing = face0; });
+  glowTargets(ctx, 0.7, climb);
+  // he dives back down wrapped in a great fireball
+  await ctx.until(F - 0.45);
+  shotAt(ctx, ctx.now(), at.clone().add(V(0, 0.8, 0)), { dist: 10.5, pitch: 0.55, yaw: 0, speed: 2.4 });   // high for the dive
+  a.u.facing = 'down'; a.act = { kind: 'atk', frame: 2 };
+  const ball = v.fireball(0.85, { heat: 1.4 }), tail = v.ribbon({ col: FIRE, width: 0.8, n: 20 });
+  v.timed(ball, 0.45, (k, dt, t) => { a.lift = TOP * (1 - k * k); const p = a.chest(); ball.userData.mat.uniforms.uT.value = t; ball.position.copy(p).add(V(0, 0.25, 0)); ball.scale.setScalar(0.7 + 0.3 * k); tail.push(ball.position); v.realFire(p.x, p.y, p.z, { size: 1, asp: 1.5, life: 0.25, vy: 1 }); }, () => { tail.end(); ball.visible = false; a.lift = 0; });
+  await ctx.until(F);
+  // the blow: his fist into the ground, a crater of fire
+  const hit = at.clone().setY(at.y + 0.3); a.lift = 0; a.act = { kind: 'atk', frame: 2 };
+  v.explode(hit, 1.2, { n: 32 }); v.flash([1, 0.7, 0.4], 0.6); v.shake(0.4, 0.55); v.hitstop = 0.16; v.screen.chroma = 0.4;
+  v.ring(at, FIRE, 5, 0.9, { intensity: 1.6 }); v.ring(at, [1, 1, 1], 2.2, 0.4); dustBurst(v, at, 1.5, [0.4, 0.3, 0.25]);
+  for (let i = 0; i < 6; i++) { const ang = i / 6 * 6.28, p = at.clone().add(V(Math.cos(ang) * 1.3, 0, Math.sin(ang) * 1.3)); p.y = effectH(p.x, p.z); later(i * 40, () => { v.pillar(p, [1, 0.42, 0.08], 0.25, 2.4, 0.6, { intensity: 1.4, grow: 1 }); }); }
+  ticker(v, 1.2, k => { for (let i = 0; i < 3; i++) v.realFire(at.x + rand(-0.6, 0.6), at.y, at.z + rand(-0.6, 0.6), { size: rand(0.6, 1.0) * (1 - k * 0.6), asp: rand(1.3, 1.7), life: rand(0.4, 0.6), vy: rand(1.5, 3) }); });   // the crater burning
+  ctx.hit();
+  // a beat crouched in the fire, then a hop back to his cell
+  await ctx.wait(500);
+  const from = a.off.clone();
+  await new Promise(res => ticker(v, 0.35, k => { a.off.copy(from).multiplyScalar(1 - ease(k)); a.lift = Math.sin(k * Math.PI) * 0.7; a.act = { kind: 'atk', frame: 1 }; }, () => { a.off.set(0, 0); a.lift = 0; a.act = null; a.u.facing = myFace; res(); }));
+  await ctx.until(E + 0.3); outro(ctx);
 }
 
 // ---------------------------------------------------------------- fire
@@ -537,27 +840,60 @@ async function inferno(ctx) {
   }
   await ctx.until(E - 0.2); outro(ctx);
 }
-// 天火燎原: [ROM fx 25] night falls; a single flame drops from the sky onto the target, a white flash, a rain of
-// sparks, and fire runs out over the plain all around
+// 天火燎原: [ROM fx 25] night falls; a flame drops from the sky onto the target with the original's first sound (1.65 s
+// after the cast begins), a white-out, fire over the plain; a second roar (2.73 s); over at 5.6 s. Remade as a hero's
+// last spell [the user's call, 2026-10-30: next-gen]: night falls and the sky over the target smoulders red; a meteor
+// breaks out of it, shedding burning fragments, and strikes on the first sound: a white-out, a dome of fire, a ring of
+// flame racing out over the plain, the ground left burning; on the second the earth erupts in geysers of fire round the
+// target; embers rain to the end
 async function skyFire(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone();
-  cueAt(ctx, 1.65);   // (the original's first sound as the flame drops, 1.65 s after the cast begins; over at 4.3 s)
+  const v = ctx.vfx, at = ctx.at.clone(), F = 1.65, F2 = 2.73, E = 5.6, B = basis(ctx);
+  cueAt(ctx, F);
   await intro(ctx, FIRE, { dur: 800, dist: 12, pitch: 0.42 });
-  DARK(ctx, 0.75, 0.95, 0.8, 0.55);
-  const from = at.clone().setY(at.y + 10), tg = at.clone().setY(at.y + 0.3), ball = v.fireball(0.4, { heat: 1.3 }), tail = v.ribbon({ col: FIRE, width: 0.35, n: 22 });
-  v.timed(ball, 0.9, (k, dt, t) => { ball.userData.mat.uniforms.uT.value = t; ball.position.copy(from).lerp(tg, k * k); tail.push(ball.position); v.realFire(ball.position.x, ball.position.y, ball.position.z, { size: 0.70, asp: 1.5, life: 0.3, vy: 1 }); v.light(ball.position, FIRE, 20, 0.06, 8); }, () => { tail.end(); ball.visible = false; });
-  await ctx.wait(900);
-  v.flash([1, 1, 1], 0.7); v.shake(0.25, 0.4); v.hitstop = 0.1; v.explode(tg, 0.8, { n: 24 }); glowTargets(ctx, 1, 0.8);
-  for (let i = 0; i < 80; i++) later(i * 18, () => v.spark(at.x + rand(-3, 3), at.y + rand(3, 5), at.z + rand(-3, 3), { vy: -rand(2, 4), g: 2, life: 1.2, size: rand(0.06, 0.12), r: 1, gg: rand(0.7, 0.95), b: 0.5, shape: 1, flicker: 1, ph: rand(0, 9), floor: at.y + 0.05 }));
-  ctx.hit();
-  // the prairie fire: a ring of flames running outwards, leaving the ground burning
-  ticker(v, 1.6, (k) => {
-    const r = 0.5 + k * 3.2;
-    for (let i = 0; i < 6; i++) { const ang = rand(0, 6.28), x = at.x + Math.cos(ang) * r, z = at.z + Math.sin(ang) * r; v.realFire(x, effectH(x, z) - 0.05, z, { size: rand(0.56, 0.98) * (1 - k * 0.3), asp: 1.5, life: rand(0.4, 0.7), vy: 0.4 }); }
-    if (Math.random() < 0.3) { const ang = rand(0, 6.28), x = at.x + Math.cos(ang) * r * 0.7, z = at.z + Math.sin(ang) * r * 0.7; v.decal(V(x, 0, z), [1, 0.3, 0.05], 0.5, 1.5, { flicker: true, intensity: 0.6 }); }
+  DARK(ctx, 0.8, 0.95, 0.85, 0.6);
+  // the sky smoulders: a low cloud over the target, lit red from inside
+  const sky = at.clone().setY(at.y + 5.2), L = E - ctx.now();
+  for (let i = 0; i < 26; i++) v.smokePuff(sky.x + rand(-3.5, 3.5), sky.y + rand(-0.4, 0.8), sky.z + rand(-3.5, 3.5) - 1.5, { vx: rand(-0.2, 0.2), life: L, size: 2.0, size1: 3.0, tint: [0.32, 0.08, 0.04] });
+  const glow = glowCard(v, [1, 0.35, 0.08], 9); glow.position.copy(sky);
+  v.timed(glow, L, (k, dt, t) => { glow.material.opacity = Math.min(1, t / 0.5) * (0.35 + 0.15 * Math.sin(t * 9)) * (1 - k); });
+  v.light(sky.clone().setY(sky.y - 2), [1, 0.35, 0.1], 18, L, 14);
+  // the meteor: out of the cloud, slanting in from behind the target, burning fragments peeling off it
+  const fall = 0.8, from = sky.clone().addScaledVector(B.toCam, -2).addScaledVector(B.right, 2.2), tg = at.clone().setY(at.y + 0.3);
+  shotAt(ctx, F - 1.3, at.clone().add(V(0, 2.4, 0)), { dist: 13, pitch: 0.34, yaw: -0.45, speed: 2.2 });   // up into the burning sky as the meteor comes (the play view's frame stops 3 above the target), swung round
+  shotAt(ctx, F2 - 0.15, at.clone().add(V(0, 0.9, 0)), { dist: 9.5, pitch: 0.38, yaw: 0.15, speed: 1.2 });   // in low for the geysers
+  await ctx.until(F - fall);
+  const ball = v.fireball(0.6, { heat: 1.4 }), tail = v.ribbon({ col: FIRE, width: 0.6, n: 26 }), core = v.ribbon({ col: [1, 0.9, 0.6], width: 0.18, n: 18 });
+  v.timed(ball, fall, (k, dt, t) => {
+    ball.userData.mat.uniforms.uT.value = t; ball.position.copy(from).lerp(tg, k * k); tail.push(ball.position); core.push(ball.position);
+    const p = ball.position; v.realFire(p.x, p.y, p.z, { size: 0.9, asp: 1.5, life: 0.3, vy: 1 }); v.light(p, FIRE, 10 + 30 * k, 0.06, 10);
+    if (Math.random() < dt * 40) v.spark(p.x, p.y, p.z, { vx: rand(-2, 2), vy: rand(-0.5, 2), vz: rand(-2, 2), g: 5, life: rand(0.5, 0.9), size: rand(0.06, 0.11), r: 1, gg: rand(0.45, 0.75), b: 0.2, shape: 0, flicker: 1, ph: rand(0, 9) });
+  }, () => { tail.end(); core.end(); ball.visible = false; });
+  await ctx.until(F);
+  // the strike: a white-out, a dome of fire, the fire running out over the plain
+  v.flash([1, 0.95, 0.85], 0.85); v.shake(0.35, 0.5); v.hitstop = 0.14; v.screen.chroma = 0.5;
+  later(250, () => ctx.cam.shot(at.clone().add(V(0, 0.6, 0)), { cine: true, dist: 11, pitch: 0.5, yaw: 0.4, speed: 1.4 }));   // back down over the burning plain, sweeping across it
+  v.explode(tg, 1.1, { n: 30, tint: [1, 0.7, 0.4] }); glowTargets(ctx, 1, 0.8);
+  v.pillar(at, [1, 0.38, 0.06], 0.9, 6, 1.3, { intensity: 1.6, grow: 1 }); v.ring(at, [1, 0.6, 0.2], 6, 1.0, { intensity: 1.6 }); v.ring(at, [1, 1, 1], 2.8, 0.45);
+  v.decal(at, [1, 0.3, 0.05], 2.6, E - F, { flicker: true, intensity: 0.8 });
+  ticker(v, 1.4, k => {
+    const r = 0.6 + ease(k) * 3.4;
+    for (let i = 0; i < 7; i++) { const ang = rand(0, 6.28), x = at.x + Math.cos(ang) * r, z = at.z + Math.sin(ang) * r; v.realFire(x, effectH(x, z) - 0.05, z, { size: rand(0.6, 1.0) * (1 - k * 0.3), asp: 1.6, life: rand(0.4, 0.7), vy: 0.5 }); }
+    if (Math.random() < 0.35) { const ang = rand(0, 6.28), x = at.x + Math.cos(ang) * r * 0.8, z = at.z + Math.sin(ang) * r * 0.8; v.decal(V(x, 0, z), [1, 0.3, 0.05], 0.5, 2.2, { flicker: true, intensity: 0.7 }); }
   });
-  v.ring(at, FIRE, 7, 1.6, { intensity: 1 });
-  await ctx.wait(1700); outro(ctx);
+  ticker(v, E - F - 0.3, (k, dt) => { if (Math.random() < dt * 9) { const a = rand(0, 6.28), r = rand(0.6, 3.2), x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r; v.realFire(x, effectH(x, z) - 0.05, z, { size: rand(0.35, 0.6), asp: 1.6, life: rand(0.5, 0.8), vy: 0.4 }); } });   // the plain burning on to the end
+  ticker(v, E - F - 0.2, (k, dt) => { if (Math.random() < dt * 60) v.spark(at.x + rand(-3.5, 3.5), at.y + rand(3.5, 6), at.z + rand(-3.5, 3.5), { vy: -rand(1.5, 3), vx: rand(-0.4, 0.4), g: 1.5, life: 1.6, size: rand(0.04, 0.08), r: 1, gg: rand(0.45, 0.8), b: 0.2, shape: 0, flicker: 1, ph: rand(0, 9), floor: at.y + 0.04 }); });   // embers raining
+  // the second roar: the earth erupts in geysers of fire round the target
+  await ctx.until(F2);
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * 6.28 + rand(-0.2, 0.2), r = rand(1.2, 2.4), p = at.clone().add(V(Math.cos(a) * r, 0, Math.sin(a) * r)); p.y = effectH(p.x, p.z);
+    later(i * 60, () => {
+      v.pillar(p, [1, 0.42, 0.08], 0.32, rand(2.5, 3.8), 0.8, { intensity: 1.5, grow: 1 });
+      ticker(v, 0.6, k => { v.realFire(p.x + rand(-0.15, 0.15), p.y, p.z + rand(-0.15, 0.15), { size: rand(0.6, 0.9) * (1 - k * 0.5), asp: 2.4, life: 0.5, vy: rand(3, 5) }); });
+      v.burst(p.clone().setY(p.y + 0.2), { n: 14, speed: 3, cols: [[1, 0.9, 0.5], FIRE], size: 0.06, life: 0.7, g: 8, shape: 1, floor: p.y + 0.02 });
+    });
+  }
+  v.shake(0.2, 0.4); v.flash([1, 0.5, 0.2], 0.3); v.hitstop = 0.06;
+  ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
 
 // ---------------------------------------------------------------- ice
@@ -605,28 +941,56 @@ async function blizzard(ctx) {
   await ctx.until(E - 0.1); outro(ctx);
 }
 // 崩冰術: [ROM fx 29] under a night sky, boulders of ice crash onto the target one after another from the original's first
-// sound (2.32 s after the cast begins) to 5 s, then a huge block of ice closes over it (5.2 s) and shatters (5.7 s);
-// over at 6.9 s
+// sound (2.32 s after the cast begins) to 5 s, then a huge block of ice closes over it (5.2 s) and shatters (5.7 s); over
+// at 6.9 s. Remade as 姜子牙's and 小龍女's last spell [the user's call, 2026-10-30: next-gen]: night; frost creeps over
+// the ground and snow fills the air; ice flies in from all round and fuses into a glacier hanging over the target,
+// cracks of light running through it; it calves, boulder after boulder crashing onto the target, ice spikes bursting
+// from the ground after each; what is left of it closes over the target as one great crystal, and everything shatters
 async function iceAvalanche(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone(), mat = ICE(), F = 2.32, E = 6.93;
+  const v = ctx.vfx, at = ctx.at.clone(), mat = ICE(), F = 2.32, E = 6.93, hang = at.clone().setY(at.y + 4.2);
   await intro(ctx, ICEC, { dur: 800, dist: 10.5, pitch: 0.38 });
-  await channel(ctx, ICEC, F - 0.6);
-  DARK(ctx, 0.65, 1, 0.75, 0.4);
+  DARK(ctx, 0.7, 1, 0.72, 0.38);
+  shotAt(ctx, ctx.now() + 0.05, at.clone().add(V(0, 2.2, 0)), { dist: 11, pitch: 0.25, yaw: 0.5, speed: 1.3 });   // up at the glacier forming
+  shotAt(ctx, F + 0.3, at.clone().add(V(0, 1, 0)), { dist: 10, pitch: 0.45, yaw: -0.35, speed: 0.7 });   // a slow sweep through the avalanche
+  shotAt(ctx, F + 2.7, at.clone().add(V(0, 0.8, 0)), { dist: 8, pitch: 0.35, yaw: 0.25, speed: 1.8 });   // close for the crystal
+  frost(v, at, 2.4, E - ctx.now());
+  ticker(v, E - ctx.now(), (k, dt) => { if (Math.random() < dt * 40) v.spark(at.x + rand(-3, 3), at.y + rand(3, 5), at.z + rand(-3, 3), { vy: -rand(0.5, 1), vx: rand(-0.3, 0.3), life: 3, size: rand(0.03, 0.05), r: 0.9, gg: 0.96, b: 1, shape: 0, floor: at.y + 0.03 }); });   // snow
+  // the glacier: ice flies in from all round and fuses over the target
+  const glacier = new THREE.Group(); glacier.position.copy(hang); const parts = [];
+  for (let i = 0; i < 9; i++) { const m = new THREE.Mesh(chunkGeometry(), mat); m.scale.setScalar(rand(0.45, 0.75)); m.position.set(rand(-0.6, 0.6), rand(-0.3, 0.3), rand(-0.6, 0.6)); m.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6)); m.visible = false; glacier.add(m); parts.push(m); }
+  let size = 0.01; v.timed(glacier, E - ctx.now(), (k, dt) => { glacier.rotation.y += dt * 0.15; glacier.scale.setScalar(size); });
+  v.light(hang, ICEC, 14, F + 3 - ctx.now(), 8);
+  parts.forEach((m, i) => later(i * 110, () => {
+    const from = hang.clone().add(V(rand(-5, 5), rand(-2, 2.5), rand(-5, 5))), fly = new THREE.Mesh(chunkGeometry(), mat), rib = v.ribbon({ col: ICEC, width: 0.08, n: 10 }); fly.scale.setScalar(0.5);
+    lob(v, fly, from, hang.clone().add(m.position), 0.6, 0.45, () => { rib.end(); m.visible = true; size = Math.min(1.35, size + 0.16); v.burst(hang.clone().add(m.position), { n: 12, speed: 2, cols: ICE_COLS, size: 0.05, life: 0.4, g: 2 }); }, { each: p => rib.push(p) });
+  }));
+  ticker(v, F + 0.2 - ctx.now(), (k, dt) => { if (k > 0.5 && Math.random() < dt * 8) v.bolt(hang.clone().add(V(rand(-0.6, 0.6), rand(-0.4, 0.4), rand(-0.6, 0.6))), hang.clone().add(V(rand(-0.6, 0.6), rand(-0.4, 0.4), rand(-0.6, 0.6))), [0.85, 0.95, 1], 0.08, { width: 0.02, jag: 0.2 }); });   // cracks of light
+  // it calves: boulder after boulder crashes onto the target, ice spikes bursting from the ground after each
   await ctx.until(F - 0.42); cueAt(ctx, F);   // (a boulder falls for 0.42 s: the first lands on the sound)
   for (let i = 0; i < 11; i++) later(i * 260, () => {
-    const r = rand(0.35, 0.55), m = new THREE.Mesh(chunkGeometry(), mat); m.scale.setScalar(r); const off = V(rand(-0.35, 0.35), 0, rand(-0.35, 0.35));
-    lob(v, m, at.clone().add(off).add(V(rand(-2, 2), 8, rand(-1, 1))), at.clone().add(off).setY(at.y + r * 0.6), 0, 0.42, (p) => {
-      v.burst(p, { n: 34, speed: 5, cols: ICE_COLS, size: 0.07, life: 0.8, g: 9 }); v.shake(0.1, 0.15); v.flash([0.8, 0.9, 1], 0.08); v.ring(at, ICEC, 1.6, 0.35); glowTargets(ctx, 0.6, 0.3);
-      shatter(v, p, 7, mat, { size: 0.2, speed: 2.6 }); frost(v, at, 1.2, 2.4);
+    const r = rand(0.38, 0.6), m = new THREE.Mesh(chunkGeometry(), mat); m.scale.setScalar(r); const off = V(rand(-0.35, 0.35), 0, rand(-0.35, 0.35));
+    size = Math.max(0.55, size - 0.06);
+    lob(v, m, hang.clone().add(V(rand(-0.5, 0.5), -0.4, rand(-0.5, 0.5))), at.clone().add(off).setY(at.y + r * 0.6), 0, 0.42, (p) => {
+      v.burst(p, { n: 34, speed: 5, cols: ICE_COLS, size: 0.07, life: 0.8, g: 9 }); v.shake(0.1, 0.15); v.flash([0.8, 0.9, 1], 0.08); v.ring(at, ICEC, 1.8, 0.35); glowTargets(ctx, 0.6, 0.3);
+      shatter(v, p, 7, mat, { size: 0.2, speed: 2.6 });
+      const a = rand(0, 6.28), d = rand(0.9, 1.9), sp = at.clone().add(V(Math.cos(a) * d, 0, Math.sin(a) * d)); sp.y = effectH(sp.x, sp.z);   // a spike bursting up
+      const spike = new THREE.Mesh(shardGeometry(6, 0.18), mat); spike.position.copy(sp); spike.rotation.set(rand(-0.3, 0.3), rand(0, 6), rand(-0.3, 0.3)); const h = rand(0.6, 1.1);
+      v.timed(spike, E - 0.1 - ctx.now(), (k2, dt2, t2) => { spike.scale.set(0.2, h * Math.min(1, t2 / 0.12) + 0.001, 0.2); spike.visible = t2 < E - 0.1 - ctx.now() - 0.05 && !spike.userData.gone; });
+      spikes.push({ spike, sp, h });
     }, { fall: true });
   });
+  const spikes = [];
   await ctx.until(F + 2.85);
-  // the block: an ice prism closing over the target
-  const block = new THREE.Mesh(shardGeometry(6, 0.22), mat); block.position.copy(at).setY(at.y - 0.05);   // (a great crystal closing over the target)
-  v.timed(block, 1.1, (k, dt, t) => { const g = Math.min(1, t / 0.18), sw = t > 0.95 ? 1 + (t - 0.95) * 2 : 1; block.scale.set(0.72 * sw, 2.1 * g * sw + 0.001, 0.72 * sw); },
-    () => { v.burst(at.clone().setY(at.y + 0.9), { n: 120, speed: 7, cols: ICE_COLS, size: 0.08, life: 1.1, g: 9 }); v.flash([0.9, 0.97, 1], 0.45); v.shake(0.22, 0.35); v.hitstop = 0.12;
-      shatter(v, at.clone().setY(at.y + 0.9), 16, mat, { size: 0.3, speed: 3.4 }); frost(v, at, 1.8, 2.6); });
-  v.decal(at, [0.5, 0.75, 1], 1.4, 2, { intensity: 0.8 });
+  // the last of it closes over the target as one great crystal, and everything shatters
+  glacier.visible = false;
+  const block = new THREE.Mesh(shardGeometry(6, 0.22), mat); block.position.copy(at).setY(at.y - 0.05);
+  v.timed(block, 1.1, (k, dt, t) => { const g = Math.min(1, t / 0.18), sw = t > 0.95 ? 1 + (t - 0.95) * 2 : 1; block.scale.set(0.75 * sw, 2.2 * g * sw + 0.001, 0.75 * sw); },
+    () => {
+      v.burst(at.clone().setY(at.y + 0.9), { n: 140, speed: 7.5, cols: ICE_COLS, size: 0.08, life: 1.1, g: 9 }); v.flash([0.9, 0.97, 1], 0.55); v.shake(0.28, 0.4); v.hitstop = 0.14;
+      shatter(v, at.clone().setY(at.y + 0.9), 18, mat, { size: 0.32, speed: 3.6 }); v.ring(at, ICEC, 5, 0.8, { intensity: 1.6 }); v.ring(at, [1, 1, 1], 2.4, 0.4);
+      for (const s2 of spikes) { s2.spike.userData.gone = true; shatter(v, s2.sp.clone().setY(s2.sp.y + s2.h * 0.5), 4, mat, { size: 0.16, speed: 2.2 }); }
+    });
+  v.decal(at, [0.5, 0.75, 1], 1.6, 2, { intensity: 0.8 });
   ticker(v, 1.1, () => { for (const a of tgts(ctx)) a.flash = 0.35; }, () => { for (const a of tgts(ctx)) a.flash = 0; });
   await ctx.wait(1150); ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
@@ -672,25 +1036,45 @@ async function thunderStorm(ctx) {
   v.flash([0.95, 0.97, 1], 0.55); v.shake(0.22, 0.4); v.hitstop = 0.1; glowTargets(ctx, 1);
   ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
-// 霸雷: [ROM fx 33] one colossal column of lightning on the target, a crown of sparks, a white-out, a crackling orb
+// 霸雷: [ROM fx 33] one colossal column of lightning on the target with the original's two sounds (1.38 s after the cast
+// begins), a white-out; over at 4.2 s. Remade as 雷震子's last spell [the user's call, 2026-10-30: next-gen]: storm
+// clouds churn over the target, flickering from inside; charge crawls up out of the ground round it in thin rising
+// leaders; then the strike: a column of lightning as wide as a cell with bolts braided round it, a white-out, light
+// running out along the earth in every direction; the afterglow hangs, arcs crawling over the target, and three last
+// strikes fall round it
 async function greatThunder(ctx) {
-  const v = ctx.vfx, at = ctx.at.clone();
-  await intro(ctx, BOLT, { dur: 900, dist: 10, pitch: 0.3 });
-  DARK(ctx, 0.75, 0.85, 0.85, 0.6); STORM(v, at, 30, 3, 7, [0.1, 0.1, 0.16]);
-  for (let i = 0; i < 40; i++) v.smokePuff(at.x + Math.cos(i) * 2, at.y + 7.5, at.z + Math.sin(i) * 2, { life: 2.6, size: 1.6, size1: 2.6, tint: [0.1, 0.1, 0.18], orb: { x: at.x, z: at.z, w: 1.6 } });
-  await ctx.wait(150); await ctx.until(1.38);   // (it strikes with the original's sound, 1.38 s after the cast begins; over at 2.9 s)
-  v.pillar(at, [0.75, 0.85, 1], 0.55, 12, 1.0, { intensity: 2.2 }); v.pillar(at, [1, 1, 1], 0.22, 12, 0.9, { intensity: 2.4 });
-  for (let i = 0; i < 6; i++) v.bolt(at.clone().add(V(rand(-0.6, 0.6), 11, rand(-0.6, 0.6))), at.clone().add(V(rand(-0.3, 0.3), 0.1, rand(-0.3, 0.3))), BOLT, 0.7, { width: 0.12 });
-  v.flash([1, 1, 1], 0.9); v.shake(0.35, 0.6); v.hitstop = 0.15; v.screen.chroma = 0.6;
-  for (let i = 0; i < 10; i++) { const a = i / 10 * 6.28; v.bolt(at.clone().setY(at.y + 0.1), at.clone().add(V(Math.cos(a) * 1.8, rand(0.4, 1.4), Math.sin(a) * 1.8)), BOLT, 0.3, { width: 0.05, jag: 0.5 }); }
+  const v = ctx.vfx, at = ctx.at.clone(), F = 1.38, E = 4.2;
+  shotAt(ctx, 0.5, at.clone().add(V(0, 2.2, 0)), { dist: 11, pitch: 0.18, yaw: -0.5, speed: 2 });   // low, the storm overhead: under way while he still casts, so it has come round before the strike [the user's call]
+  ctx.until(0.45).then(() => {   // the storm gathers over the target while he casts, as the camera comes to it
+    DARK(ctx, 0.8, 0.85, 0.85, 0.55); STORM(v, at, 30, 3, 7, [0.1, 0.1, 0.16], 3.6);
+    for (let i = 0; i < 40; i++) v.smokePuff(at.x + Math.cos(i) * 2, at.y + 7.5, at.z + Math.sin(i) * 2, { life: 3.6, size: 1.6, size1: 2.6, tint: [0.1, 0.1, 0.18], orb: { x: at.x, z: at.z, w: 1.6 } });
+  });
+  await intro(ctx, BOLT, { dur: 900, keep: true });
+  shotAt(ctx, F + 0.3, at.clone().add(V(0, 0.6, 0)), { dist: 9.5, pitch: 0.6, yaw: 0.4, speed: 1.4 });   // high, swung round, the lightning running out along the earth
+  ticker(v, E - ctx.now(), (k, dt) => { if (Math.random() < dt * 6) v.light(at.clone().add(V(rand(-2, 2), 7.5, rand(-2, 2))), BOLT, rand(20, 45), 0.08, 12); });   // the cloud lit from inside
+  // charge: thin leaders crawl up out of the ground round the target, more and more
+  ticker(v, Math.max(0.3, F - ctx.now()), (k, dt) => {
+    if (Math.random() < dt * (6 + k * 22)) { const a = rand(0, 6.28), r = rand(0.4, 1.5), p = at.clone().add(V(Math.cos(a) * r, 0, Math.sin(a) * r)); p.y = effectH(p.x, p.z) + 0.05; v.bolt(p, p.clone().add(V(rand(-0.2, 0.2), rand(0.5, 1.4) * (0.5 + k), rand(-0.2, 0.2))), BOLT, 0.1, { width: 0.025, jag: 0.3 }); }
+    if (Math.random() < dt * 30) { const a = rand(0, 6.28), r = rand(0.3, 1.4); v.spark(at.x + Math.cos(a) * r, at.y + 0.05, at.z + Math.sin(a) * r, { vy: rand(1.5, 3), life: 0.6, size: 0.04, r: 0.75, gg: 0.85, b: 1, shape: 0 }); }
+  });
+  await ctx.until(F);
+  // the strike
+  v.pillar(at, [0.6, 0.75, 1], 0.75, 14, 1.0, { intensity: 2.4 }); v.pillar(at, [1, 1, 1], 0.3, 14, 0.8, { intensity: 2.6 });
+  for (let i = 0; i < 8; i++) v.bolt(at.clone().add(V(rand(-0.7, 0.7), 12, rand(-0.7, 0.7))), at.clone().add(V(rand(-0.3, 0.3), 0.1, rand(-0.3, 0.3))), i < 2 ? [1, 1, 1] : BOLT, 0.8, { width: i < 2 ? 0.2 : 0.12 });
+  v.flash([1, 1, 1], 1); v.shake(0.4, 0.7); v.hitstop = 0.18; v.screen.chroma = 0.7;
+  for (let i = 0; i < 14; i++) { const a = i / 14 * 6.28 + rand(-0.15, 0.15), len = rand(1.8, 3.2), e = at.clone().add(V(Math.cos(a) * len, 0, Math.sin(a) * len)); e.y = effectH(e.x, e.z) + 0.05; v.bolt(at.clone().setY(at.y + 0.05), e, BOLT, 0.5, { width: 0.06, jag: 0.35 }); }   // along the earth
   v.burst(at.clone().setY(at.y + 0.2), { n: 120, speed: 8, cols: [[1, 1, 1], BOLT, [0.5, 0.6, 1]], size: 0.06, life: 0.9, g: 4 });
-  v.ring(at, BOLT, 5, 0.9, { intensity: 1.6 }); v.decal(at, [0.5, 0.6, 1], 2, 1.8);
-  glowTargets(ctx, 1, 1); ctx.hit();
-  await ctx.wait(600); plasma(v, at.clone().setY(at.y + 0.6), BOLT, 1.1, 0.55);
-  await ctx.wait(1100); outro(ctx);
+  v.ring(at, BOLT, 6, 1.0, { intensity: 1.8 }); v.ring(at, [1, 1, 1], 3, 0.5); v.decal(at, [0.5, 0.6, 1], 2.4, 2.2); dustBurst(v, at, 1.3, [0.3, 0.3, 0.38]);
+  glowTargets(ctx, 1, 1.2); ctx.hit();
+  // the afterglow: arcs crawl over the target; three last strikes round it
+  plasma(v, at.clone().setY(at.y + 0.6), BOLT, 1.5, 0.6);
+  for (let i = 0; i < 3; i++) later(500 + i * 280, () => {
+    const a = rand(0, 6.28), r = rand(1.3, 2.1), p = at.clone().add(V(Math.cos(a) * r, 0, Math.sin(a) * r)); p.y = effectH(p.x, p.z);
+    v.bolt(p.clone().setY(p.y + 11), p, BOLT, 0.25, { width: 0.08 }); v.flash([0.8, 0.85, 1], 0.25); v.ring(p, BOLT, 1.4, 0.4); v.burst(p.clone().setY(p.y + 0.1), { n: 20, speed: 3, cols: [[1, 1, 1], BOLT], size: 0.05, life: 0.5 });
+  });
+  await ctx.until(E - 0.1); outro(ctx);
 }
 
-// ---------------------------------------------------------------- light and darkness
 // 暴走之光: [ROM fx 34] a ball of light rises from the caster, beams streak down, and light bursts on every cell
 // of the cross, twice
 async function lightBurst(ctx) {
@@ -721,7 +1105,6 @@ async function heavenWrath(ctx) {
   await intro(ctx, col, { dur: 800, dist: 14, pitch: 0.42 });
   DARK(ctx, 0.85, 0.95, 0.95, 0.85);
   const sky = c0.clone().setY(c0.y + 4.2);
-  const disc = v.runeCircle(sky, col, R * 0.75 + 0.5, 2.8, { spin: 0.8, intensity: 1.3 }); disc.position.y = sky.y;
   const halo = glowCard(v, col, (R + 1) * 3); halo.position.copy(sky);
   v.timed(halo, 2.8, (k, dt, t) => { halo.material.opacity = Math.min(1, t / 0.6) * 0.6 * (1 - k * k); });
   v.light(sky, col, 40, 2.8, 16);
@@ -765,23 +1148,51 @@ async function corpseQi(ctx) {
   await ctx.until(E - 0.1); outro(ctx);
 }
 // 黑色狂嵐: [ROM fx 37] black: a gale of darkness roars over the whole area, its roar the original's first three sounds
-// (from 2.18 s after the cast begins), then it bursts into a red blaze on its fourth (5.48 s); over at 6.8 s
+// (from 2.18 s after the cast begins), then it bursts into a red blaze on its fourth (5.48 s); over at 6.8 s. Remade as
+// 燃燈's last spell [the user's call, 2026-10-30: next-gen]: the light dies to a violet black; a vast vortex of black
+// wind turns over the area, violet lightning crawling in it; each roar is a pulse, a violet shockwave and strikes
+// among the targets; then the storm condenses into a black sphere at its heart, drawing everything in, and detonates in
+// a crimson blaze over every cell
 async function blackGale(ctx) {
-  const v = ctx.vfx, cells = cellsOf(ctx), c0 = mid(cells), R = spreadOf(cells) + 0.8, F = 2.18, E = 6.8;
-  await intro(ctx, [0.6, 0.5, 0.9], { dur: 800, dist: 14, pitch: 0.42 });
-  DARK(ctx, 0.92, 1, 1, 0.95); cueAt(ctx, F);
+  const v = ctx.vfx, cells = cellsOf(ctx), c0 = mid(cells), R = spreadOf(cells) + 0.8, F = 2.18, E = 6.8, VIO = [0.65, 0.35, 1];
+  await intro(ctx, VIO, { dur: 800, dist: 14, pitch: 0.42 });
+  DARK(ctx, 0.92, 0.95, 1, 0.75); cueAt(ctx, F);   // (red and green darkened most: a violet black)
   const S = F + (ctx.track[3] || 3.3), L = S + 0.3 - ctx.now();   // (S: the blaze)
-  swirl(v, c0, [0.55, 0.55, 0.65], R * 0.6, R + 0.8, 4, L, { speed: 9, twist: 3, foam: [0.85, 0.85, 1], intensity: 0.75 });
-  swirl(v, c0, [0.3, 0.3, 0.45], R * 0.4, R + 0.4, 3, L, { speed: -7, twist: 2, intensity: 0.6 });
-  ticker(v, L, () => {
-    for (let i = 0; i < 4; i++) { const a = rand(0, 6.28), r = rand(0.4, R + 0.5); v.smokePuff(c0.x + Math.cos(a) * r, c0.y + rand(0.2, 2.5), c0.z + Math.sin(a) * r, { life: 0.9, size: 0.6, size1: 1.4, tint: [0.08, 0.08, 0.1], orb: { x: c0.x, z: c0.z, w: 5 } }); }
-    if (Math.random() < 0.5) { const a = rand(0, 6.28), r = rand(0.5, R); v.spark(c0.x + Math.cos(a) * r, c0.y + rand(0.3, 2.5), c0.z + Math.sin(a) * r, { life: 0.5, size: 0.14, size1: 0.02, r: 0.5, gg: 0.6, b: 1, shape: 0, orb: { x: c0.x, z: c0.z, w: 7 } }); }
+  shotAt(ctx, ctx.now() + 0.05, c0.clone().add(V(0, 1.5, 0)), { dist: 14, pitch: 0.75, yaw: -0.5, speed: 1 });   // high, looking down into the vortex (from its side, its wall hid everything)
+  shotAt(ctx, F + 1, c0.clone().add(V(0, 1.2, 0)), { dist: 13, pitch: 0.7, yaw: 0.45, speed: 0.6 });   // a slow sweep round over it
+  shotAt(ctx, F + (ctx.track[2] ?? 2) + 0.2, c0.clone().add(V(0, 1.4, 0)), { dist: 10, pitch: 0.6, yaw: 0.1, speed: 1.6 });   // in on the black sphere
+  shotAt(ctx, S + 0.2, c0.clone().add(V(0, 0.6, 0)), { dist: 14, pitch: 0.55, yaw: -0.2, speed: 1.5 });   // pulling back over the blaze
+  const vortex = [swirl(v, c0, [0.4, 0.3, 0.55], R * 0.6, R + 0.9, 4.5, L, { speed: 9, twist: 3, foam: [0.75, 0.6, 1], intensity: 0.75, normal: true }),
+    swirl(v, c0, [0.25, 0.2, 0.4], R * 0.4, R + 0.5, 3.5, L, { speed: -7, twist: 2, intensity: 0.6, normal: true })];
+  let pull = 1;   // (the storm closing in on its heart, 1 to 0)
+  ticker(v, L, (k, dt) => {
+    for (const g of vortex) g.scale.x = g.scale.z = Math.max(0.15, pull) * g.scale.y;
+    for (let i = 0; i < 4; i++) { const a = rand(0, 6.28), r = rand(0.4, R + 0.5) * pull; v.smokePuff(c0.x + Math.cos(a) * r, c0.y + rand(0.2, 2.8), c0.z + Math.sin(a) * r, { life: 0.9, size: 0.6, size1: 1.4, tint: [0.06, 0.04, 0.09], orb: { x: c0.x, z: c0.z, w: 4 } }); }
+    if (Math.random() < dt * 5) { const a = rand(0, 6.28), r = rand(0.5, R) * pull, b2 = a + rand(0.6, 1.4), p = c0.clone().add(V(Math.cos(a) * r, rand(0.6, 2.8), Math.sin(a) * r)); v.bolt(p, c0.clone().add(V(Math.cos(b2) * r, rand(0.6, 2.8), Math.sin(b2) * r)), VIO, 0.12, { width: 0.04, jag: 0.4 }); }   // lightning crawling in it
   });
-  v.shake(0.08, L - 0.2);
+  v.shake(0.06, L - 0.2);
+  // the three roars: a pulse, a violet shockwave over the area, strikes among the targets
+  for (let i = 0; i < 3; i++) ctx.until(F + (ctx.track[i] ?? i)).then(() => {
+    v.flash(VIO, 0.25); v.shake(0.18, 0.3); v.ring(c0, VIO, R + 2.5, 0.7, { intensity: 1.4 }); glowTargets(ctx, 0.5, 0.3);
+    for (const c of cells.filter(() => Math.random() < 0.5).slice(0, 4)) v.bolt(c.clone().setY(c.y + 7), c.clone().setY(c.y + 0.1), VIO, 0.2, { width: 0.07 });
+  });
+  // the storm condenses into a black sphere at its heart, drawing everything in
+  const C1 = F + (ctx.track[2] ?? 2) + 0.2, heart = c0.clone().setY(c0.y + 1.4);
+  await ctx.until(C1);
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshBasicMaterial({ color: 0x000000 })), rim = glowCard(v, VIO, 1);
+  sphere.position.copy(heart); rim.position.copy(heart); sphere.renderOrder = 8;
+  const grow = S - C1;
+  v.timed(sphere, grow + 0.05, (k) => { sphere.scale.setScalar(0.05 + ease(k) * 0.75); pull = 1 - ease(k) * 0.85; });
+  v.timed(rim, grow + 0.05, (k, dt, t) => { rim.scale.setScalar(0.4 + ease(k) * 2.4 + Math.sin(t * 30) * 0.08); rim.material.opacity = 0.9; });
+  ticker(v, grow, (k, dt) => { for (let i = 0; i < 3; i++) { const d = V(rand(-1, 1), rand(-0.6, 1), rand(-1, 1)).normalize(), r = rand(2, R + 1.5), p = heart.clone().addScaledVector(d, r); v.spark(p.x, p.y, p.z, { vx: -d.x * r * 1.6, vy: -d.y * r * 1.6, vz: -d.z * r * 1.6, life: 0.55, size: 0.05, r: 0.7, gg: 0.5, b: 1, shape: 0 }); } });
+  // it detonates: a crimson blaze over every cell
   await ctx.until(S);
-  DARK(ctx, 0.75, 0.2, 0.8, 0.85); v.flash([1, 0.25, 0.1], 0.5);
-  cells.forEach((c, i) => later(i * 30, () => v.explode(c.clone().setY(c.y + 0.4), 0.5, { n: 10, smoke: i % 2 === 0, tint: [1, 0.7, 0.7] })));
-  v.shake(0.25, 0.5); v.hitstop = 0.1; glowTargets(ctx, 1, 0.9);
+  sphere.visible = rim.visible = false;
+  DARK(ctx, 0.75, 0.2, 0.8, 0.85); v.flash([1, 0.25, 0.1], 0.7); v.hitstop = 0.15; v.screen.chroma = 0.5;
+  v.pillar(c0, [1, 0.15, 0.08], 0.9, 8, 1.0, { intensity: 1.8, grow: 1 }); v.ring(c0, [1, 0.2, 0.1], R + 3.5, 1.0, { intensity: 1.8 }); v.ring(c0, [1, 0.8, 0.8], R + 1, 0.5);
+  v.explode(heart, 1.1, { n: 30, tint: [1, 0.5, 0.5] });
+  cells.forEach((c, i) => later(i * 30, () => v.explode(c.clone().setY(c.y + 0.4), 0.5, { n: 10, smoke: i % 2 === 0, tint: [1, 0.6, 0.6] })));
+  v.shake(0.35, 0.6); glowTargets(ctx, 1, 0.9);
   ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
 
@@ -852,22 +1263,35 @@ async function guanyin(ctx) {
   await ctx.until(F - 0.3); glowTargets(ctx, 0.7, 1.2);
   await ctx.until(F); ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
-// 還魂咒: [ROM fx 43] a soul light comes down into the fallen, a lotus of light opens under it and a column rises
+// 還魂咒: [ROM fx 43] a soul light comes down into the fallen. Remade as 燕蓉's last spell [the user's call, 2026-10-30:
+// next-gen]: twilight; a shaft of gold light opens from the sky onto the fallen; the soul comes down it in a slow spiral,
+// trailing light; a lotus of light, two rings of petals, blooms under the body; the soul sinks in, halos of light rise up
+// the body one after another and golden motes drift away
 async function revive(ctx) {
-  const v = ctx.vfx, col = [1, 0.95, 0.75], P = ctx.at.clone();
+  const v = ctx.vfx, col = [1, 0.92, 0.65], soulCol = [0.75, 0.9, 1], P = ctx.at.clone();
   await intro(ctx, col, { dur: 800, dist: 8.5, pitch: 0.42 });
-  DARK(ctx, 0.4, 0.9, 0.85, 0.8);
-  const soul = orb(v, [0.7, 0.85, 1], 0.35), from = P.clone().setY(P.y + 5), rib = v.ribbon({ col: [0.7, 0.85, 1], width: 0.12, n: 24 });
-  v.timed(soul, 1.0, (k, dt, t) => { soul.position.copy(from).lerp(P.clone().setY(P.y + 0.5), ease(k)).add(V(Math.sin(t * 6) * 0.5 * (1 - k), 0, Math.cos(t * 6) * 0.5 * (1 - k))); rib.push(soul.position); }, () => { rib.end(); soul.visible = false; });
-  v.runeCircle(P, col, 1.3, 2.6, { spin: 0.6, intensity: 1.4 });
-  const pg = petalGeo(), lotus = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 1.1, 0.8), transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
-  for (let i = 0; i < 8; i++) { const pv = new THREE.Group(), m = new THREE.Mesh(pg, mat); pv.rotation.y = i / 8 * 6.28; m.rotation.x = -0.9; pv.add(m); lotus.add(pv); }
-  lotus.position.copy(P).setY(effectH(P.x, P.z) + 0.03);
-  v.timed(lotus, 2.4, (k, dt, t) => { lotus.scale.setScalar(0.3 + 0.9 * ease(Math.min(1, t / 0.9))); lotus.rotation.y += dt * 0.6; mat.opacity = Math.min(1, t * 2) * Math.min(1, (2.4 - t) * 2) * 0.55; });
-  await ctx.wait(1000);
-  v.pillar(P, col, 0.5, 5, 1.4, { intensity: 1, grow: 1 }); v.flash(col, 0.3); v.ring(P, col, 2, 0.7); v.light(P.clone().setY(P.y + 1), col, 18, 1.2, 6);
-  for (let j = 0; j < 3; j++) { const r = v.ribbon({ col, width: 0.06, n: 22 }); ticker(v, 1.2, (k, dt, tt) => { const a = tt * 6 + j * 2.09; r.push(V(P.x + Math.cos(a) * 0.5, P.y + 0.1 + k * 2.6, P.z + Math.sin(a) * 0.5)); }, () => r.end()); }
-  ctx.hit(); await ctx.wait(1400); outro(ctx);
+  DARK(ctx, 0.5, 0.85, 0.8, 0.6);
+  const T = ctx.now(); shotAt(ctx, T + 0.05, P.clone().add(V(0, 2.3, 0)), { dist: 9, pitch: 0.22, yaw: -0.5, speed: 1.3 });   // low, looking up the shaft as the soul comes down
+  shotAt(ctx, T + 1.2, P.clone().add(V(0, 0.6, 0)), { dist: 6.5, pitch: 0.42, yaw: 0.35, speed: 1.6 });   // close, swung round, as it sinks in
+  // the shaft of light from the sky
+  v.pillar(P, [1, 0.78, 0.4], 0.3, 9, 3.4, { intensity: 0.35, grow: 1 }); v.light(P.clone().setY(P.y + 2), col, 12, 3.4, 7);   // (soft: the soul and the lotus are what show)
+  ticker(v, 3.2, (k, dt) => { if (Math.random() < dt * 25) { const a = rand(0, 6.28), r = rand(0, 0.45); v.spark(P.x + Math.cos(a) * r, P.y + rand(1, 5), P.z + Math.sin(a) * r, { vy: -rand(0.3, 0.8), life: 1.2, size: rand(0.03, 0.05), r: 1, gg: 0.93, b: 0.7, shape: 0, flicker: 1, ph: rand(0, 9) }); } });   // motes in the shaft
+  // the lotus: two rings of petals of light opening under the body
+  const pg = petalGeo(), lotus = new THREE.Group(), mats = [0, 1].map(() => new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 1.05, 0.75), transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+  [[8, 1, -0.9, 0], [8, 0.7, -1.3, Math.PI / 8]].forEach(([n, sc, tilt, off], ring) => { for (let i = 0; i < n; i++) { const pv = new THREE.Group(), m = new THREE.Mesh(pg, mats[ring]); pv.rotation.y = off + i / n * 6.28; m.rotation.x = tilt; m.scale.setScalar(sc); pv.add(m); lotus.add(pv); } });
+  lotus.position.copy(P).setY(P.y + 0.03);
+  v.timed(lotus, 3.4, (k, dt, t) => { lotus.scale.setScalar(0.2 + 1.1 * ease(Math.min(1, t / 1.4))); lotus.rotation.y += dt * 0.4; mats.forEach((m, i) => { m.opacity = Math.min(1, Math.max(0, t - i * 0.3) * 1.5) * Math.min(1, (3.4 - t) * 2) * 0.6; }); });
+  // the soul comes down the shaft in a slow spiral
+  const soul = orb(v, soulCol, 0.32), from = P.clone().setY(P.y + 5.5), rib = v.ribbon({ col: soulCol, width: 0.1, n: 30 }), rib2 = v.ribbon({ col: [1, 1, 1], width: 0.03, n: 20 });
+  await new Promise(res => v.timed(soul, 1.6, (k, dt, t) => { const e = ease(k), r = 0.6 * (1 - e); soul.position.copy(from).lerp(P.clone().setY(P.y + 0.6), e).add(V(Math.cos(t * 5) * r, 0, Math.sin(t * 5) * r)); rib.push(soul.position); rib2.push(soul.position); },
+    () => { rib.end(); rib2.end(); soul.visible = false; res(); }));
+  // it sinks in: halos rise up the body, golden motes drift away
+  v.flash(col, 0.35); v.burst(P.clone().setY(P.y + 0.6), { n: 30, speed: 2, cols: [[1, 1, 1], col, soulCol], size: 0.05, life: 0.8, g: -0.5 });
+  for (let i = 0; i < 4; i++) later(i * 160, () => v.ring(P, col, 0.9 - i * 0.12, 0.6, { y: P.y + 0.15 + i * 0.4, intensity: 1.4 }));
+  v.pillar(P, col, 0.3, 2.6, 1.2, { intensity: 0.8, grow: 1 });
+  ticker(v, 1.2, (k, dt) => { if (Math.random() < dt * 40) { const a = rand(0, 6.28), r = rand(0.2, 0.7); v.spark(P.x + Math.cos(a) * r, P.y + rand(0.1, 1.2), P.z + Math.sin(a) * r, { vy: rand(0.6, 1.4), vx: Math.cos(a) * 0.3, vz: Math.sin(a) * 0.3, life: 1.2, size: rand(0.03, 0.06), r: 1, gg: 0.9, b: 0.6, shape: 0, flicker: 1, ph: rand(0, 9) }); } });
+  glowTargets(ctx, 0.9, 1);
+  ctx.hit(); await ctx.wait(1300); outro(ctx);
 }
 
 // ---------------------------------------------------------------- protection and its breaking
@@ -939,7 +1363,6 @@ async function sealTalisman(ctx) {
   });
   for (let i = 0; i < tr.length; i++) { await ctx.until(F + tr[i]); if (i === 0) ctx.cue(); v.burst(tgt, { n: 14, speed: 2.5, cols: [[1, 1, 0.85], col], size: 0.05, life: 0.5, g: 0 }); v.light(tgt, col, 12, 0.15, 5); if (i % 3 === 0) v.ring(tgt, col, 1.2, 0.3, { vertical: true, yaw: ctx.cam.yaw || 0, y: tgt.y }); }
   await ctx.until(F + 1.5);
-  const seal = v.runeCircle(P, [0.5, 0.75, 1], 1.0, 1.6, { spin: 2, intensity: 1.6 });
   const glyph = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); g.font = 'bold 96px "LXGW WenKai TC", serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = '#7fc0ff'; g.shadowBlur = 16; g.fillStyle = '#e8f4ff'; g.fillText('封', 64, 68); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const gc = card(glyph, 0.9, 0.9, { add: true, order: 9 }); gc.position.copy(tgt).setY(tgt.y + 0.7);
   v.timed(gc, 1.4, (k, dt, t) => { gc.material.opacity = Math.min(1, t * 4) * (1 - k) * (0.75 + 0.25 * Math.sin(t * 14)); gc.scale.setScalar(0.9 + k * 0.2); });
@@ -1337,7 +1760,7 @@ async function houndNext(ctx) {
 
 // ---------------------------------------------------------------- the spells, by id
 export const SPELLBOOK = {
-  2: c => swordStorm(c, [0.45, 0.85, 1]), 3: c => swordWheel(c, [0.5, 0.88, 1], 12, 2, 4.4, 7.0), 6: rainbowDash, 7: c => swordWheel(c, [1, 0.55, 0.3], 16, 2, 3.42, 6.52),
+  2: c => swordStorm(c, [0.45, 0.85, 1]), 3: skySwords, 6: rainbowDash, 7: furySwords,
   8: earthSplit, 9: crossSlash, 10: bladeOrbit, 11: bladeCyclone,
   13: c => arrowVolley(c, [1, 0.6, 0.25], [0.45, 0.8, 0.5]), 14: arrowStorm, 15: hurricane, 17: c => arrowVolley(c, [0.8, 0.5, 1], [0.55, 0.4, 0.8]),
   18: burstFist, 19: fiveQi, 20: quake, 21: risingDragon,

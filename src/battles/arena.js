@@ -11,7 +11,7 @@ export const look = { set: arenaSet };
 export function record(src) {
   const terrain = Array.from({ length: H }, () => Array(W).fill(0));
   for (const [x, y] of BRAZIERS) terrain[y][x] = 2;   // blocked to walkers (a flier may cross)
-  return { n: 'arena', name: '演武場', win: [], lose: [], mapW: W, mapH: H, terrain, deploy: [[1, 3]], music: null,
+  return { n: 'arena', name: '演武場', win: [], lose: [], mapW: W, mapH: H, terrain, deploy: [[3, 3]], music: null,
     party: { deployMax: 12, forced: [0], unavailable: [] }, enemies: src.enemies, chests: [], intro: [], outro: [] };
 }
 // each enemy's attack type (data/actions.js holds them by battle: the record's are FOES_FROM's)

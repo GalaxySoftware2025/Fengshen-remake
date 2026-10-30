@@ -21,9 +21,10 @@ export function arena(D) { attackTypes(D); }
 
 // the arena's spawn cells and wave; in a battle, heroes come in on its deploy cells and enemies where theirs started
 Object.assign(PG, {
-  spawn: [[1, 3], [1, 4], [2, 2], [2, 5], [1, 2], [1, 5], [2, 3], [2, 4], [0, 3], [0, 4], [1, 1], [1, 6]],
-  wave: [['fox', 6, 3], ['fox', 6, 5], ['ghost', 7, 2], ['archer', 8, 4], ['archer', 8, 6]],
-  foeAt: [7, 4], enemiesAct: false, sel: null, key: '',   // (enemies stand still until switched on: the user's call)
+  // (both sides a column apart across the middle, the braziers at x 5 [the user's call, 2026-10-30: closer])
+  spawn: [[3, 3], [3, 4], [3, 2], [3, 5], [2, 3], [2, 4], [2, 2], [2, 5], [3, 1], [3, 6], [1, 3], [1, 4]],
+  wave: [['fox', 5, 3], ['fox', 5, 5], ['ghost', 6, 2], ['archer', 7, 4], ['archer', 7, 6], ['fox', 5, 4, 'undying']],   // the last: the target that never falls
+  foeAt: [6, 4], enemiesAct: false, sel: null, key: '',   // (enemies stand still until switched on: the user's call)
 });
 const ARENA_FOES = { fox: '妖獸', archer: '鐵弓手', ghost: '鬼靈' };
 // the enemies the picker offers: the arena's three, or one of each kind in this battle (the first of its sprite)
@@ -47,12 +48,19 @@ function pgPlace(u, prefs) {
   vfx.ring(actorOf(u).pos, u.side === 'player' ? [0.6, 0.8, 1] : [1, 0.4, 0.3], 1, 0.5, { intensity: 0.6 });
   return true;
 }
-function pgFoe(src, at) {
+function pgFoe(src, at, undying) {
   const u = R.makeUnit(src, 'enemy', { ai: 0 }); u.facing = 'left';
+  if (undying) undie(u);
   pgPlace(u, at ? [at] : opts.arena ? [PG.foeAt] : [[src.x, src.y]]);
 }
+// the arena's training target [the user's call, 2026-10-30]: takes every blow and shows its damage, but its HP never
+// reaches 0 (any fall to 0 or below fills it again), so it never dies; it never acts, and the wave forms again without it
+function undie(u) {
+  let hp = u.hp; u.name = '不死' + u.name; u.undying = true;
+  Object.defineProperty(u, 'hp', { enumerable: true, configurable: true, get: () => hp, set: x => { hp = x > 0 ? x : u.mhp; } });
+}
 function pgWave() {
-  if (opts.arena) for (const [k, x, y] of PG.wave) pgFoe(D.enemies.find(e => e.sprite === k), [x, y]);
+  if (opts.arena) for (const [k, x, y, undying] of PG.wave) pgFoe(D.enemies.find(e => e.sprite === k), [x, y], !!undying);
   else for (const e of D.enemies) if ((e.side || 'enemy') === 'enemy') {   // the battle's enemies as they started (their own AI and slots)
     const u = R.makeUnit(e, 'enemy', { slot: e.slot }); u.facing = 'left'; pgPlace(u, [[e.x, e.y]]);
   }
@@ -84,9 +92,10 @@ function pgHero(i) {
   const p = roster()[i]; let u = G.units.find(v => v.side === 'player' && v.cid === p.cid);
   if (u && u.alive) { PG.sel = u; return; }
   if (u) Object.assign(u, { alive: true, hp: u.mhp, mp: u.mmp, status: { sleep: 0, seal: 0, poison: 0 }, buf: {} });   // a fallen hero returns, keeping its level
-  else u = R.makeUnit(p, 'player');
+  else u = R.makeUnit(p, 'player', { slot: freeSlot() });   // (a hero's slot, 0-9: 還魂咒 and 玄天聖水 bring back only those [ROM 0x28300]; without one a fallen hero could not be raised)
   u.facing = 'right'; u.done = !opts.arena; if (pgPlace(u, opts.arena ? PG.spawn : D.deploy)) PG.sel = opts.arena ? u : PG.sel;   // in a battle: acts from the next round
 }
+function freeSlot() { const used = new Set(G.units.filter(v => v.side === 'player').map(v => v.slot)); for (let i = 0; i < 10; i++) if (!used.has(i)) return i; return null; }
 function pgRemove(u) { const i = G.units.indexOf(u); if (i >= 0) G.units.splice(i, 1); if (PG.sel === u) PG.sel = null; syncActors(); }
 const pgRun = fn => { PG.queue.push(fn); push({ k: 'PG' }); };
 async function pgFlush() { const was = PG.popup; PG.popup = false; while (PG.queue.length) await PG.queue.shift()(); PG.popup = was; pgFly(); }
@@ -183,9 +192,9 @@ export async function pgLoop() {
     }
     PG.endPhase = false; PG.sel = null; ui.hint('');
     if (PG.enemiesAct) for (const e of R.turnOrder().filter(v => v.side === 'enemy')) {   // their phase, fastest first
-      if (!e.alive || !R.players().length) continue;
+      if (!e.alive || e.undying || !R.players().length) continue;
       await pgFlush(); G.active = e; await aiTurn(e); G.active = null; e.done = true; ui.card(null);
     }
-    if (!G.units.some(v => v.side === 'enemy' && v.alive)) { for (const v of G.units.filter(v => v.side === 'enemy')) pgRemove(v); pgWave(); ui.toast('敵人重新集結', 900); }
+    if (!G.units.some(v => v.side === 'enemy' && v.alive && !v.undying)) { for (const v of G.units.filter(v => v.side === 'enemy')) pgRemove(v); pgWave(); ui.toast('敵人重新集結', 900); }
   }
 }

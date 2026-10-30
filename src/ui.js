@@ -107,7 +107,7 @@ export class UI {
     F.innerHTML = `<div class="vs"><span>${a.name}</span><span>→</span><span>${d.name}</span></div>
       <div class="big">${f.dmg}${f.kill ? ' <small style="font-size:16px;color:#ff8a6a">擊倒</small>' : ''}</div>
       <div class="sm"><span>命中 ${f.hit}%</span><span>會心 ${f.crit}%</span><span>剩餘 ${Math.max(0, d.hp - f.dmg)}</span></div>
-      <div class="go">再次點擊或 Enter 確定</div>`;
+      <div class="go">再次點擊或按 I 確定</div>`;
   }
   // ---------- messages
   async say(text, speaker, auto) {

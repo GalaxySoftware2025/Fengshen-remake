@@ -81,7 +81,7 @@ async function build(E, FX) {
   for (const r of LV.ramps) S.add(stairs(r, tread, riser, 0.5));
   // the decks: slabs over the ramparts' tops; a parapet of pale stone along every drop, and along the stairs' cheeks
   const slab = T.material(T.bricks(0x9a9a84, 2, 'passSlab'), { color: 0xdcdccc }, [1, 1]), cap = T.material(T.rock(0xc0c0ac, 'passCap', 0.3), { color: 0xe8e8dc }, [0.5, 0.5]);
-  S.add(shade(merged(slab, DECKS.map(([x0, z0, x1, z1, y]) => box(slab, x0, y - 0.04, z0, x1, y + 0.02, z1, 1)))));
+  S.add(shade(merged(slab, DECKS.map(([x0, z0, x1, z1, y]) => box(slab, x0 - 0.01, y - 0.04, z0 - 0.01, x1 + 0.01, y + 0.02, z1 + 0.01, 1)))));   // (1 cm past the deck's edges: flush with the drops, they flickered)
   const walls = [], caps = [];
   const parapet = (x0, z0, x1, z1, y) => {   // a low solid wall, 0.14 thick, a wider cap on it
     const along = Math.abs(x1 - x0) >= Math.abs(z1 - z0), t = 0.07, c = 0.1;

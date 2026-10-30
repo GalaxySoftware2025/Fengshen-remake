@@ -83,7 +83,7 @@ function bridgeRow(y) {
   for (let k = 0; k < 3; k++) {
     const r = 0.155 + R(y * 7 + k) * 0.01, m = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.03, BX1 - BX0 - 0.06 - R(y + k * 3) * 0.08, 14, 1), log);
     m.rotation.z = Math.PI / 2; m.rotation.x = R(y * 3 + k) * 6.28; m.position.set((BX0 + BX1) / 2 + (R(y * 5 + k) - 0.5) * 0.05, DECK - r, y + (k + 0.5) / 3); logs.add(m);
-    const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.08, 6), beam); peg.rotation.z = Math.PI / 2; peg.position.set(BX0 + 0.05, DECK - r, y + (k + 0.5) / 3); logs.add(peg);
+    const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.1, 6), beam); peg.rotation.z = Math.PI / 2; peg.position.set(BX0 + 0.04, DECK - r, y + (k + 0.5) / 3); logs.add(peg);   // (out past the log's end: at 10.01 it could end on the log's own end face)
   }
   g.add(shade(logs)); g.userData.logs = logs;
   const st = [box(beam, BX0 + 0.12, DECK - 0.62, y, BX0 + 0.34, DECK - 0.3, y + 1, 1), box(beam, BX1 - 0.34, DECK - 0.62, y, BX1 - 0.12, DECK - 0.3, y + 1, 1)];
@@ -121,7 +121,6 @@ export function breakRow(row, k) {
   if (k >= 1) g.visible = false;
 }
 export const rowGroup = row => rows.get(row);   // (tools/qa/battlecheck.js: the row falls into the water)
-export const rowBroken = row => broken.has(row);
 
 // ---------------------------------------------------------------- the wall and the gatehouse
 function wallBlock(x0, z0, x1, z1, faceZ) {   // a stretch of the city wall: brick to the top, a coping, battlements along its south edge
@@ -138,8 +137,10 @@ function gatehouse(S) {
   const { gateBrick, cap, roof, roofRim, door } = materials(), g = new THREE.Group();
   g.add(box(cap, GX0 - 0.08, DECK, GZ - 2.1, GX1 + 0.08, DECK + 0.14, GZ + 0.06, 0.5));                // the plinth
   g.add(box(gateBrick, GX0, DECK + 0.14, GZ - 2.0, 11.0, GATE_EAVE, GZ - 0.06, 1), box(gateBrick, 13.0, DECK + 0.14, GZ - 2.0, GX1, GATE_EAVE, GZ - 0.06, 1), box(gateBrick, 11.0, 1.02, GZ - 2.0, 13.0, GATE_EAVE, GZ - 0.06, 1));
-  g.add(box(cap, 10.85, DECK + 0.14, GZ - 0.2, 11.0, 1.02, GZ, 0.5), box(cap, 13.0, DECK + 0.14, GZ - 0.2, 13.15, 1.02, GZ, 0.5), box(cap, 10.8, 0.96, GZ - 0.22, 13.2, 1.06, GZ + 0.02, 0.5));
-  for (const [hx, s] of [[11.0, 1], [13.0, -1]]) { const leaf = box(door, Math.min(0, s * 0.99), 0, -0.04, Math.max(0, s * 0.99), 0.82, 0.04, 1);   // (corners in order: a box drawn backwards faces inward) leaf.position.set(hx, DECK + 0.14, GZ - 0.12); g.add(leaf);
+  g.add(box(cap, 10.85, DECK + 0.14, GZ - 0.2, 11.005, 1.02, GZ, 0.5), box(cap, 12.995, DECK + 0.14, GZ - 0.2, 13.15, 1.02, GZ, 0.5),   // (the jambs 5 mm proud of the doorway's sides: flush, they flickered)
+        box(cap, 10.8, 0.96, GZ - 0.22, 13.2, 1.06, GZ + 0.02, 0.5));
+  for (const [hx, s] of [[11.0, 1], [13.0, -1]]) {   // the doors, closed: each from its jamb to the middle, sill to lintel (never shown until the user's call, 2026-10-29: they sat in a comment)
+    g.add(box(door, Math.min(hx, hx + s * 0.99), DECK + 0.145, GZ - 0.16, Math.max(hx, hx + s * 0.99), 0.955, GZ - 0.08, 1));   // (box places itself from its corners; 5 mm off the plinth and the lintel: no shared faces)
     for (const yy of [0.16, 0.41, 0.66]) for (let j = 1; j < 5; j++) { const n = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 4), M.gold); n.position.set(hx + s * j * 0.19, DECK + 0.14 + yy, GZ - 0.07); g.add(n); } }
   for (const x of [8.8, 10.3, 13.6, 15.15]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, GATE_EAVE - 0.14, 18), M.lacquer); c.position.set(x, (GATE_EAVE + 0.14) / 2, GZ + 0.12); g.add(c);
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.12, 18), cap); b.position.set(x, DECK + 0.2, GZ + 0.12); g.add(b); }
@@ -166,7 +167,7 @@ async function build(E, FX) {
   const earth = new THREE.MeshStandardMaterial({ map: groundTex(lay, MW, MH), roughness: 0.95 });
   const top = T.material(T.flags(0x9a9a7c, 0x86866c, 'jmRampTop', 4, 0.3, 0x55553f), {}, [1, 1]);
   S.add(shade(LV.mesh(earth, m.wall, BASE, 1 / 32), true));
-  S.add(shade(merged(top, [box(top, CX0, RAMP - 0.02, FRONT, BX0, RAMP + 0.01, FACE, 1), box(top, BX1, RAMP - 0.02, FRONT, CX1, RAMP + 0.01, FACE, 1)])));
+  S.add(shade(merged(top, [box(top, CX0, RAMP - 0.02, FRONT, BX0 + 0.005, RAMP + 0.01, FACE, 1), box(top, BX1 - 0.005, RAMP - 0.02, FRONT, CX1, RAMP + 0.01, FACE, 1)])));   // (5 mm past the drops to the way: on them, they flickered)
   // balustrades: the court's sides (x 4.75 and 18.75, rows 3-7) and the rampart's north edge (either side of the way)
   const P = [], post = (x, z, y) => { P.push(box(m.cap, x - 0.08, y, z - 0.08, x + 0.08, y + 0.55, z + 0.08, 2)); const k = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), m.cap); k.position.set(x, y + 0.62, z); P.push(k); };
   const run = (x0, z0, x1, z1, y) => { const along = Math.abs(x1 - x0) > Math.abs(z1 - z0), n = Math.max(1, Math.round((along ? x1 - x0 : z1 - z0) / 0.75));
@@ -176,7 +177,7 @@ async function build(E, FX) {
   run(4.75, CZ0, 4.75, FRONT, RAMP); run(18.75, CZ0, 18.75, FRONT, RAMP);
   run(CX0 + 0.2, FRONT + 0.15, BX0 - 0.05, FRONT + 0.15, RAMP); run(BX1 + 0.05, FRONT + 0.15, CX1 - 0.2, FRONT + 0.15, RAMP);
   S.add(shade(merged(m.cap, P)));
-  S.add(shade(merged(m.cap, [box(m.cap, CX0 - 0.04, RAMP - 0.04, FACE - 0.08, BX0, RAMP + 0.06, FACE + 0.04, 0.5), box(m.cap, BX1, RAMP - 0.04, FACE - 0.08, CX1 + 0.04, RAMP + 0.06, FACE + 0.04, 0.5)])));   // the rampart's coping
+  S.add(shade(merged(m.cap, [box(m.cap, CX0 - 0.04, RAMP - 0.04, FACE - 0.08, BX0 + 0.01, RAMP + 0.06, FACE + 0.04, 0.5), box(m.cap, BX1 - 0.01, RAMP - 0.04, FACE - 0.08, CX1 + 0.04, RAMP + 0.06, FACE + 0.04, 0.5)])));   // the rampart's coping (1 cm past the drops)
   // the wall: behind the court, and out over the water both sides; the gatehouse on its face
   S.add(wallBlock(CX0, -4, CX1, CZ0, CZ0), wallBlock(-9, -4, CX0, 4.3, 4.3), wallBlock(CX1, -4, MW + 9, 4.3, 4.3));
   gatehouse(S);

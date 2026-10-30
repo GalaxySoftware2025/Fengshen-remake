@@ -42,7 +42,7 @@ function stoneStairs(s, stone, kerb) {
   }
   for (const x of [x0 + 0.06, x1 - 0.06]) for (let k = 0; k < s.n; k += 2) {
     const z = z0 + (k + 1) * dz, h = s.y0 + (s.y - s.y0) * (k + 1) / s.n;
-    sides.push(box(kerb, x - 0.09, h - 0.2, z - dz * 1.1, x + 0.09, h + 0.12, z + dz * 0.9, 2));
+    sides.push(box(kerb, x - 0.09, h - 0.2, z - dz * 1.1, x + 0.09, h + 0.125, z + dz * 0.9, 2));   // (+0.125: at +0.12 the first kerb's top was the terrace's own height, and flickered with it)
   }
   g.add(merged(stone, slabs), merged(kerb, sides));
   return shade(g);

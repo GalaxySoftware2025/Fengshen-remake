@@ -284,13 +284,22 @@ function puffTex() {
 }
 function heaven(E) {
   const S = E.world.scene, tex = puffTex(), puffs = [];
+  // scattered loosely round the platform's sides and front, not in rows [the user's call, 2026-10-29: they stood in
+  // lines]: each one out from an edge, most close in and a few drifting farther, kept a little apart from the others;
+  // big billows and small wisps, at a few heights (seeded: the same heaven on every visit)
+  let seed = 2026; const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const at = [];
-  for (let z = 1.5; z <= 9.5; z += 0.9) at.push([-0.9, z], [8.9, z]);
-  for (let x = -0.5; x <= 8.5; x += 0.9) at.push([x, 9.9]);
-  for (const [x, z] of at) {
-    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: new THREE.Color(1, 0.97, 0.94), transparent: true, depthWrite: false, opacity: 0.85 }));
-    const sz = 1.6 + Math.random() * 1.4; m.scale.set(sz, sz * 0.7, 1); m.position.set(x + (Math.random() - 0.5) * 0.4, -1.1 + sz * 0.3 + Math.random() * 0.25, z);   // above the cloud sea (-1.2): never cut by it m.renderOrder = 1; S.add(m);
-    puffs.push({ m, y: m.position.y, ph: Math.random() * 6, rot: (Math.random() - 0.5) * 0.1 });
+  for (let tries = 0; at.length < 44 && tries < 4000; tries++) {
+    const side = rnd(), out = 0.15 + Math.pow(rnd(), 1.8) * 3.8, sz = rnd() < 0.3 ? 0.9 + rnd() * 0.7 : 1.6 + rnd() * 1.6;
+    const [x, z] = side < 0.32 ? [-out, 1.2 + rnd() * 8.8] : side < 0.64 ? [8 + out, 1.2 + rnd() * 8.8] : [-1.6 + rnd() * 11.2, 9.3 + out];
+    if (at.some(c => Math.hypot(c[0] - x, c[1] - z) < (c[2] + sz) * 0.3)) continue;   // (clear of the others by their sizes)
+    at.push([x, z, sz]);
+  }
+  for (const [x, z, sz] of at) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: new THREE.Color(1, 0.97, 0.94), transparent: true, depthWrite: false, opacity: 0.7 + rnd() * 0.2 }));
+    m.scale.set(sz, sz * (0.55 + rnd() * 0.25), 1); m.position.set(x, -1.1 + sz * 0.3 + rnd() * 0.45, z);   // above the cloud sea (-1.2): never cut by it
+    m.renderOrder = 1; S.add(m);   // (was inside the comment above: never shown until the user's call, 2026-10-29)
+    puffs.push({ m, y: m.position.y, ph: rnd() * 6, rot: (rnd() - 0.5) * 0.1 });
   }
   const birds = [0, 1].map(i => { const c = craneBird(i); c.b.scale.setScalar(1.6); c.b.visible = false; S.add(c.b); return c; });
   let fly = null, wait = 4;

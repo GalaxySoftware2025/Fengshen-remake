@@ -13,7 +13,7 @@ html, body { margin: 0; height: 100%; background: #050605; overflow: hidden; fon
 #speed span { color: var(--paper2); letter-spacing: 2px; } #speed b { min-width: 46px; text-align: center; color: var(--gold2); font-variant-numeric: tabular-nums; }
 #speed button { font: inherit; width: 28px; height: 26px; padding: 0; line-height: 1; color: var(--gold2); cursor: pointer; background: rgba(40,30,16,.9); border: 1px solid rgba(216,178,90,.6); border-radius: 3px; }
 #speed button:hover:not(:disabled) { background: rgba(90,66,28,.95); } #speed button:disabled { opacity: .35; cursor: default; }
-body:has(#title:not(.hidden)) #speed { display: none; }   /* not on the title */
+body:has(#title:not(.hidden)) #speed, body:has(#controls:not(.hidden)) #speed { display: none; }   /* not on the title or the first visit's controls page */
 
 /* ---------- floating labels (damage numbers etc) ---------- */
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
@@ -155,6 +155,16 @@ body:has(#title:not(.hidden)) #speed { display: none; }   /* not on the title */
 .scroll h2 { font-size: 46px; margin: 0 0 10px; letter-spacing: 16px; } .lore { font-size: 19px; line-height: 1.8; text-align: left; }
 .cond { display: grid; gap: 10px; margin: 18px 0; font-size: 19px; text-align: left; } .cond b { color: #8a1a10; margin-right: 14px; }
 .press { font-size: 15px; color: #8a2a1a; animation: blink 1.6s infinite; } #end .press { color: var(--paper2); margin-top: 20px; }
+/* the controls page, on a first visit (main.js controlsPage) */
+#controls { background: rgba(5,4,3,.5); cursor: pointer; z-index: 5; }
+#controls .panel { min-width: min(520px, 90vw); padding: 26px 40px 22px; animation: fadeIn .6s both; }
+#controls h3 { text-align: center; text-indent: 10px; margin-bottom: 18px; }
+#controls table { border-collapse: collapse; margin: 0 auto; font-size: 19px; }
+#controls td { padding: 6px 0; } #controls td:first-child { padding-right: 34px; white-space: nowrap; } #controls td:last-child { color: var(--paper); letter-spacing: 2px; }
+#controls kbd { display: inline-block; min-width: 30px; padding: 3px 7px; margin-right: 6px; box-sizing: border-box; text-align: center; font: 700 15px/22px "Noto Sans TC", sans-serif; color: var(--gold2);
+  background: linear-gradient(#3a2c18, #1c140b); border: 1px solid rgba(216,178,90,.75); border-radius: 4px; box-shadow: 0 2px 0 rgba(0,0,0,.6); }
+#controls small { font-size: 14px; color: var(--paper2); opacity: .8; margin-right: 6px; }
+#controls .press { text-align: center; margin-top: 18px; color: var(--paper2); }
 #end { background: radial-gradient(ellipse, rgba(0,0,0,.4), rgba(0,0,0,.85)); cursor: pointer; text-align: center; align-content: center; }
 #end-title { font-size: 90px; font-weight: 700; letter-spacing: 24px; color: #fff3d0; text-shadow: 0 0 40px rgba(255,170,60,.6); animation: bannerIn 1.4s both; }
 #end-sub { font-size: 24px; color: #ffcf9a; letter-spacing: 6px; }
@@ -219,6 +229,8 @@ body:not(.tools) #pg, body:not(.tools) .pg-fly, body:not(.tools) #pg-pop { displ
 #c-menu { display: flex; flex-direction: column; gap: 10px; }
 #c-menu button { font-size: 20px; letter-spacing: 6px; padding: 12px 0; }
 #c-menu button.on { border-color: var(--gold2); color: var(--gold2); box-shadow: 0 0 18px rgba(255,200,100,.25); }
+/* the keyboard's frame (src/keynav.js): what I presses */
+.kf { outline: 2px solid var(--gold2) !important; outline-offset: 2px; box-shadow: 0 0 16px rgba(255,210,120,.7) !important; }
 #c-menu button[data-id="go"] { background: linear-gradient(#b2281d, #6e140e); border-color: var(--gold); color: #fff4d8; font-weight: 700; margin: 8px 0; }
 #c-panel { overflow: auto; align-self: start; max-height: calc(100vh - 150px); box-sizing: border-box; }
 .people { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }   /* the heroes in a row on top, the chosen one's details below (as 裝備物品) [the user's call] */
@@ -278,6 +290,8 @@ i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; bo
 #card-screen div { font-size: clamp(22px, 2.6vw, 34px); letter-spacing: .4em; color: #f1e6cc; animation: fadeIn 1.2s both; }
 #card-screen div:nth-child(2) { animation-delay: .25s; } #card-screen div:nth-child(3) { animation-delay: .5s; } #card-screen div:nth-child(4) { animation-delay: .75s; }
 #card-screen div:nth-child(5) { animation-delay: 1s; } #card-screen div:nth-child(6) { animation-delay: 1.25s; } #card-screen div:nth-child(n+7) { animation-delay: 1.5s; }
+#card-screen.over { background: rgba(5,4,3,.55); }   /* a page over the map (the prologue's first): the court seen through it */
+#card-screen.over div { text-shadow: 0 0 6px #000, 0 2px 3px #000; }
 #card-screen.place div { font-size: clamp(36px, 5vw, 64px); letter-spacing: .5em; color: #fff1cc; border-top: 1px solid rgba(216,178,90,.6); border-bottom: 1px solid rgba(216,178,90,.6); padding: 10px 0 10px .5em; animation: bannerIn 1.4s both; }
 /* the 昌平村 descent: the village name under its marker on the world map (scene.js descend) */
 .map-label { position: fixed; z-index: 4; transform: translate(-50%, 6px); pointer-events: none; font-size: clamp(26px, 3vw, 40px); letter-spacing: .35em; padding: 4px .2em 4px .55em; color: #fff4d6; text-shadow: 0 0 6px rgba(0,0,0,.85), 0 2px 10px rgba(0,0,0,.6); border-top: 1px solid rgba(232,196,110,.75); border-bottom: 1px solid rgba(232,196,110,.75); background: linear-gradient(90deg, transparent, rgba(20,14,6,.45) 20%, rgba(20,14,6,.45) 80%, transparent); animation: fadeIn 1.4s .4s both; transition: opacity 1s; }

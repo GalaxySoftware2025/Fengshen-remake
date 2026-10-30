@@ -170,10 +170,10 @@ export function flap(c, dt, t) {
 function cranes(E) {
   const S = E.world.scene, V = [[0, 0], [-0.5, 0.42], [-0.5, -0.42], [-1.0, 0.84], [-1.0, -0.84]];
   const birds = V.map((v, i) => { const c = craneBird(i); c.v = v; c.b.visible = false; S.add(c.b); return c; });
-  let rel = null, wait = 2, Z = 3.5;
+  let rel = null, wait = 0.3, Z = 3.5, from = -4.5;   // the first skein starts just out of frame, in view in about 2 s [the user's call]; later ones from further off
   E.world.updaters.push((dt, t) => {
     const cx = E.world.camera.position.x;
-    if (rel === null) { if ((wait -= dt) > 0) return; rel = -7.5; Z = 5 + Math.random() * 2; }
+    if (rel === null) { if ((wait -= dt) > 0) return; rel = from; from = -7.5; Z = 5 + Math.random() * 2; }
     rel += 0.75 * dt;
     for (const c of birds) {
       flap(c, dt, t); c.b.visible = true;

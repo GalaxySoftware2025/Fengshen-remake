@@ -58,7 +58,8 @@ async function build(E, FX) {
   // the dais's front: red-and-gold copings over the stone, low parapets on its blocks
   const lacq = M.lacquer, gold = M.gold, coping = [], cg = [];
   const edge = (x0, z0, x1, z1, y) => { coping.push(box(lacq, x0, y - 0.1, z0, x1, y + 0.02, z1, 2)); cg.push(box(gold, x0 - 0.01, y - 0.14, z0 - 0.01, x1 + 0.01, y - 0.1, z1 + 0.01, 2)); };
-  edge(8, 8.9, 10, 9.0, UP); edge(15, 8.9, 17, 9.0, UP); edge(7.92, 6, 8.02, 9, UP); edge(16.98, 6, 17.08, 9, UP);
+  // (1 cm proud of the dais's faces and past their ends at the stair, the sides 5 mm: flush, they flickered red on the stone)
+  edge(8, 8.9, 10.01, 9.01, UP); edge(14.99, 8.9, 17, 9.01, UP); edge(7.92, 6, 8.02, 9.005, UP); edge(16.98, 6, 17.08, 9.005, UP);
   S.add(merged(lacq, coping), merged(gold, cg));
   S.add(parapet(M, stone, 8, 7.0, 10, 7.25, UP, 0.3), parapet(M, stone, 15, 7.0, 17, 7.25, UP, 0.3));
   // the walls: inner bays at z 4, outer bays at z 6, the alcove's lattice behind the throne
@@ -74,7 +75,7 @@ async function build(E, FX) {
   for (const [x, z, y] of [[1.5, 5.75, 0], [4.5, 5.75, 0], [7.5, 5.75, 0], [9.5, 3.75, UP], [15.5, 3.75, UP], [17.5, 5.75, 0], [20.5, 5.75, 0]]) S.add(pillar(M, x, z, y, TOP - y, 0.4));
   for (const z of [12.6, 19.6]) for (const x of [1.5, 23.0]) S.add(pillar(M, x, z, 0, TOP - 0.6, 0.38));
   // the hall's side walls: lattice bays facing in, behind the columns
-  for (const [x, sg] of [[1.0, 1], [24.0, -1]]) { const w = latticeWall(M, 0, 16, 0, 0, TOP - 0.6, 8, latt); w.rotation.y = sg * Math.PI / 2; w.position.set(x, 0, sg > 0 ? 22 : 6); S.add(w); }
+  for (const [x, sg] of [[1.0, 1], [24.0, -1]]) { const w = latticeWall(M, 0, 16, 0, 0, TOP - 0.6, 8, latt); w.rotation.y = sg * Math.PI / 2; w.position.set(x - sg * 0.005, 0, sg > 0 ? 22 : 6); S.add(w); }   // (5 mm back: its lintel's face fell on the front wall's corner post's)
   // the front: a low red border either side of the door (south of everyone)
   for (const [a, b] of [[1.0, 11.0], [14.0, 24.0]]) S.add(box(lacq, a, -0.6, 21.9, b, 0.14, 22.1, 2), box(gold, a, 0.14, 21.92, b, 0.17, 22.08, 2));
   for (const x of [10.9, 14.1]) S.add(box(lacq, x - 0.1, -0.6, 22, x + 0.1, 0.14, 25, 2));

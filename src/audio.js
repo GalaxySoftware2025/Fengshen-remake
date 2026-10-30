@@ -2,7 +2,8 @@
 // assets/audio/XX.ogg; without those, the logs the extractor rips are synthesized: load()). Ids as the ROM has them: under 0x8000 a song, 0x8000+ an effect. data/audio.js gives each its
 // length and loop start: a song plays its intro once, then loops between loop start and its end, sample-exact.
 // Browsers start sound only after a click or key: the context is resumed on the first one.
-// Keys: M mutes and unmutes (kept in localStorage).
+// Keys: M mutes and unmutes (kept in localStorage; keys.js).
+import * as Keys from './keys.js';
 let ctx = null, master = null, musicBus = null, sfxBus = null, table = null, cur = null, want = null;
 const buffers = new Map(), loading = new Map();
 const MUSIC_VOL = 0.55, SFX_VOL = 0.8;
@@ -86,7 +87,7 @@ export function attach() {
   let over = null;
   document.addEventListener('pointerover', e => { const el = pick(e.target); if (el && el !== over && !el.disabled) sfx('cursor'); over = el; }, true);
   window.addEventListener('keydown', e => {
-    if (e.key !== 'm' && e.key !== 'M') return;
+    if (!Keys.is(e, 'mute')) return;
     const m = !muted(); try { localStorage.setItem('fs-mute', m ? '1' : '0'); } catch (err) {}
     if (master) master.gain.setTargetAtTime(m ? 0 : 1, ctx.currentTime, 0.05);
   });

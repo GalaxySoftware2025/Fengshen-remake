@@ -83,10 +83,10 @@ async function build(E, FX) {
   const trim = [], caps = [], d = (STAIR.z1 - STAIR.z0) / STEPS;
   for (let k = 0; k < STEPS; k++) {
     const y = Y.hall + (Y.tier2 - Y.hall) * (STEPS - k) / STEPS, z = STAIR.z0 + k * d;
-    caps.push(box(gold, STAIR.x0 + 0.1, y - 0.03, z + d - 0.03, STAIR.x1 - 0.1, y + 0.005, z + d + 0.01, 2));
+    caps.push(box(gold, STAIR.x0 + 0.1, y - 0.03, z + d - 0.03, STAIR.x1 - 0.1, y + 0.005, z + d + 0.01, 2));   // (the stringers stand 5 mm proud of the risers: 1 mm flickered)
     for (const x of [STAIR.x0, STAIR.x1]) {
-      trim.push(box(lacq, x - 0.07, Y.hall, z, x + 0.07, y + 0.1, z + d + 0.001, 2));
-      caps.push(box(gold, x - 0.085, y + 0.1, z, x + 0.085, y + 0.13, z + d + 0.001, 2));
+      trim.push(box(lacq, x - 0.07, Y.hall, z, x + 0.07, y + 0.1, z + d + 0.005, 2));
+      caps.push(box(gold, x - 0.085, y + 0.1, z, x + 0.085, y + 0.13, z + d + 0.005, 2));
     }
   }
   S.add(merged(lacq, trim), merged(gold, caps));
@@ -186,16 +186,19 @@ function reliefPanels(S, x, nf, relief, gold) {
     plane(m, z0 + 0.05, z1 - 0.05, y0 + 0.25, y1 - 0.2); frame(z0, z1, y0 + 0.2, y1 - 0.15, 0.07);
   }
 }
-// a lacquered kerb along every edge of the floor that faces south or sideways onto the void (the original's red border)
+// a lacquered kerb along every edge of the floor that faces south or sideways onto the void (the original's red border):
+// one box per straight run, standing 1 cm proud of the floor's face below it and past the run's ends (flush on the stone
+// face, the two flickered red and olive as the camera moved [the user's report, battle 31, 2026-10-26]: tools/qa/sets.js coplanar)
 function edgeTrim(S, M) {
   const out = [], kerb = (...a) => out.push(box(M.lacquer, ...a, 2));
-  const R = LV.R, W = LV.w * R, H = LV.h * R, g = (i, j) => (i < 0 || j < 0 || i >= W || j >= H) ? NaN : LV.H[j * W + i];
-  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
-    const y = g(i, j); if (isNaN(y)) continue;
-    const x0 = i / R, z0 = j / R, s = 1 / R;
-    if (isNaN(g(i, j + 1))) kerb(x0, y - 0.6, z0 + s - 0.08, x0 + s, y + 0.12, z0 + s);
-    if (isNaN(g(i - 1, j)) && z0 > 16) kerb(x0, y - 0.6, z0, x0 + 0.08, y + 0.12, z0 + s);
-    if (isNaN(g(i + 1, j)) && z0 > 16) kerb(x0 + s - 0.08, y - 0.6, z0, x0 + s, y + 0.12, z0 + s);
+  const R = LV.R, W = LV.w * R, H = LV.h * R, s = 1 / R, g = (i, j) => (i < 0 || j < 0 || i >= W || j >= H) ? NaN : LV.H[j * W + i];
+  // runs along one line of cells: each cell's height, or NaN where no kerb; one box per run of one height
+  const runs = (n, at, emit) => { for (let k = 0; k < n;) { const y = at(k); if (isNaN(y)) { k++; continue; } let e = k; while (e + 1 < n && at(e + 1) === y) e++; emit(k, e + 1, y); k = e + 1; } };
+  for (let j = 0; j < H; j++) runs(W, i => isNaN(g(i, j)) || !isNaN(g(i, j + 1)) ? NaN : g(i, j), (a, b, y) => kerb(a * s - 0.01, y - 0.6, (j + 1) * s - 0.08, b * s + 0.01, y + 0.12, (j + 1) * s + 0.01));
+  for (let i = 0; i < W; i++) {   // (the sides only down the hall and the court below it; a side's top a hair under the front's, where they meet; past
+    // its south end, where the floor drops)
+    runs(H, j => j * s <= 16 || isNaN(g(i, j)) || !isNaN(g(i - 1, j)) ? NaN : g(i, j), (a, b, y) => kerb(i * s - 0.008, y - 0.6, a * s, i * s + 0.08, y + 0.118, b * s + 0.01));
+    runs(H, j => j * s <= 16 || isNaN(g(i, j)) || !isNaN(g(i + 1, j)) ? NaN : g(i, j), (a, b, y) => kerb((i + 1) * s - 0.08, y - 0.6, a * s, (i + 1) * s + 0.008, y + 0.118, b * s + 0.01));
   }
   S.add(merged(M.lacquer, out));
 }

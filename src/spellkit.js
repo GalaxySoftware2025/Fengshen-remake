@@ -35,7 +35,6 @@ export function bezier(a, b, c, t) { return a.clone().multiplyScalar((1 - t) * (
 export function trail(vfx, p, col, n, size) { for (let i = 0; i < (n || 2); i++) vfx.spark(p.x + rand(-0.04, 0.04), p.y + rand(-0.04, 0.04), p.z + rand(-0.04, 0.04), { life: rand(0.25, 0.5), size: size || 0.12, size1: 0.01, r: col[0], gg: col[1], b: col[2], shape: 0 }); }
 export function gather(ctx, col, dur) {
   const c = ctx.caster.chest(), v = ctx.vfx;
-  v.runeCircle(ctx.caster.pos, col, 1.25, dur / 1000 + 0.6, { spin: 1.2 });   // (a caster with no cast of its own: src/casts.js; test/casts.mjs keeps that to none)
   v.light(c.clone().add(V(0, 0.8, 0)), col, 3.5, dur / 1000 + 0.3, 4);
   const n = Math.round(dur / 18);
   for (let i = 0; i < n; i++) {
@@ -52,7 +51,7 @@ export async function intro(ctx, col, o) {
   if (own) { const a = ctx.caster, keep = { facing: a.u.facing, hover: a.hover, lift: a.lift }; a.u.facing = 'down'; await ctx.wait(180); await own(a, a.pos.clone(), col, ctx); a.u.facing = keep.facing; a.hover = keep.hover; a.lift = keep.lift; }
   else { ctx.pose('cast'); gather(ctx, col, o.dur || 900); await ctx.wait(o.dur || 900); }
   ctx.pose('cast');
-  ctx.cam.shot(ctx.at, { dist: o.dist || 9, pitch: o.pitch || 0.5, yaw: o.yaw == null ? -0.25 : o.yaw });
+  if (!o.keep) ctx.cam.shot(ctx.at, { dist: o.dist || 9, pitch: o.pitch || 0.5, yaw: o.yaw == null ? -0.25 : o.yaw });   // (keep: the spell has already moved the camera on, mid-cast)
 }
 export function outro(ctx) { ctx.vfx.screen.barsTarget = 0; ctx.vfx.screen.darkTarget = 0; ctx.pose(null); }
 // darkCol is the light taken away (world.js grade: col *= 1 - dark * darkCol): (0.9, 0.75, 0.45) leaves a night-blue
@@ -71,6 +70,12 @@ export function channel(ctx, col, s) {
 // the spell's sounds from s seconds after the cast began (the original's first sound, tools/rom/spelltime.py), whatever
 // the script is doing then: a spell whose first sound is its casting, not its blow
 export const cueAt = (ctx, s) => { ctx.until(s).then(() => ctx.cue && ctx.cue()); };
+// a cinematic shot at s seconds into the cast (its own clock): the camera swings round the action between a spell's beats
+// so it reads in 3D [the user's call, 2026-10-30: the last spells' cameras, after 楊戩's summons]; p a point or a function of
+// one (taken when the shot starts)
+export const shotAt = (ctx, s, p, o) => ctx.until(s).then(() => ctx.cam.shot(typeof p === 'function' ? p() : p, Object.assign({ cine: true }, o)));
+// the shot's yaw (from the player's own) that puts the camera on from's side of to, looking across it, at most lim round
+export function yawToward(ctx, from, to, lim = 0.9) { let d = Math.atan2(from.x - to.x, from.z - to.z) - ctx.cam.user.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); return Math.max(-lim, Math.min(lim, d)); }
 export const ticker = (v, life, fn, onEnd) => v.timed(new THREE.Object3D(), life, fn, onEnd);   // per-frame callback for a while
 export const facing = (a, b) => b.clone().sub(a).setY(0).normalize();
 export const yawOf = d => Math.atan2(d.x, d.z);

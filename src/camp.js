@@ -5,6 +5,7 @@ import * as K from './campaign.js';
 import * as Save from './save.js';
 import { autoPick } from './party.js';
 import { sfx, SFX } from './audio.js';
+import { keynav } from './keynav.js';
 const { D } = R;
 const $ = id => document.getElementById(id);
 const C = () => globalThis.COMMON;
@@ -200,6 +201,17 @@ export async function campScene(E, state, onChange) {
   K.campPick(state, D.n, D.party, D.partyRules);
   const menu = $('c-menu'); menu.innerHTML = '';
   let pick = null;
+  // the keyboard (keynav.js): the menu and everything on the open page; O answers a question 否, closes the save slots,
+  // else goes from the page back to the menu
+  const nav = keynav($('camp'), {
+    items: '#c-menu button, #c-panel .pt, #c-panel .islot:not(.empty), #c-panel .ibag .it:not(.none), #c-panel .lh:not(.ro), #c-panel .sl:not(.head), #c-panel button',
+    start: () => menu.querySelector('button.on') || menu.firstElementChild, prefer: '#c-panel .lask button.on',
+    back: cur => {
+      const no = box.querySelector('.lask button.on'); if (no) return no.click();
+      const ret = [...box.querySelectorAll('.bar button')].find(b => /返回/.test(b.textContent)); if (ret) return ret.click();
+      if (box.contains(cur)) nav.focus(menu.querySelector('button.on') || menu.firstElementChild);
+    },
+  });
   const open = id => {
     for (const b of menu.children) b.classList.toggle('on', b.dataset.id === id);
     box.classList.remove('hidden');
@@ -228,6 +240,7 @@ export async function campScene(E, state, onChange) {
     }
     open('people');
   });
+  nav.stop();
   E.ui.show('camp', false);
   return result;
 }

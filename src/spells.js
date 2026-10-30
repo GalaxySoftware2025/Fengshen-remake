@@ -37,30 +37,39 @@ async function flyingSwords(ctx, n) {
   v.impact(tgt, col, 1.1); ctx.hit();
   await ctx.wait(600); outro(ctx);
 }
+// 擎天劍: [ROM fx 1] great swords drop from the sky, one onto each cell of the cross (the spell's area), the aimed cell's
+// first and largest, the four arms close behind; a fence of small swords springs up round the whole cross, as the
+// original's does round the one [the user's calls, 2026-10-30: five swords, not one; no magic circle under them]
 async function giantSword(ctx) {
   const col = [0.5, 0.9, 1], v = ctx.vfx;
   cueAt(ctx, 0.97);   // (the original's sound as the sword appears over him, 0.97 s after the cast begins; over at 2.8 s)
   await intro(ctx, col, { dur: 900, dist: 11, pitch: 0.38 });
   DARK(ctx, 0.45, 0.9, 0.7, 0.45);
-  v.runeCircle(ctx.at, col, 2.4, 2.4, { spin: 0.6, intensity: 2 });
-  const s = swordMesh(col, 4.2), top = ctx.at.clone().add(V(0, 12, 0)), end = ctx.at.clone().add(V(0, -0.6, 0));
-  const ribs = [-0.25, 0, 0.25].map(o => [o, v.ribbon({ col, width: o ? 0.12 : 0.3, n: 16, taper: 0.6 })]);
-  s.rotation.x = Math.PI;
-  v.timed(s, 2.2, (k, dt, t) => {
-    const f = Math.min(1, Math.max(0, (t - 0.25) / 0.5)), p = top.clone().lerp(end, f * f);
-    s.position.copy(p); if (f > 0 && f < 1) for (const [o, r] of ribs) r.push(p.clone().add(V(o, 3.2, 0)));
-    if (f >= 1 && !s.userData.hit) {
-      s.userData.hit = 1; for (const [, r] of ribs) r.end();
-      v.impact(ctx.at, col, 1.5); v.ring(ctx.at, col, 4, 0.8, { intensity: 1.2 }); v.decal(ctx.at, col, 2.2, 1.6, { intensity: 0.7 });
-      for (let i = 0; i < 8; i++) { const a = i / 8 * 6.28, p2 = ctx.at.clone().add(V(Math.cos(a) * 1.4, 0, Math.sin(a) * 1.4)); const sm = swordMesh(col, 1.1); sm.position.copy(p2).setY(p2.y - 1.2);
-        v.timed(sm, 1.1, (k2) => { sm.position.y = effectH(p2.x, p2.z) - 1.2 + Math.min(1, k2 * 4) * 1.3; sm.rotation.y = a; if (k2 > 0.8) sm.scale.setScalar(1.1 * (1 - (k2 - 0.8) * 5)); });
-        v.burst(p2.clone().setY(p2.y + 0.1), { n: 8, speed: 2.5, col: [0.55, 0.45, 0.35], size: 0.06, life: 0.8, g: 9, shape: 1 }); }
-      for (let i = 0; i < 26; i++) { const a = rand(0, 6.28), sp = rand(1.5, 4); v.smokePuff(ctx.at.x, ctx.at.y + 0.15, ctx.at.z, { vx: Math.cos(a) * sp, vy: rand(0.2, 0.9), vz: Math.sin(a) * sp, drag: 2.2, life: rand(1.4, 2.2), size: 0.5, size1: 1.6, tint: [0.5, 0.45, 0.38] }); }
-      for (let i = 0; i < 40; i++) v.spark(ctx.at.x + rand(-0.4, 0.4), ctx.at.y + 0.1, ctx.at.z + rand(-0.4, 0.4), { vx: rand(-3, 3), vy: rand(2, 5), vz: rand(-3, 3), g: 12, life: rand(0.6, 1.1), size: rand(0.05, 0.1), r: 0.45, gg: 0.38, b: 0.3, a: 1, shape: 1, floor: ctx.at.y + 0.03 });
-    }
-    if (k > 0.85) s.scale.setScalar(4.2 * (1 - (k - 0.85) / 0.15));
+  const cells = ctx.cells.length ? ctx.cells : [ctx.at], last = 0.25 + 0.5 + (cells.length - 1) * 0.09 + 0.12;   // (last: when the last one lands)
+  cells.forEach((c, i) => {
+    const big = i === 0, sc = big ? 4.2 : 3.0, top = c.clone().add(V(0, 12, 0)), end = c.clone().add(V(0, big ? -0.6 : -0.45, 0)), d = big ? 0 : 0.12 + (i - 1) * 0.09;
+    const s = swordMesh(col, sc), ribs = (big ? [-0.25, 0, 0.25] : [-0.18, 0.18]).map(o => [o, v.ribbon({ col, width: o && big ? 0.12 : big ? 0.3 : 0.1, n: 16, taper: 0.6 })]);
+    s.rotation.x = Math.PI; s.visible = false;
+    v.timed(s, 2.2 + d, (k, dt, t) => {
+      const f = Math.min(1, Math.max(0, (t - d - 0.25) / 0.5)), p = top.clone().lerp(end, f * f);
+      s.visible = t >= d + 0.25; s.position.copy(p); if (f > 0 && f < 1) for (const [o, r] of ribs) r.push(p.clone().add(V(o, sc * 0.76, 0)));
+      if (f >= 1 && !s.userData.hit) {
+        s.userData.hit = 1; for (const [, r] of ribs) r.end();
+        // (five at once: one full impact, the centre's; the arms a lighter blow each, or the light and dust white the screen out)
+        if (big) v.impact(c, col, 1.4); else { v.burst(c.clone().setY(c.y + 0.3), { n: 16, speed: 3, cols: [[1, 1, 1], col], size: 0.06, life: 0.5, shape: 1 }); v.ring(c, col, 1.1, 0.45, { intensity: 1, y: c.y + 0.05 }); v.shake(0.08, 0.12); }
+        v.decal(c, col, big ? 1.6 : 0.7, 1.4, { intensity: big ? 0.6 : 0.45 });
+        for (let j = 0; j < (big ? 14 : 4); j++) { const a = rand(0, 6.28), sp = rand(1.5, 3.5) * (big ? 1 : 0.6); v.smokePuff(c.x, c.y + 0.15, c.z, { vx: Math.cos(a) * sp, vy: rand(0.2, 0.8), vz: Math.sin(a) * sp, drag: 2.2, life: rand(1.2, 1.8), size: 0.4, size1: big ? 1.2 : 0.8, tint: [0.4, 0.36, 0.3] }); }
+        for (let j = 0; j < (big ? 40 : 12); j++) v.spark(c.x + rand(-0.4, 0.4), c.y + 0.1, c.z + rand(-0.4, 0.4), { vx: rand(-3, 3), vy: rand(2, 5), vz: rand(-3, 3), g: 12, life: rand(0.6, 1.1), size: rand(0.05, 0.1), r: 0.45, gg: 0.38, b: 0.3, a: 1, shape: 1, floor: c.y + 0.03 });
+        if (big) for (let j = 0; j < 8; j++) {   // the fence, round the whole cross (past the arms' cells)
+          const a = (j + 0.5) / 8 * 6.28, p2 = c.clone().add(V(Math.cos(a) * 1.9, 0, Math.sin(a) * 1.9)), g0 = c.y, sm = swordMesh(col, 1.1); sm.position.copy(p2).setY(g0 - 1.2);
+          v.timed(sm, 1.1, (k2) => { sm.position.y = g0 - 1.2 + Math.min(1, k2 * 4) * 1.3; sm.rotation.y = a; if (k2 > 0.8) sm.scale.setScalar(1.1 * (1 - (k2 - 0.8) * 5)); });
+          v.burst(p2.clone().setY(g0 + 0.1), { n: 8, speed: 2.5, col: [0.55, 0.45, 0.35], size: 0.06, life: 0.8, g: 9, shape: 1 });
+        }
+      }
+      if (k > 0.85) s.scale.setScalar(sc * (1 - (k - 0.85) / 0.15));
+    });
   });
-  await ctx.wait(800); ctx.hit(); await ctx.wait(1200); outro(ctx);
+  await ctx.wait(Math.max(800, last * 1000)); ctx.hit(); await ctx.wait(1200); outro(ctx);
 }
 // [ROM fx 4, 5] swords fly up from him into a circle in the sky, then rain down round the target, the
 // first landing on the original's sound (F s after the cast begins); they stand in the ground until the effect is over (E)
@@ -68,7 +77,6 @@ async function swordRain(ctx, n, col, F, E) {
   const v = ctx.vfx;
   await intro(ctx, col, { dur: 850, dist: 11, pitch: 0.45 });
   const sky = ctx.at.clone().add(V(0, 6.5, 0)), L = Math.max(2.6, E - ctx.now() - 0.2);
-  const disc = v.runeCircle(sky, col, 2.6, L, { spin: 1.4, intensity: 1.8 }); disc.position.y = sky.y;
   v.light(sky, col, 40, L, 12);
   // the swords rise from him into the circle, as the original's do while it gathers
   const c = ctx.caster.chest(), rise = Math.max(0.3, F - 0.5 - ctx.now());
@@ -223,7 +231,6 @@ async function fireOrbs(ctx) {
   const C = Math.max(1.45, F - 0.28 - ctx.now());   // (C: they circle until the first dives, 0.28 s before it lands)
   cueAt(ctx, F);
   const cells = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0, 0], [1, 0], [-1, 0]].map(([dx, dz]) => { const p = V(at.x + dx, 0, at.z + dz); p.y = effectH(p.x, p.z); return p; });
-  v.runeCircle(at, [1, 0.5, 0.15], 2.2, 3, { spin: 1.6 });
   const n = 8; let landed = 0;
   for (let i = 0; i < n; i++) {
     const o = v.fireball(0.2, { heat: 1.3 }), rib = v.ribbon({ col: [1, 0.45, 0.1], width: 0.13, n: 18 });
@@ -348,7 +355,7 @@ async function heal(ctx, col, F = 3.02) {
       });
     }
     later(ctx, R, () => {
-      v.runeCircle(P, col, 1.0, 1.8, { spin: 0.5, intensity: 1.2 }); v.decal(P, col, 1.1, 1.8, { intensity: 0.7 }); v.ring(P, col, 1.6, 0.7, { intensity: 1.2 });
+      v.decal(P, col, 1.1, 1.8, { intensity: 0.7 }); v.ring(P, col, 1.6, 0.7, { intensity: 1.2 });
       v.pillar(P, col, 0.45, 3.2, 1.4, { taper: 0.9, intensity: 0.45, grow: 1 });
       v.light(P.clone().setY(P.y + 1.2), col, 12, 1.6, 6);
       for (let j = 0; j < 3; j++) { const r = v.ribbon({ col, width: 0.06, n: 22 });

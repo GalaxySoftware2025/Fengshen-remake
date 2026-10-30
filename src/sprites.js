@@ -21,3 +21,7 @@ export const FLYING_FOES = new Set(['0b62ba', '09039c', '0ca8fe', '0a4f50', '08b
 // spirits that float off in a story scene and keep the height they rose from over lower ground (scene 42: the 北方守護靈
 // leaves the stele over the balustrade and the sea, src/scene.js); drawn over the scenery as the fliers are
 export const FLOATERS = new Set(['0b8ccc']);
+// sheets drawn lying on the ground seen from above, laid flat on it in a story scene (src/actors.js lie), not stood up as
+// a card: scene 0's rabbit carcass after 林雲's blow [the user's report: it seemed to float]; tools/qa/lying.js
+// @qa scene:0 job:lying   (only scene 0's carcass lies: src/sprites.js LYING)
+export const LYING = new Set(['079f32']);

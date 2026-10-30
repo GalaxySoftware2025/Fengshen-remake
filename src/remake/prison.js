@@ -103,7 +103,7 @@ function straw(x0, z0, x1, z1, y = 0) {
   return g;
 }
 function torch(S, FX, E, x, z, h) {
-  S.add(shade(box(materials().iron, x - 0.05, h - 0.35, z - 0.12, x + 0.05, h - 0.05, z)));
+  S.add(shade(box(materials().iron, x - 0.05, h - 0.35, z - 0.02, x + 0.05, h - 0.05, z + 0.1)));   // the bracket out from the wall under its flame (it sat inside the wall, its face on the wall's, and flickered)
   FX.fire(E, { x, y: z + 0.08, z: h, size: 0.5, light: 7, col: 0xff8a3a, smoke: false });
 }
 // maximal rectangles of one kind of cell (runs along x, then grown down while the run repeats)
@@ -357,7 +357,7 @@ async function buildHall(E, FX) {
   // the rock round the hall
   const fills = [];
   for (let y = -OUT; y < 0; y++) for (let x = -OUT; x < 16 + OUT; x++) fills.push(box(fill, x, BASE, y, x + 1, TOP + 1.2, y + 1, 0.5));
-  for (let y = 0; y < 3; y++) for (let x = -OUT; x < 16 + OUT; x++) if (x < 5 || x >= 10 || y === 0) fills.push(box(fill, x, BASE, y, x + 1, TOP + 1.2, y + 1, 0.5));
+  for (let y = 0; y < 3; y++) for (let x = -OUT; x < 16 + OUT; x++) if (x < 5 || x >= 10 || y === 0) fills.push(box(fill, x - (x === 10 && y ? 0.005 : 0), BASE, y, x + 1 + (x === 4 && y ? 0.005 : 0), TOP + 1.2, y + 1, 0.5));   // (the opening's sides 5 mm out from the floor's faces there: on them, they flickered)
   for (let y = 3; y < 25 + OUT; y++) for (const x of [...Array(OUT).keys()].map(i => -1 - i).concat([...Array(OUT).keys()].map(i => 16 + i))) fills.push(box(fill, x, BASE, y, x + 1, y < 15 ? TOP + 0.6 : 0.4, y + 1, 0.5));
   S.add(shade(merged(fill, fills)));
   const court = []; for (let y = 25; y < 25 + OUT; y++) for (let x = 0; x < 16; x++) court.push(box(floor, x, BASE, y, x + 1, 0, y + 1, 0.5));
