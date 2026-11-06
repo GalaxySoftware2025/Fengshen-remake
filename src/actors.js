@@ -218,7 +218,7 @@ export class Actor {
     this.root.position.set(0, 0, 0);
     // lean the sprite back toward the camera so it never reads as squashed from high angles (HD-2D trick)
     const tilt = Math.max(0, (this.camPitch || 0.9) - 0.35) * 0.75;
-    for (const m of [this.mesh, this.big]) { m.position.set(lx, this.pos.y + bob, lz); m.rotation.set(-tilt, yaw, this.spin || 0, 'YXZ'); m.scale.setScalar(this.size ?? 1); }
+    for (const m of [this.mesh, this.big]) { m.position.set(lx, this.pos.y + bob, lz); m.rotation.set(-tilt, yaw, this.spin || 0, 'YXZ'); m.scale.setScalar(this.size ?? 1); if (this.sqz) { m.scale.x *= 1 - this.sqz; m.scale.y *= 1 + this.sqz * 0.3; } }   // (sqz: squeezed from the sides, 0-1: 地裂天崩's closing ground)
     // @qa scene:0 job:lying   (only scene 0's carcass lies: src/sprites.js LYING)
     if (this.lie) {   // drawn lying on the ground seen from above (scene 0's carcass): laid flat on it, its foot where a standing sprite's feet are
       for (const m of [this.mesh, this.big]) { m.rotation.set(-Math.PI / 2, 0, 0); m.position.y = groundH(lx, lz) + 0.02; }

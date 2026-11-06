@@ -1,8 +1,10 @@
 // The first visit to the public build: the game's art, maps, scenes, music and text are not on the site, they are made
-// from the player's own ROM (extract/). The player picks the file; it is checked (size, SHA-256), then read in workers
+// from the player's own ROM (extract/). The player picks the file; it is unwrapped (a zip, a copier header, an
+// interleave: extract/romfile.js) and checked (size, SHA-256), then read in workers
 // (one for the images and data, the rest for the songs and effects), the results kept in the browser (Cache Storage)
 // and served by sw.js. Nothing is uploaded. Then the page reloads into the game.
-import { checkRom, sound, audioTable } from '../extract/index.js';
+import { sound, audioTable } from '../extract/index.js';
+import { findRom } from '../extract/romfile.js';
 import { EXTRACT_VERSION } from '../extract/version.js';
 
 const BASE = new URL('../', import.meta.url);
@@ -30,12 +32,12 @@ export function show({ updated = false } = {}) {
     <p>這個重製版不附帶原作的任何內容。請選擇你自己的 Mega Drive 卡帶檔案（ROM），遊戲的圖像、地圖、劇情、音樂與文字會在你的瀏覽器裡由它製作，檔案不會被上傳。</p>
     <p class="en">This remake ships none of the original's content. Choose your own Mega Drive ROM of the game: its art, maps, scenes, music and text are made from it in your browser. Nothing is uploaded.</p>
     ${updated ? '<p><b>遊戲已更新：需要再選擇一次 ROM，重新製作遊戲資料（存檔不受影響）。</b></p><p class="en">The game has been updated: choose your ROM once more to remake its files (your saves are kept).</p>' : ''}
-    <label class="pick">選擇 ROM<input type="file" accept=".bin,.md,.gen,application/octet-stream"></label>
+    <label class="pick">選擇 ROM<input type="file" accept=".bin,.md,.gen,.smd,.zip,.gz,application/octet-stream,application/zip"></label>
     <p class="msg"></p><div class="bars"></div></div></div>`);
   const box = document.querySelector('#ld .box'), msg = box.querySelector('.msg'), bars = box.querySelector('.bars');
   box.querySelector('input').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
-    const rom = new Uint8Array(await f.arrayBuffer()), bad = await checkRom(rom);
+    const { rom, bad } = await findRom(new Uint8Array(await f.arrayBuffer()));
     if (bad) { msg.innerHTML = '<span class="err">這不是本作所用的 ROM（' + bad + '）。</span>'; return; }
     box.querySelector('label.pick').remove(); msg.textContent = '正在製作遊戲資料，約需數分鐘，請勿關閉此頁。';
     try { await extract(rom, bars); } catch (err) { msg.innerHTML = '<span class="err">製作失敗：' + err + '</span>'; return; }

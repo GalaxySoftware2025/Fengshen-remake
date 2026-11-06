@@ -13,7 +13,7 @@ const LV = {
   atk: (a, f) => { a.act = { kind: 'atk', frame: f }; },
   cast: (a, f) => { a.act = { kind: 'pose', row: 2, base: 6, fixed: f }; },
   guard: a => { a.act = { kind: 'pose', row: 2, base: 3 }; },
-  spin: (a, t, rate) => { a.u.facing = ['down', 'right', 'up', 'left'][Math.floor(t * rate) % 4]; },
+  spin: (a, t, rate) => { a.u.facing = ['down', 'left', 'up', 'right'][Math.floor(t * rate) % 4]; },   // clockwise from above (the user's call; it turned counter-clockwise before)
 };
 
 // ---------------------------------------------------------------- shared pieces
@@ -365,7 +365,7 @@ async function nezhaLevel(a, P) {
   const th0 = Math.atan2(right.z, right.x);
   await anim(0.8, (k, dt = 1 / 60) => {
     T += dt; putWheels(dt, 1); sashAt(T, dt); a.hover = 0.8;
-    const h = hand(), R0 = 2.1 * Math.sin(Math.PI * k), th = th0 - k * Math.PI * 2;
+    const h = hand(), R0 = 2.1 * Math.sin(Math.PI * k), th = th0 + k * Math.PI * 2;   // (the angle rising: clockwise seen from above, as his spin, the user's call)
     ring.position.set(h.x + Math.cos(th) * R0, h.y + Math.sin(k * Math.PI * 2) * 0.35, h.z + Math.sin(th) * R0);
     ring.lookAt(world.camera.position); ring.rotateX(Math.sin(k * 14) * 0.7); ring.rotateY(Math.cos(k * 11) * 0.5); trail.push(ring.position);
     if (k > 0.25) a.act = null;
@@ -430,18 +430,8 @@ async function linEyesShut(a) {
 async function linLevel(a, P) {
   const { toCam } = axes(), BLUE = [0.3, 0.62, 1];
   const shut = await (once.c.linEyes || (once.c.linEyes = linEyesShut(a)));
-  a.u.facing = 'down'; a.act = null;
-  // 1. he spins, faster and then slowing, three rounds, in a wind that rises round him, turning his way (down, right, up,
-  // left: counter-clockwise from above; the wind went clockwise against him, the user's report)
-  const winds = [0, 1, 2].map(() => vfx.ribbon({ col: [0.6, 0.8, 1], width: 0.05, n: 18, fade: 0.35 }));
-  let T = 0, turn = 0;
-  await anim(1.6, (k, dt = 1 / 60) => {
-    T += dt; turn += dt * 7.5 * Math.sin(Math.PI * Math.min(1, k * 1.05));   // (3 rounds of four facings over the whole)
-    LV.spin(a, turn, 1);
-    winds.forEach((w, j) => { const th = -T * 10 + j * 2.1, r = 0.5 + j * 0.08; w.push(V(P.x + Math.cos(th) * r, P.y + 0.15 + j * 0.35 + k * 0.4, P.z + Math.sin(th) * r * 0.85)); });
-    if (Math.random() < 0.5) { const t = rand(0, 6.28); vfx.smokePuff(P.x + Math.cos(t) * 0.35, P.y + 0.05, P.z + Math.sin(t) * 0.35, { vx: Math.cos(t) * 1.2, vz: Math.sin(t) * 1.2, vy: 0.15, drag: 2, life: 0.7, size: 0.12, size1: 0.35, tint: [0.62, 0.55, 0.46] }); }
-  });
-  winds.forEach(w => w.end());
+  // 1. he spins, faster and then slowing, in a wind that rises round him
+  await spinUp(a, P, [0.6, 0.8, 1], 1.6);
   // 2. he stops facing us and closes his eyes; blue light rises softly round him
   a.u.facing = 'down'; a.act = { kind: 'tex', tex: shut };
   vfx.decal(P, BLUE, 0.9, 3.4, { intensity: 0.4 }); vfx.light(P.clone().setY(P.y + 0.9), [0.55, 0.75, 1], 2.5, 3.2, 4);
@@ -1018,41 +1008,60 @@ async function randengLevel(a, P) {
   await wait(250);
 }
 
+// the spin a level-up opens with (林雲's, and from the user's call every hero's but 楊戩's, 哪吒's and 土行孫's): round and round,
+// faster and then slowing, about two rounds whatever the length, in a wind of the hero's colour rising round them, turning
+// their way (down, left, up, right: clockwise from above, the user's call; the wind once went against the turn, the user's
+// report), ending facing us (the turn ends on right, so facing us is the next step of it, not a jump)
+async function spinUp(a, P, col, dur = 1.2) {
+  a.u.facing = 'down'; a.act = null;
+  const winds = [0, 1, 2].map(() => vfx.ribbon({ col, width: 0.05, n: 18, fade: 0.35 }));
+  let T = 0, turn = 0;
+  await anim(dur, (k, dt = 1 / 60) => {
+    T += dt; turn += dt * 12 / dur * Math.sin(Math.PI * Math.min(1, k * 1.05));
+    LV.spin(a, turn, 1);
+    winds.forEach((w, j) => { const th = T * 10 + j * 2.1, r = 0.5 + j * 0.08; w.push(V(P.x + Math.cos(th) * r, P.y + 0.15 + j * 0.35 + k * 0.4, P.z + Math.sin(th) * r * 0.85)); });
+    if (Math.random() < 0.5) { const t = rand(0, 6.28); vfx.smokePuff(P.x + Math.cos(t) * 0.35, P.y + 0.05, P.z + Math.sin(t) * 0.35, { vx: Math.cos(t) * 1.2, vz: Math.sin(t) * 1.2, vy: 0.15, drag: 2, life: 0.7, size: 0.12, size1: 0.35, tint: [0.62, 0.55, 0.46] }); }
+  });
+  winds.forEach(w => w.end());
+  a.u.facing = 'down';
+}
+const spun = (col, pose) => async (a, P) => { await spinUp(a, P, col); await pose(a, P); };
+
 export const LEVEL_POSE = {
   // 林雲: he spins, closes his eyes, and a great blue sword of light rises at his back and shoots into the sky (linLevel)
   p0: (a, P) => linLevel(a, P),
   // 燕蓉: facing us, draws and looses an arrow into the sky that bursts into 天女散花, flowers of many colours
-  p1: async (a, P) => {
+  p1: spun([1, 0.72, 0.88], async (a, P) => {
     a.u.facing = 'down'; LV.atk(a, 0); await wait(250); LV.atk(a, 1); await wait(350); LV.atk(a, 2);   // facing the front, the arrow loosed skywards [the user's call; she turned her back before]
     const ar = arrowMesh([1, 0.75, 0.9], 0.5), from = a.chest().add(V(0, 0.3, 0)), rib = vfx.ribbon({ col: [1, 0.8, 0.9], width: 0.04, n: 14 });
     vfx.timed(ar, 0.45, k => { ar.position.copy(from).add(V(0, k * 3.2, 0)); rib.push(ar.position); }, () => {
       rib.end(); ar.visible = false; flowerRain(from.clone().add(V(0, 3.2, 0)), P);
     });
     await wait(500); a.u.facing = 'down'; a.act = null; await wait(1200);
-  },
+  }),
   // 楊戩: 二郎神, calm and all-seeing [the user's call: from his story]: silver mist gathers, the third eye opens on his brow and its
   // gold beam sweeps the field (nothing is hidden from it), 哮天犬 bounds out of the mist and runs round him, and he
   // finishes with one clean sweep of the three-pointed blade
   p2: (a, P) => yangLevel(a, P),
   // 黃飛虎: 武成王, the flying tiger: a spirit tiger bursts out of his chest at us and roars (huangLevel)
-  p3: (a, P) => huangLevel(a, P),
+  p3: spun([1, 0.8, 0.4], huangLevel),
   // 哪吒: the lotus child [the user's call: from his story]: a lotus opens under him (太乙真人 remade him from lotus after he gave
   // his life back to his parents), the 風火輪 flare at his feet and lift him spinning in his red 混天綾, he flings the 乾坤圈
   // round the field and snatches it back, and drops spear-first into a burst of fire that scatters the petals
   p4: (a, P) => nezhaLevel(a, P),
   // 姬發: 鳳鳴岐山, the phoenix of Zhou circles him (jifaLevel)
-  p5: (a, P) => jifaLevel(a, P),
+  p5: spun([1, 0.7, 0.32], jifaLevel),
   // 雷震子: wind-and-thunder wings, a storm, a thunderclap through the earth (leiLevel)
-  p6: (a, P) => leiLevel(a, P),
+  p6: spun([0.6, 0.66, 1], leiLevel),
   // 姜子牙: the 杏黃旗 and its ten thousand golden lotuses (jiangLevel)
-  jiang: (a, P) => jiangLevel(a, P),
+  jiang: spun([1, 0.88, 0.5], jiangLevel),
   // 黃天化: the 攢心釘 and a jade seven-pointed star (tianhuaLevel)
-  '0a76a2': (a, P) => tianhuaLevel(a, P),
+  '0a76a2': spun([0.5, 1, 0.72], tianhuaLevel),
   // 土行孫: dives and burrows a heart, bursts out chattering (tuLevel)
   '0aa86c': (a, P) => tuLevel(a, P),
   // 小龍女: the water dragon and its pearl (longnvLevel)
-  '0d006e': (a, P) => longnvLevel(a, P),
+  '0d006e': spun([0.45, 0.8, 1], longnvLevel),
   // 燃燈道人: the 定海珠 laid out as a formation, a lamp flame over his head (randengLevel)
-  '0d2ad2': (a, P) => randengLevel(a, P),
+  '0d2ad2': spun([1, 0.86, 0.55], randengLevel),
 };
 export const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;

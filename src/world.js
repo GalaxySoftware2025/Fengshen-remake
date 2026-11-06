@@ -250,12 +250,14 @@ export class World {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.42, 0.45, BLOOM_THRESHOLD); comp.addPass(this.bloom);
     this.grade = new ShaderPass({
       uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(size.x, size.y) }, uTilt: { value: 0 }, uChroma: { value: 0 },
-        uFlash: { value: 0 }, uFlashCol: { value: new THREE.Color(1, 1, 1) }, uBars: { value: 0 }, uSat: { value: 1.08 }, uDark: { value: 0 }, uDarkCol: { value: new THREE.Color(1, 1, 1) } },
+        uFlash: { value: 0 }, uFlashCol: { value: new THREE.Color(1, 1, 1) }, uBars: { value: 0 }, uSat: { value: 1.08 }, uDark: { value: 0 }, uDarkCol: { value: new THREE.Color(1, 1, 1) }, uHeat: { value: 0 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uTime, uTilt, uChroma, uFlash, uBars, uSat, uDark; uniform vec3 uFlashCol, uDarkCol; varying vec2 vUv;
+      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uTime, uTilt, uChroma, uFlash, uBars, uSat, uDark, uHeat; uniform vec3 uFlashCol, uDarkCol; varying vec2 vUv;
         float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
         void main(){
           vec2 uv = vUv, c = uv - 0.5;
+          // a spell's heat (煉獄之火): the whole picture rippling as through a blaze, as the original's raster waves
+          if (uHeat > 0.001) uv += vec2(sin(uv.y * 34.0 + uTime * 6.0) * 0.6 + sin(uv.y * 87.0 - uTime * 10.0) * 0.4, sin(uv.x * 26.0 + uTime * 4.5) * 0.5) * 0.009 * uHeat;
           float e = smoothstep(0.30, 0.5, abs(c.y)) * uTilt;            // tilt-shift: soft top and bottom (off unless a shot asks)
           vec2 ca = c * uChroma * 0.018;
           vec3 col = vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b);
@@ -270,6 +272,9 @@ export class World {
           col = mix(col, col * vec3(1.05, 1.0, 0.93), smoothstep(0.2, 0.9, l));      // warm highlights
           col = mix(col, col * vec3(0.9, 0.97, 1.08), 1.0 - smoothstep(0.0, 0.25, l)); // cool shadows
           col *= 1.0 - uDark * uDarkCol;   // spell darkness, tinted (e.g. night-blue for water)
+          if (uHeat > 0.001) { float b = dot(col, vec3(0.3, 0.55, 0.15));   // and burnt: every colour taken to the original's reds, maroon to red, orange only where brightest
+            vec3 burn = mix(vec3(0.16, 0.01, 0.005), vec3(0.8, 0.08, 0.03), smoothstep(0.03, 0.45, b)); burn = mix(burn, vec3(1.0, 0.45, 0.12), smoothstep(0.62, 0.95, b));
+            col = mix(col, burn, uHeat * 0.8); }
           col += uFlashCol * uFlash;
           col *= 1.0 - smoothstep(0.42, 0.75, length(c * vec2(1.0, 0.75))) * 0.18;     // a faint vignette in the corners only
           col += (h(uv * uRes + fract(uTime) * 61.0) - 0.5) * 0.022;                 // grain

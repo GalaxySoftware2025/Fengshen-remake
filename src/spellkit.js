@@ -82,10 +82,20 @@ export const yawOf = d => Math.atan2(d.x, d.z);
 // shader for swirling energy surfaces (tornado, water column): streaks scrolling around and up an open cylinder
 export function swirlMat(col, o) {
   o = o || {};
+  // o.ragged: a whirlwind's own outline, not a smooth cylinder's [the user's call, 2026-10-30: tornado outlines do not
+  // look like that]: the wall bulges in lumps that turn with the spin and climb, the axis sways, and where the wall
+  // turns away from the eye (its outline) it is torn into wisps instead of glowing
+  const rag = o.ragged ? 1 : 0;
   return new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: o.normal ? THREE.NormalBlending : THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
-    uniforms: { uT: { value: 0 }, uA: { value: 0 }, uCol: { value: new THREE.Color(...col) }, uFoam: { value: new THREE.Color(...(o.foam || [1, 1, 1])) }, uSp: { value: o.speed || 4 }, uTw: { value: o.twist || 4 } },
-    vertexShader: `varying vec2 vUv; varying vec3 vN, vV; void main(){ vUv = uv; vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
+    uniforms: { uT: { value: 0 }, uA: { value: 0 }, uCol: { value: new THREE.Color(...col) }, uFoam: { value: new THREE.Color(...(o.foam || [1, 1, 1])) }, uSp: { value: o.speed || 4 }, uTw: { value: o.twist || 4 }, uH: { value: o.h || 3 } },
+    vertexShader: `uniform float uT, uSp, uH; varying vec2 vUv; varying vec3 vN, vV;
+      ${rag ? NOISE : ''}
+      void main(){ vUv = uv; vec3 p = position;
+        ${rag ? `float lump = fbm(vec2(uv.x * 5.0 - uT * uSp * 0.12, uv.y * 3.0 - uT * 1.1)) + 0.5 * fbm(vec2(uv.x * 13.0 - uT * uSp * 0.2, uv.y * 8.0 - uT * 2.0));
+          p.xz *= 0.62 + lump * 0.7;                                                                   // bulging, lumpy wall
+          p.xz += vec2(sin(uT * 1.7 + uv.y * 2.6), cos(uT * 1.3 + uv.y * 2.1)) * 0.22 * uv.y * uH / 3.0;   // the axis swaying, most at the top` : ''}
+        vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(p, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `uniform float uT, uA, uSp, uTw; uniform vec3 uCol, uFoam; varying vec2 vUv; varying vec3 vN, vV;
       ${NOISE}
       void main(){ float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
@@ -93,15 +103,19 @@ export function swirlMat(col, o) {
         float st = smoothstep(0.42, 0.78, s), foam = smoothstep(0.7, 0.9, s);
         float fade = smoothstep(0.0, 0.12, vUv.y) * (1.0 - smoothstep(0.78, 1.0, vUv.y));
         vec3 c = uCol * (0.35 + st * 1.4) + uFoam * foam * 1.2;
-        gl_FragColor = vec4(c, (0.12 + st * 0.7 + f * 0.25) * fade * uA); }`,
+        float a = (0.12 + st * 0.7 + f * 0.25) * fade;
+        ${rag ? `float w = fbm(vec2(vUv.x * 22.0 + vUv.y * uTw * 2.0 - uT * uSp * 0.5, vUv.y * 7.0 - uT * 2.5));   // (wisps drawn out along the spin)
+          a = (0.12 + st * 0.7 + f * 0.3 * smoothstep(0.3, 0.7, w)) * (1.0 - smoothstep(0.72, 1.0, f + (w - 0.5) * 0.9));   // the rim broken into streaks, only its very edge torn away (the body reads through the rim: from the battle's high camera the whole wall is seen at a slant)                  // the outline torn into wisps, no glowing rim
+          a *= smoothstep(0.0, 0.18, vUv.y + (w - 0.5) * 0.2) * (1.0 - smoothstep(0.7, 1.0, vUv.y + (w - 0.5) * 0.35));   // a ragged foot and top` : ''}
+        gl_FragColor = vec4(c, a * uA); }`,
   });
 }
 export function swirl(v, p, col, r0, r1, h, life, o) {
   o = o || {};
   const g = new THREE.Group();
   const layers = [[1, 1], [0.72, -1.4]].map(([k, sp]) => {
-    const geo = new THREE.CylinderGeometry(r1 * k, r0 * k, h, 40, 10, true); geo.translate(0, h / 2, 0);
-    const m = new THREE.Mesh(geo, swirlMat(col, Object.assign({}, o, { speed: (o.speed || 4) * sp }))); m.renderOrder = 6; g.add(m); return m;
+    const geo = new THREE.CylinderGeometry(r1 * k, r0 * k, h, o.ragged ? 64 : 40, o.ragged ? 32 : 10, true); geo.translate(0, h / 2, 0);   // (ragged: enough rows to bulge)
+    const m = new THREE.Mesh(geo, swirlMat(col, Object.assign({}, o, { h, speed: (o.speed || 4) * sp }))); m.renderOrder = 6; g.add(m); return m;
   });
   g.position.copy(p);
   v.timed(g, life, (k, dt, t) => {

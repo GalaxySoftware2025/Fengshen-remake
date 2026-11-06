@@ -184,7 +184,7 @@ class Flames {
   }
 }
 // burning sphere: layered noise shell with a white-hot core and a bright rim
-const BALL_FS = `uniform float uT, uHeat; uniform vec3 uTint; varying vec3 vN, vV, vP;
+const BALL_FS = `uniform float uT, uHeat, uRag; uniform vec3 uTint; varying vec3 vN, vV, vP;
   ${NOISE}
   void main(){ float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
     vec3 q = normalize(vP);
@@ -196,8 +196,17 @@ const BALL_FS = `uniform float uT, uHeat; uniform vec3 uTint; varying vec3 vN, v
     float h = core * 0.4 + (n - 0.5) * 2.0 + 0.32;
     vec3 c = ramp(h * uHeat) * uTint + vec3(1.0, 0.45, 0.08) * pow(f, 2.5) * 0.9 * uHeat;   // hot rim
     float a = smoothstep(0.05, 0.35, h + f * 0.4) * (1.0 - smoothstep(0.85, 1.0, f) * 0.8);
+    if (uRag > 0.0) a *= mix(1.0, smoothstep(0.35, 0.75, n + (1.0 - f) * 0.7 - max(0.0, normalize(vP).y) * 0.25), uRag);   // (thinner toward the top: the tongues fade out into wisps)   // (the rim torn into wisps)
     gl_FragColor = vec4(c * a, a * 0.8); }`;
-const BALL_VS = `varying vec3 vN, vV, vP; void main(){ vP = position; vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`;
+// (uRag, 0-1: a ragged ball of flame, not a sphere: the surface heaving in lumps that boil up it, tongues of flame licking
+// up off the top, the rim torn into wisps; 0, a smooth sphere as before)
+const BALL_VS = `uniform float uT, uRag; varying vec3 vN, vV, vP; ${NOISE}
+  void main(){ vP = position; vN = normalize(normalMatrix * normal); vec3 p = position;
+    if (uRag > 0.0) { vec3 q = normalize(position); float r = length(position);
+      float lump = fbm(q.xy * 2.4 + vec2(0.0, -uT * 1.8)) + fbm(q.zx * 2.4 + vec2(3.1, uT * 1.3)) - 1.0;
+      float tongue = pow(fn(vec2(atan(q.z, q.x) * 3.0 + uT * 0.7, uT * 2.6 - q.y * 1.5)), 3.5) * smoothstep(-0.2, 0.9, q.y);
+      p += normal * lump * 0.4 * r * uRag; p.y += tongue * 1.8 * r * uRag; }
+    vec4 mv = modelViewMatrix * vec4(p, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`;
 // ribbon trail: a camera-facing strip through the last N positions of a moving point, bright core fading to the tail
 class Ribbon {
   constructor(vfx, o) {
@@ -247,7 +256,7 @@ export class VFX {
     this.glowTex = ctex(128, 128, (g, W) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, W); });
     this.lights = [];
     for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 1.6); l.position.set(0, -50, 0); S.add(l); this.lights.push({ l, t: 0, life: 0, base: 0 }); }
-    this.screen = { shake: 0, shakeT: 0, flash: 0, flashCol: new THREE.Color(1, 1, 1), chroma: 0, dark: 0, darkTarget: 0, darkCol: new THREE.Color(1, 1, 1), bars: 0, barsTarget: 0 };
+    this.screen = { shake: 0, shakeT: 0, flash: 0, flashCol: new THREE.Color(1, 1, 1), chroma: 0, dark: 0, darkTarget: 0, darkCol: new THREE.Color(1, 1, 1), bars: 0, barsTarget: 0, heat: 0, heatTarget: 0 };
     this.hitstop = 0; this.timeScale = 1;
   }
   // ---- primitives
@@ -270,7 +279,7 @@ export class VFX {
   fireball(radius, o) {
     o = o || {};
     const mat = new THREE.ShaderMaterial({ vertexShader: BALL_VS, fragmentShader: BALL_FS, transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, toneMapped: false,
-      uniforms: { uT: { value: 0 }, uHeat: { value: o.heat || 1.1 }, uTint: { value: new THREE.Color(...(o.tint || [1, 1, 1])) } } });
+      uniforms: { uT: { value: 0 }, uHeat: { value: o.heat || 1.1 }, uRag: { value: o.ragged || 0 }, uTint: { value: new THREE.Color(...(o.tint || [1, 1, 1])) } } });
     const m = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 4), mat); m.renderOrder = 5; m.userData.mat = mat; return m;
   }
   // explosion: a cluster of fire puffs expanding and cooling, then smoke rolling up
@@ -389,9 +398,9 @@ export class VFX {
     for (const s of this.lights) { if (s.life <= 0) continue; s.t += dt; const k = s.t / s.life; s.l.intensity = k >= 1 ? 0 : s.base * (1 - k) * (1 - k); if (k >= 1) s.life = 0; }
     const sc = this.screen;
     sc.flash *= Math.exp(-dt * 7); sc.chroma *= Math.exp(-dt * 5); sc.shakeT = Math.max(0, sc.shakeT - dt); if (!sc.shakeT) sc.shake = 0;
-    sc.dark += (sc.darkTarget - sc.dark) * (1 - Math.exp(-dt * 3)); sc.bars += (sc.barsTarget - sc.bars) * (1 - Math.exp(-dt * 4));
+    sc.dark += (sc.darkTarget - sc.dark) * (1 - Math.exp(-dt * 3)); sc.bars += (sc.barsTarget - sc.bars) * (1 - Math.exp(-dt * 4)); sc.heat += (sc.heatTarget - sc.heat) * (1 - Math.exp(-dt * 4));
     const gr = this.world.grade.uniforms;
-    gr.uFlash.value = sc.flash; gr.uFlashCol.value.copy(sc.flashCol); gr.uChroma.value = sc.chroma; gr.uDark.value = sc.dark; gr.uDarkCol.value.copy(sc.darkCol); gr.uBars.value = sc.bars;
+    gr.uFlash.value = sc.flash; gr.uFlashCol.value.copy(sc.flashCol); gr.uChroma.value = sc.chroma; gr.uDark.value = sc.dark; gr.uDarkCol.value.copy(sc.darkCol); gr.uBars.value = sc.bars; gr.uHeat.value = sc.heat;
   }
   ambient(dt, center) {
     // drifting dust motes in the sunlight (no falling leaves: a battle's set adds those when it wants them, the user's call)

@@ -71,7 +71,7 @@ async function giantSword(ctx) {
   });
   await ctx.wait(Math.max(800, last * 1000)); ctx.hit(); await ctx.wait(1200); outro(ctx);
 }
-// [ROM fx 4, 5] swords fly up from him into a circle in the sky, then rain down round the target, the
+// [ROM fx 4: 劍破蒼穹; 乾坤破 (5) has its own, spellbook.js qiankunBreak] swords fly up from him into a circle in the sky, then rain down round the target, the
 // first landing on the original's sound (F s after the cast begins); they stand in the ground until the effect is over (E)
 async function swordRain(ctx, n, col, F, E) {
   const v = ctx.vfx;
@@ -148,7 +148,7 @@ async function arrow(ctx, wind) {
   {
     // whirlwind: a twisting funnel with leaves and dust caught in it
     await ctx.wait(250);
-    swirl(v, ctx.at.clone().setY(ctx.at.y), wind ? col : [0.85, 0.95, 0.8], 0.35, 1.25, 3.2, 1.9, { speed: 5, twist: 5, sway: true, foam: [0.9, 1, 0.9], intensity: 0.75 });
+    swirl(v, ctx.at.clone().setY(ctx.at.y), wind ? col : [0.85, 0.95, 0.8], 0.35, 1.25, 3.2, 1.9, { speed: 5, twist: 5, sway: true, foam: [0.9, 1, 0.9], intensity: 0.75, ragged: true });
     for (let i = 0; i < 90; i++) later(ctx, i * 16, () => {
       const ang = rand(0, 6.28), r = rand(0.3, 0.9), leaf = Math.random() < 0.5;
       const cc = leaf ? [[0.45, 0.75, 0.25], [0.6, 0.85, 0.35]][(Math.random() * 2) | 0] : [0.85, 1, 0.9];
@@ -169,7 +169,7 @@ async function flameKill(ctx) {
   DARK(ctx, 0.45, 0.85, 0.95, 1);
   v.decal(at, [1, 0.3, 0.05], 1.5, 3.4, { intensity: 0.7, flicker: true });
   v.ring(at, [1, 0.5, 0.15], 1.4, 0.5);
-  const ball = v.fireball(1, { heat: 1.05 }); ball.scale.setScalar(0.01); ball.position.set(at.x, gy, at.z);
+  const ball = v.fireball(1, { heat: 1.05, ragged: 1 }); ball.scale.setScalar(0.01); ball.position.set(at.x, gy, at.z);   // (ragged: a real ball of flame, not a smooth sphere: the user's call)
   let erupted = false;
   v.timed(ball, 3.4, (k, dt, t) => {
     ball.userData.mat.uniforms.uT.value = t;
@@ -532,7 +532,7 @@ async function dragon(ctx) {
 }
 // ---------------------------------------------------------------- dispatch
 const SCRIPT = {
-  0: c => flyingSwords(c, 3), 1: giantSword, 4: c => swordRain(c, 10, [0.55, 0.85, 1], 2.68, 5.2), 5: c => swordRain(c, 16, [1, 0.85, 0.4], 4.05, 6.08),
+  0: c => flyingSwords(c, 3), 1: giantSword, 4: c => swordRain(c, 10, [0.55, 0.85, 1], 2.68, 5.2),
   12: c => arrow(c, false), 16: c => arrow(c, true), 22: flameKill, 23: fireOrbs, 26: iceCrystals, 30: thunder,
   38: c => heal(c, [0.5, 1, 0.55]), 40: c => heal(c, [0.55, 1, 0.75]), 44: c => cleanse(c, [1, 0.8, 0.4], '靈血'), 45: c => cleanse(c, [1, 0.92, 0.6], '淨衣'),
   51: dream, 53: dragon, ...SPELLBOOK,   // (52 哮天犬 in SPELLBOOK)

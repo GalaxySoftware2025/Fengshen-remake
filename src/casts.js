@@ -193,8 +193,15 @@ export const CASTS = {
       vfx.timed(m, 0.75, k => { const f = Math.min(1, k / 0.35); m.position.copy(q).add(V(0, 0.3 + (1 - f * f) * 2.4, 0)); pointAlong(m, V(0, -1, 0)); if (f >= 1 && !m.userData.hit) { m.userData.hit = 1; dust(q, 4, 0.8); vfx.burst(q, { n: 6, speed: 1.4, cols: [[1, 1, 1], COL], size: 0.04, life: 0.3, g: 0, shape: 0 }); } }); });
     await wait(300); vfx.shake(0.06, 0.15); await wait(450);
   },
-  // 土行孫, who goes under the earth: he sinks into the ground and springs back out of it in a spray of soil
-  9: async (a, P) => {
+  // 土行孫, who goes under the earth: he sinks into the ground and springs back out of it in a spray of soil; for the
+  // spells that ask him to stand (ctx.stand: 裂爆拳, 五氣朝元, 地裂天崩, the user's call) he hops and drives his fist into
+  // the ground instead
+  9: async (a, P, col, ctx) => {
+    if (ctx && ctx.stand) {
+      pose.atk(a, 0); await wait(200);
+      await anim(0.22, k => { a.lift = Math.sin(k * Math.PI) * 0.3; }); a.lift = 0;
+      pose.atk(a, 2); slam(P, col || [1, 0.75, 0.4], 1, { chips: [[0.55, 0.4, 0.25], [0.4, 0.3, 0.2]] }); await wait(450); return;
+    }
     dust(P, 8, 1); await anim(0.3, k => { a.lift = -k * k * 0.55; });
     await wait(120);
     await anim(0.18, k => { a.lift = -0.55 + k * 0.75; }); slam(P, [1, 0.75, 0.4], 1, { chips: [[0.55, 0.4, 0.25], [0.4, 0.3, 0.2]] });
