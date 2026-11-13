@@ -98,6 +98,7 @@ async function build(E, FX) {
     const k = j * W + i, x = (i + 0.5) / 4, z = (j + 0.5) / 4;
     if (x >= 7.9 && lay[k] === CL.rock) lay[k] = CL.grass;   // the trees' dark shadows are not rock
     if (OPEN.some(([ox, oz, r]) => Math.hypot(x - ox, z - oz) < r)) lay[k] = CL.grass;
+    if (Math.abs(x - MOUTH.x) < MOUTH.w / 2 + 0.4 && z < MOUTH.z && z > MOUTH.z - 1.8) lay[k] = CL.rock;   // the art's black mouth is not low ground: the cliff runs on over the arch (it left a pit behind it, the user's report)
   }
   // past the map: the boulder wall goes on west and north, the meadow and the wood east and south, the pond west
   const outside = (x, z) => (z < 0 && x < 7.8) || (x < 0 && z < 3) ? CL.rock : x < 0 && z > 6 ? CL.water : CL.grass;
@@ -113,8 +114,15 @@ async function build(E, FX) {
   S.add(trees(TREES, (x, z) => land.at(x, z)));
   const open = (x, z) => !TREES.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < 0.3) && Math.hypot(x - MOUTH.x, z - MOUTH.z - 0.4) > 0.6;
   S.add(grass(land.scatter(CL.grass, 80, open), { size: 0.4, cols: ['#2e6a1e', '#4a8a24', '#1e5a18', '#5a9a2a', '#3a7a20'] }));
-  S.add(stones(land.scatter(CL.rock, 3, () => true), rockM, { size: 0.26 }));
-  S.add(shrubs(land.scatter(CL.rock, 0.6, (x, z) => land.weight(x, z, CL.grass) > 0.05), { size: 0.34, cols: ['#2a5a1a', '#3a6e22', '#22481a'] }));
+  // the passage's roof: the floor runs in under the arch (哪吒 walks in to row 1, f806-822), and the rock closes over it
+  // (open to the sky, the notch showed black over the arch from the scene's steep view, its stones a bar across a black
+  // gap [the user's report])
+  { const top = Math.min(land.at(MOUTH.x - 0.8, MOUTH.z - 0.5), land.at(MOUTH.x + 0.8, MOUTH.z - 0.5)) - 0.12, y0 = land.at(MOUTH.x, MOUTH.z + 0.3) + MOUTH.h * 0.55 + MOUTH.w / 2 + 0.05;   // (sunk a little under the rock either side, boulders on it: no slab standing out)
+    if (top > y0) { S.add(shade(new THREE.Mesh(new THREE.BoxGeometry(MOUTH.w + 0.3, top - y0, 0.95).translate(MOUTH.x, (top + y0) / 2, MOUTH.z - 0.45), rockM)));
+      S.add(stones([[-0.3, -0.75], [0.2, -0.6], [-0.05, -0.3], [0.35, -0.2], [-0.4, -0.2]].map(([dx, dz]) => [MOUTH.x + dx, top, MOUTH.z + dz]), rockM, { size: 0.26 })); } }
+  const clearOfMouth = (x, z) => !(Math.abs(x - MOUTH.x) < MOUTH.w / 2 + 0.35 && z > MOUTH.z - 1.4 && z < MOUTH.z + 0.6);   // (strewn over the mouth they crossed the black opening: the user's report)
+  S.add(stones(land.scatter(CL.rock, 3, clearOfMouth), rockM, { size: 0.26 }));
+  S.add(shrubs(land.scatter(CL.rock, 0.6, (x, z) => clearOfMouth(x, z) && land.weight(x, z, CL.grass) > 0.05), { size: 0.34, cols: ['#2a5a1a', '#3a6e22', '#22481a'] }));
   E.world.updaters.push((dt, t) => { windTick(t); water.material.color.setHSL(0.63, 0.75, 0.13 + Math.sin(t * 1.7) * 0.01); });
 }
 

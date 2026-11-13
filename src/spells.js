@@ -184,7 +184,7 @@ async function flameKill(ctx) {
         const a = rand(0, 6.28), e = rand(0.1, 1.3), q = V(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e)).multiplyScalar(R * 0.92).add(ball.position);
         v.realFire(q.x, q.y, q.z, { size: R * rand(0.35, 0.55), asp: rand(1.3, 1.7), life: rand(0.25, 0.45), vy: rand(0.4, 1.2) });
       }
-      if (Math.random() < 0.6) v.spark(at.x + rand(-0.8, 0.8), gy + rand(0.1, 1.2), at.z + rand(-0.8, 0.8), { vy: rand(1, 2.5), life: rand(0.4, 0.9), size: rand(0.03, 0.06), r: 1, gg: rand(0.5, 0.8), b: 0.2, shape: 1, flicker: 1, ph: rand(0, 9) });
+      if (Math.random() < 0.6) v.spark(at.x + rand(-0.8, 0.8), gy + rand(0.1, 1.2), at.z + rand(-0.8, 0.8), { vy: rand(1, 2.5), life: rand(0.4, 0.9), size: rand(0.03, 0.06), r: 1, gg: rand(0.5, 0.8), b: 0.2, shape: 6, flicker: 1, ph: rand(0, 9) });
       v.light(ball.position, [1, 0.45, 0.12], 5 + 9 * g + rand(0, 3), 0.06, 6);
     } else if (!erupted) {
       // 3) eruption
@@ -194,7 +194,7 @@ async function flameKill(ctx) {
       v.flash([1, 0.6, 0.25], 0.16); v.shake(0.22, 0.4); v.hitstop = 0.1; v.screen.chroma = 0.5;
       v.ring(at, [1, 0.6, 0.2], 3.6, 0.7); v.ring(at, [1, 0.9, 0.6], 2, 0.4);
       v.light(c, [1, 0.5, 0.15], 28, 0.9, 9);
-      v.burst(c, { n: 90, speed: 7, cols: [[1, 0.95, 0.6], [1, 0.6, 0.15], [1, 0.35, 0.05]], size: 0.07, life: 1.3, g: 6, shape: 1, flicker: 1 });
+      v.burst(c, { n: 90, speed: 7, cols: [[1, 0.95, 0.6], [1, 0.6, 0.15], [1, 0.35, 0.05]], size: 0.07, life: 1.3, g: 6, shape: 6, flicker: 1 });
       ticker(v, 0.7, (kk) => { for (let i = 0; i < 2; i++) v.realFire(at.x + rand(-0.4, 0.4), gy, at.z + rand(-0.4, 0.4), { size: rand(0.98, 1.47) * (1 - kk * 0.4), asp: rand(1.3, 1.7), life: rand(0.4, 0.65), vy: rand(2, 3.8) }); });
       ctx.hit();
     }
@@ -271,12 +271,12 @@ async function iceCrystals(ctx) {
   const rib = v.ribbon({ col, width: 0.3, n: 22 });
   v.timed(orb, 0.75, (k, dt) => {
     const p = from.clone().lerp(to, k * k); orb.position.copy(p); orb.rotation.x += dt * 5; orb.rotation.y += dt * 3; halo.lookAt(ctx.cam.camera.position); rib.push(p);
-    for (let i = 0; i < 3; i++) v.spark(p.x + rand(-0.3, 0.3), p.y + rand(-0.3, 0.3), p.z + rand(-0.3, 0.3), { vy: rand(-0.3, 0.3), life: rand(0.4, 0.8), size: rand(0.05, 0.1), r: 0.8, gg: 0.95, b: 1, shape: 1, flicker: 1, ph: rand(0, 9) });
+    for (let i = 0; i < 3; i++) v.spark(p.x + rand(-0.3, 0.3), p.y + rand(-0.3, 0.3), p.z + rand(-0.3, 0.3), { vy: rand(-0.3, 0.3), life: rand(0.4, 0.8), size: rand(0.05, 0.1), r: 0.8, gg: 0.95, b: 1, shape: 7, flicker: 1, ph: rand(0, 9) });
     if (Math.random() < 0.5) v.smokePuff(p.x, p.y, p.z, { life: 0.7, size: 0.25, size1: 0.6, tint: [0.7, 0.85, 1] });
   }, () => rib.end());
   await ctx.wait(750);
   v.flash([0.7, 0.9, 1], 0.12); v.shake(0.14, 0.25); v.ring(at, [0.8, 0.95, 1], 3, 0.6); v.decal(at, [0.4, 0.7, 1], 1.8, 2.2, { intensity: 0.5 }); frost(v, at, 1.6, 2.6);
-  v.burst(to, { n: 60, speed: 6, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 1 });
+  v.burst(to, { n: 60, speed: 6, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 7 });
   for (let i = 0; i < 12; i++) { const a = rand(0, 6.28), s = rand(1.2, 2.4); v.smokePuff(at.x + Math.cos(a) * 0.5, at.y + 0.08, at.z + Math.sin(a) * 0.5, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.2, life: rand(1.2, 1.8), size: 0.3, size1: 0.9, tint: [0.62, 0.78, 0.95] }); }
   for (let i = 0; i < 13; i++) {
     const a = rand(0, 6.28), r = i === 0 ? 0 : rand(0.3, 1.0), h = i === 0 ? 2.0 : rand(0.6, 1.5);
@@ -287,7 +287,7 @@ async function iceCrystals(ctx) {
       const d = i * 0.03, g = Math.min(1, Math.max(0, (t - d) / 0.14)), w = (i === 0 ? 0.24 : 0.17);
       m.scale.set(w * g + 0.001, h * g + 0.001, w * g + 0.001);
       if (t > 1.05 && !m.userData.b) { m.userData.b = 1; m.visible = false;
-        v.burst(p.clone().setY(p.y + h * 0.5), { n: 20, speed: 4, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 1 });
+        v.burst(p.clone().setY(p.y + h * 0.5), { n: 20, speed: 4, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 7 });
         shatter(v, p.clone().setY(p.y + h * 0.5), 5, iceMat, { size: 0.2 }); }
     });
   }
@@ -308,7 +308,7 @@ async function thunder(ctx) {
     const tp = at.clone().add(V(rand(-0.25, 0.25), 0.2, rand(-0.25, 0.25)));
     v.bolt(tp.clone().add(V(rand(-1, 1), 8, rand(-1, 1))), tp, col, 0.28, { width: s === 2 ? 0.16 : 0.08 });
     v.flash([0.8, 0.85, 1], s === 2 ? 0.16 : 0.1); v.light(tp.clone().setY(tp.y + 2), col, 30, 0.25, 10);
-    v.burst(tp, { n: 40, speed: 5, cols: [[1, 1, 1], [0.7, 0.8, 1]], size: 0.05, life: 0.6, shape: 1 });
+    v.burst(tp, { n: 40, speed: 5, cols: [[1, 1, 1], [0.7, 0.8, 1]], size: 0.05, life: 0.6, shape: 5 });
     v.ring(tp, col, 1.6, 0.4); v.shake(0.1, 0.2); v.decal(tp, [0.5, 0.6, 1], 1.2, 0.8);
     if (s === 2) {
       v.impact(tp, col, 1.5); ctx.hit();
@@ -351,7 +351,7 @@ async function heal(ctx, col, F = 3.02) {
         const f = Math.max(0, Math.min(1, (tt - d) / D)), a = a0 + f * (3 + D), r = 0.9 * (1 - f) + 0.15;
         m.position.set(P.x + Math.cos(a) * r, P.y + 2.6 - f * 2.2, P.z + Math.sin(a) * r); m.rotation.set(tt * 3 + i, a, tt * 2);
         m.material.opacity = Math.min(1, f * 5) * (1 - Math.max(0, (f - 0.85) / 0.15));
-        if (f >= 1 && !m.userData.p) { m.userData.p = 1; v.burst(m.position, { n: 5, speed: 1, col, size: 0.04, life: 0.4, g: 0 }); }
+        if (f >= 1 && !m.userData.p) { m.userData.p = 1; v.burst(m.position, { shape: 5, n: 5, speed: 1, col, size: 0.04, life: 0.4, g: 0 }); }
       });
     }
     later(ctx, R, () => {
@@ -382,11 +382,11 @@ async function cleanse(ctx, col, glyph) {
       card.lookAt(ctx.cam.camera.position); card.rotateZ(Math.sin(tt * 2.2) * 0.08);
       aura.material.opacity = Math.min(1, Math.max(0, (tt - DN + 0.2) / 0.5)) * 0.8;
       card.material.color.setScalar(1 + Math.max(0, tt - DN) * 2.5);
-      if (tt > DN && Math.random() < 0.6) { const q = card.position; v.spark(q.x + rand(-0.25, 0.25), q.y + rand(-0.5, 0.5), q.z + rand(-0.25, 0.25), { vy: -rand(0.4, 1), life: 0.8, size: 0.05, r: col[0], gg: col[1], b: col[2], shape: 1 }); }
+      if (tt > DN && Math.random() < 0.6) { const q = card.position; v.spark(q.x + rand(-0.25, 0.25), q.y + rand(-0.5, 0.5), q.z + rand(-0.25, 0.25), { vy: -rand(0.4, 1), life: 0.8, size: 0.05, r: col[0], gg: col[1], b: col[2], shape: 5 }); }
       if (k >= 0.99 && !card.userData.b) {
         card.userData.b = 1;
-        v.burst(card.position, { n: 40, speed: 3, cols: [[1, 0.95, 0.7], col], size: 0.06, life: 0.9, g: 2, shape: 1 });
-        for (let i = 0; i < 14; i++) v.smoke(card.position.x, card.position.y, card.position.z, { vx: rand(-1.4, 1.4), vy: rand(-0.6, 1), vz: rand(-1.4, 1.4), drag: 1.5, life: rand(0.8, 1.3), size: 0.06, r: 0.95, gg: 0.82, b: 0.5, a: 1, shape: 1, wob: 1, ph: rand(0, 6) });
+        v.burst(card.position, { n: 40, speed: 3, cols: [[1, 0.95, 0.7], col], size: 0.06, life: 0.9, g: 2, shape: 5 });
+        for (let i = 0; i < 14; i++) v.smoke(card.position.x, card.position.y, card.position.z, { vx: rand(-1.4, 1.4), vy: rand(-0.6, 1), vz: rand(-1.4, 1.4), drag: 1.5, life: rand(0.8, 1.3), size: 0.06, r: 0.95, gg: 0.82, b: 0.5, a: 1, shape: 5, wob: 1, ph: rand(0, 6) });
         // purifying light washes down over the target
         v.pillar(P, col, 0.5, 3, 1.1, { taper: 1.1, intensity: 0.6 }); v.ring(P, col, 2, 0.6, { intensity: 1.2 }); v.decal(P, col, 1, 1.3, { intensity: 0.8 });
         v.light(P.clone().setY(P.y + 1.2), col, 14, 0.9, 6);
@@ -430,8 +430,8 @@ async function dream(ctx) {
   // bloom bursts: pink light puffs, flying petals and a drowsy haze
   v.flash([1, 0.6, 0.85], 0.18); v.ring(at, [1, 0.7, 0.9], 2.4, 0.6);
   for (let i = 0; i < 5; i++) later(ctx, i * 90, () => { const q = at.clone().add(V(rand(-0.5, 0.5), rand(0.4, 1.2), rand(-0.5, 0.5)));
-    v.burst(q, { n: 16, speed: 2, col: [1, 0.7, 0.92], size: 0.06, life: 0.7, g: 0, shape: 1 }); v.spark(q.x, q.y, q.z, { life: 0.4, size: 0.9, size1: 0.1, r: 1, gg: 0.6, b: 0.85, shape: 0 }); });
-  for (let i = 0; i < 30; i++) v.smoke(at.x + rand(-0.5, 0.5), at.y + rand(0.3, 1), at.z + rand(-0.5, 0.5), { vx: rand(-1, 1), vy: rand(0.4, 1.4), vz: rand(-1, 1), drag: 1, life: rand(1.2, 2), size: 0.1, r: 1, gg: rand(0.45, 0.7), b: 0.75, a: 1, shape: 1, wob: 1.2, ph: rand(0, 6), orb: { x: at.x, z: at.z, w: 1.5 } });
+    v.burst(q, { n: 16, speed: 2, col: [1, 0.7, 0.92], size: 0.06, life: 0.7, g: 0, shape: 5 }); v.spark(q.x, q.y, q.z, { life: 0.4, size: 0.9, size1: 0.1, r: 1, gg: 0.6, b: 0.85, shape: 0 }); });
+  for (let i = 0; i < 30; i++) v.smoke(at.x + rand(-0.5, 0.5), at.y + rand(0.3, 1), at.z + rand(-0.5, 0.5), { vx: rand(-1, 1), vy: rand(0.4, 1.4), vz: rand(-1, 1), drag: 1, life: rand(1.2, 2), size: 0.1, r: 1, gg: rand(0.45, 0.7), b: 0.75, a: 1, shape: 5, wob: 1.2, ph: rand(0, 6), orb: { x: at.x, z: at.z, w: 1.5 } });
   for (let i = 0; i < 10; i++) v.smokePuff(at.x + rand(-1, 1), at.y + rand(0.05, 0.4), at.z + rand(-1, 1), { vy: rand(0.05, 0.15), life: 2.6, size: 0.4, size1: 1.1, tint: [0.95, 0.66, 0.85] });
   ticker(v, E - 0.3 - ctx.now(), (k, dt, t) => { for (const a of ctx.targets) a.flash = 0.35 * (1 - k) * (Math.sin(t * 9) > 0.3 ? 1 : 0); if (Math.random() < 0.25) v.spark(at.x + rand(-0.4, 0.4), at.y + rand(0.8, 1.4), at.z + rand(-0.4, 0.4), { vy: rand(0.1, 0.3), life: 1.2, size: 0.07, r: 1, gg: 0.7, b: 0.9, shape: 0, wob: 0.6, ph: rand(0, 6) }); }, () => { for (const a of ctx.targets) a.flash = 0; });   // (the target drowses, flickering, as the original's)
   ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
@@ -552,8 +552,8 @@ export async function playItem(ctx, harmful) {
     drop.scale.y = 1.5; const rib = v.ribbon({ col, width: 0.07, n: 12 });
     v.timed(drop, 0.45, (k) => { drop.position.copy(P).setY(P.y + 2.4 - k * k * 2.1); rib.push(drop.position); }, () => {
       rib.end(); v.ring(P, col, 1.4, 0.6, { intensity: 1.3 }); v.decal(P, col, 0.9, 1.2, { intensity: 0.7 });
-      v.burst(P.clone().setY(P.y + 0.3), { n: 22, speed: 2.2, col, size: 0.05, life: 0.7, g: 6, shape: 1 });
-      for (let i = 0; i < 24; i++) v.spark(P.x + rand(-0.4, 0.4), P.y + 0.1, P.z + rand(-0.4, 0.4), { vy: rand(0.6, 1.4), life: 1, size: 0.06, r: col[0], gg: col[1], b: col[2], shape: 1, wob: 0.5, ph: rand(0, 6) });
+      v.burst(P.clone().setY(P.y + 0.3), { n: 22, speed: 2.2, col, size: 0.05, life: 0.7, g: 6, shape: 5 });
+      for (let i = 0; i < 24; i++) v.spark(P.x + rand(-0.4, 0.4), P.y + 0.1, P.z + rand(-0.4, 0.4), { vy: rand(0.6, 1.4), life: 1, size: 0.06, r: col[0], gg: col[1], b: col[2], shape: 5, wob: 0.5, ph: rand(0, 6) });
     });
   }
   await ctx.wait(700); ctx.hit(); await ctx.wait(700);

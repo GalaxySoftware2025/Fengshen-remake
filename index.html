@@ -16,8 +16,15 @@
 <div id="stage">
   <canvas id="gl"></canvas>
   <div id="labels"></div>
-  <!-- the game speed (src/speed.js) -->
-  <div id="speed" title="遊戲速度"><span>速度</span><button data-d="-1">−</button><b>×1</b><button data-d="1">＋</button></div>
+  <!-- the menu, top right (src/gamemenu.js): the game speed (src/speed.js), the battle's conditions and the controls page -->
+  <div id="gmenu">
+    <button class="gm-open" title="選單"><i></i><span>選單</span><b class="gm-speed"></b></button>
+    <div class="gm-panel hidden">
+      <div id="speed" class="gm-row"><span>遊戲速度</span><button data-d="-1">−</button><b>×1</b><button data-d="1">＋</button></div>
+      <button class="gm-row gm-cond">勝利條件</button>
+      <button class="gm-row gm-keys">控制按鍵</button>
+    </div>
+  </div>
 
   <!-- battle HUD -->
   <div id="hud" class="hidden">
@@ -147,6 +154,8 @@ if (made) {
   const v = r ? +(((await r.text()).match(/=\s*(\d+)/) || [])[1]) : null;
   if (v !== EXTRACT_VERSION) { stale = true; await caches.delete('fengshen-rom'); }
 }
+// (the game made from the player's ROM is the public build: from-rom hides the dev readouts, style.css)
+if (made && !stale) document.documentElement.classList.add('from-rom');
 if (window.COMMON && !stale) import('./src/main.js'); else import('./src/loader.js').then(L => L.show({ updated: stale }));
 </script>
 </body>

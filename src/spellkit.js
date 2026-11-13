@@ -41,7 +41,7 @@ export function gather(ctx, col, dur) {
     const a = rand(0, Math.PI * 2), r = rand(1.1, 1.8), p = V(c.x + Math.cos(a) * r, c.y + rand(-0.4, 0.9), c.z + Math.sin(a) * r);
     ctx.wait(i * 18).then(() => v.spark(p.x, p.y, p.z, { seek: { x: c.x, y: c.y, z: c.z, k: 4.5 }, life: 0.55, size: rand(0.06, 0.11), r: col[0], gg: col[1], b: col[2], shape: Math.random() < 0.5 ? 1 : 0 }));   // (the game clock)
   }
-  for (let i = 0; i < 16; i++) v.spark(ctx.caster.pos.x + rand(-0.5, 0.5), ctx.caster.pos.y + 0.05, ctx.caster.pos.z + rand(-0.5, 0.5), { vy: rand(1, 2.2), life: rand(0.6, 1.1), size: 0.06, r: col[0], gg: col[1], b: col[2], shape: 1 });
+  for (let i = 0; i < 16; i++) v.spark(ctx.caster.pos.x + rand(-0.5, 0.5), ctx.caster.pos.y + 0.05, ctx.caster.pos.z + rand(-0.5, 0.5), { vy: rand(1, 2.2), life: rand(0.6, 1.1), size: 0.06, r: col[0], gg: col[1], b: col[2], shape: 5 });
 }
 export async function intro(ctx, col, o) {
   o = o || {};
@@ -63,7 +63,7 @@ export function channel(ctx, col, s) {
   const g = s - ctx.now();
   if (g > 0.15) {
     const c = ctx.caster.chest(), v = ctx.vfx; ctx.pose('cast'); v.light(c.clone().add(V(0, 0.5, 0)), col, 3, g, 4);
-    ticker(v, g, () => { if (Math.random() < 0.6) { const a = rand(0, 6.28), r = rand(0.8, 1.5), p = V(c.x + Math.cos(a) * r, c.y + rand(-0.3, 0.9), c.z + Math.sin(a) * r); v.spark(p.x, p.y, p.z, { seek: { x: c.x, y: c.y, z: c.z, k: 4.5 }, life: 0.5, size: rand(0.05, 0.09), r: col[0], gg: col[1], b: col[2], shape: 1 }); } });
+    ticker(v, g, () => { if (Math.random() < 0.6) { const a = rand(0, 6.28), r = rand(0.8, 1.5), p = V(c.x + Math.cos(a) * r, c.y + rand(-0.3, 0.9), c.z + Math.sin(a) * r); v.spark(p.x, p.y, p.z, { seek: { x: c.x, y: c.y, z: c.z, k: 4.5 }, life: 0.5, size: rand(0.05, 0.09), r: col[0], gg: col[1], b: col[2], shape: 5 }); } });
   }
   return ctx.until(s);
 }

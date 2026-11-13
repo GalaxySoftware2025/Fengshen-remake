@@ -124,12 +124,11 @@ async function build(E, FX) {
   for (const z of [4.65, 5.4, 6.1, 7.0]) S.add(chair(dark, cush, 1.25, z, 1), chair(dark, cush, 6.75, z, -1));
   FX.glow(E, { x: 4.0, y: 2.6, r: 1.8, col: 0xffc070, i: 1.6 });
   // the walls round it [design: the original draws the hall alone on black; here the hall stands in its building, the
-  // night outside]: lattice side walls lit from within, low walls either side of the passage (south of the cast), the
-  // back wall running on into the dark, a dim stone courtyard beyond
+  // night outside]: lattice side walls lit from within, low walls either side of the passage (south of the cast), a dim
+  // stone courtyard beyond (the back wall no longer runs on past the hall either side: the user's call)
   for (const [x, sg] of [[0.6, 1], [7.4, -1]]) { const w = latticeWall(M, 0, 6.0, 0, 0, WALL_H, 4); w.rotation.y = sg * Math.PI / 2; w.position.set(x, 0, sg > 0 ? 7.95 : 1.95); S.add(shade(w)); }
   const low = T.material(T.plaster(0xd8c8a8), {}, [0.7, 0.7]);
   for (const [a, b, c, d] of [[0.5, 8.0, 2.7, 8.25], [5.3, 8.0, 7.5, 8.25], [2.45, 8.25, 2.7, 10.8], [5.3, 8.25, 5.55, 10.8]]) S.add(shade(box(low, a, 0, b, c, 0.5, d)), shade(box(trimRed, a - 0.02, 0.5, b - 0.02, c + 0.02, 0.58, d + 0.02)));
-  for (const [a, b] of [[-9, 0.5], [7.5, 17]]) S.add(shade(box(plaster, a, 0, WALL - 0.6, b, WALL_H, WALL - 0.3, 2)), shade(box(trimRed, a, WALL_H, WALL - 0.62, b, WALL_H + 0.12, WALL - 0.28)));
   const yard = new THREE.Mesh(new THREE.PlaneGeometry(40, 20).rotateX(-Math.PI / 2), T.material(T.bricks(0x3a3a40, 2, 'yardStone'), { color: 0x6a6a70 }, [20, 10]));
   yard.position.set(4, -0.02, 10); yard.receiveShadow = true; S.add(yard);
 }

@@ -48,19 +48,30 @@ export class UI {
     c.prepend(this.bank.portrait(u.sprite, 3));
   }
   hint(t) { $('hint').textContent = t || ''; }
-  // ---------- action menu (diamond buttons around the unit)
-  menu(opts, sel, sx, sy) {
-    const m = $('menu');
-    if (!opts) { m.classList.add('hidden'); m.innerHTML = ''; return; }
+  // ---------- action menu (diamond buttons around the unit), turning as the item / spell ring does [the user's call]: each
+  // command keeps its place round the circle (o.at: clockwise from the top), the circle turned to bring `top` up (the
+  // arrow keys); the mouse points at any where it stands
+  menu(opts, sel, sx, sy, top = sel) {
+    const m = $('menu'), step = Math.PI / 2, rad = 78;
+    if (!opts) { m.classList.add('hidden'); m.innerHTML = ''; m._opts = null; return; }
     m.classList.remove('hidden'); m.style.left = sx + 'px'; m.style.top = sy + 'px';
+    let goal = -opts[top].at * step;
     if (!m.children.length) {
+      m._opts = opts; m._ang = goal;
       opts.forEach((o, i) => {
-        const b = el('div', 'mb', `<span>${o.ch}</span>`); b.title = o.label;
-        b.style.left = o.dx + 'px'; b.style.top = o.dy + 'px'; b.style.animationDelay = i * 40 + 'ms';
-        b.onclick = e => { e.stopPropagation(); o.onClick(i); }; b.onmouseenter = () => o.onHover(i);
+        const b = el('div', 'mb', `<span>${o.ch}</span>`); b.title = o.label; b.style.animationDelay = i * 40 + 'ms';
+        b.onclick = e => { e.stopPropagation(); o.onClick(i); }; b.onmousemove = () => o.onHover(i);   // (move, not enter: a command turning in under a still pointer takes no focus)
         m.appendChild(b);
       });
+      const place = () => {
+        if (!m._opts) return;
+        m._ang += (m._goal - m._ang) * 0.28; if (Math.abs(m._goal - m._ang) < 1e-3) m._ang = m._goal;
+        [...m.children].forEach((b, i) => { const a = -Math.PI / 2 + m._opts[i].at * step + m._ang; b.style.left = Math.cos(a) * rad + 'px'; b.style.top = Math.sin(a) * rad + 'px'; });
+        requestAnimationFrame(place);
+      };
+      m._goal = goal; place();
     }
+    while (goal - m._ang > Math.PI) goal -= Math.PI * 2; while (goal - m._ang < -Math.PI) goal += Math.PI * 2; m._goal = goal;   // the shortest way round
     [...m.children].forEach((b, i) => { b.classList.toggle('sel', i === sel); b.classList.toggle('off', !opts[i].ok); });
   }
   // ---------- the item / spell ring, after the original's 物 / 法 rings: the bare icons on a circle round the unit, the

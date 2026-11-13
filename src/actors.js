@@ -121,11 +121,11 @@ const XRAY = (map, g) => new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map, co
 // sprite material: lit by the scene, never fully dark, with hit flash and an ember dissolve for deaths
 function spriteMaterial(map) {
   const m = new THREE.MeshLambertMaterial({ map, emissiveMap: map, emissive: new THREE.Color(0.42, 0.42, 0.42), alphaTest: 0.5, side: THREE.DoubleSide });
-  m.userData.u = { uDissolve: { value: 0 }, uFlash: { value: 0 }, uTint: { value: new THREE.Color(1, 1, 1) }, uStone: { value: 0 }, uStoneCol: { value: new THREE.Color(1, 1, 1) } };
+  m.userData.u = { uDissolve: { value: 0 }, uFlash: { value: 0 }, uTint: { value: new THREE.Color(1, 1, 1) }, uStone: { value: 0 }, uStoneCol: { value: new THREE.Color(1, 1, 1) }, uGain: { value: 1 } };
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, m.userData.u);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      uniform float uDissolve, uFlash, uStone; uniform vec3 uTint, uStoneCol;
+      uniform float uDissolve, uFlash, uStone, uGain; uniform vec3 uTint, uStoneCol;
       vec3 stone(vec3 c){ float l = dot(c, vec3(0.3, 0.55, 0.15)); return mix(c, vec3(0.1 + 0.82 * l) * uStoneCol, uStone); }
       float hs(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float vn2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hs(i),hs(i+vec2(1,0)),f.x), mix(hs(i+vec2(0,1)),hs(i+vec2(1,1)),f.x), f.y); }`)
@@ -137,7 +137,9 @@ function spriteMaterial(map) {
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       totalEmissiveRadiance = stone(totalEmissiveRadiance);
       totalEmissiveRadiance = totalEmissiveRadiance * uTint + vec3(uFlash) * diffuseColor.rgb * 2.5 + vec3(uFlash * 0.4);
-      if (uDissolve > 0.0) totalEmissiveRadiance += vec3(1.0, 0.45, 0.1) * 4.0 * (1.0 - smoothstep(0.0, 0.12, dn - (uDissolve * 1.15 - 0.05)));`);
+      if (uDissolve > 0.0) totalEmissiveRadiance += vec3(1.0, 0.45, 0.1) * 4.0 * (1.0 - smoothstep(0.0, 0.12, dn - (uDissolve * 1.15 - 0.05)));`)
+      .replace('#include <opaque_fragment>', `outgoingLight *= uGain;
+      #include <opaque_fragment>`);
   };
   return m;
 }
@@ -243,6 +245,7 @@ export class Actor {
     for (const m of [this.mesh.material, this.big.material]) {
       m.userData.u.uFlash.value = this.flash; m.userData.u.uDissolve.value = this.dissolve;
       m.userData.u.uTint.value.setScalar(this.glow ?? 1);   // glow: the cast lifted while the land around darkens (src/scene.js, the prologue's red)
+      m.userData.u.uGain.value = this.gain ?? 1;   // gain: all its light scaled, against a dimmed exposure (src/cutfx.js think: the thinker kept as lit)
       m.userData.u.uStone.value = this.stone || 0; if (this.stoneCol) m.userData.u.uStoneCol.value.copy(this.stoneCol);   // turned to stone (the prologue's statues)
       const tr = !see || !!this.ghost || !!this.over; if (m.transparent !== tr) { m.transparent = tr; m.depthWrite = !tr; m.needsUpdate = true; }
       m.opacity = (this.ghost ? 0.62 : 1) * fade; m.alphaTest = see ? 0.5 : 0.5 * fade;

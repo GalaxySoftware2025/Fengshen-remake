@@ -8,7 +8,7 @@
 //                     jutting into the middle court (14-17, 10-11); the blue-coped walls of rows 9-10 to either side,
 //                     rows of trees along them (7-8), two trees before the gate (13-14, 4-5) and (17-18, 4-5)
 //   the gate          the gatehouse over the north wall (x 12.6-19.2): two eaves of blue glazed tiles, red columns,
-//                     the plaque 朝歌城, its doors over (15-16, 3); a hero or 文王 on (15, 4) or (16, 4) is out
+//                     the plaque 朝歌城, its doors at the north edge of (15-16, 3); a hero or 文王 on (15, 3) or (16, 3), against them, is out
 // Past the north wall the land outside, trees and rocks along it, as the original draws it over the wall. Chests: (2, 15)
 // and (29, 11) as drawn; (2, 4) and (29, 4) are not drawn (hidden: battle 7's hook module).
 import * as THREE from 'three';

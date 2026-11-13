@@ -7,6 +7,18 @@ export const camOf = S => f => { let i = 0; while (i + 1 < S.camera.length && S.
 // the walk cycle's ms a frame at a walking speed (px a frame): a frame of the walk per 10 px; the soldiers' march (1 px
 // a frame) at the pace they mark time standing
 export const paceMs = pxPerFrame => Math.max(85, Math.min(170, 167 / Math.max(0.1, pxPerFrame)));
+// [design, the user's call] facings held while a line shows, that the original does not give: 'scene:frame:speaker' ->
+// { slot: facing } (src/scene.js). Scene 16: 姜文煥 (slot 5) turns to 楊戩 (slot 2, at his left) as 楊戩 speaks, and faces
+// the group below him (黃飛虎) for his own lines and 黃飛虎's; the original keeps him facing down at f1926, and at f1953
+// turns him right (for the walk he takes after the lines) before they show (2026-11-10)
+export const LINE_FACE = {
+  '16:1926:楊戩': { 5: 'left' }, '16:1926:姜文煥': { 5: 'down' },
+  '16:1953:姜文煥': { 5: 'down' }, '16:1953:黃飛虎': { 5: 'down' }, '16:1953:楊戩': { 5: 'left' },
+};
+// [design, the user's call] a unit shown for a line only, where the original keeps it out of sight: 'scene:frame:speaker'
+// -> { slot: [x, y, facing] } (map px, as the tracks), in the sheet it last wore. Scene 18: 哪吒 (slot 4), gone into the
+// cave at f823, calls from inside (f1345) and is seen at its mouth (3.5, 2.45: in the opening's front, wholly seen) for the line, gone again after
+export const LINE_SHOW = { '18:1345:哪吒': { 4: [96, 62, 'down'] } };
 // a track at frame f, as the player poses it: null when hidden, else { x, y, gfx, facing, moving, speed (px a frame) }
 export function at(tr, f) {
   let i = 0; while (i + 1 < tr.length && tr[i + 1][0] <= f) i++;

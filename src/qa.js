@@ -5,6 +5,9 @@
 //   visible   the speaker's pixels change when the actor is hidden (catches materials that silently fail to draw)
 //   blown     the share of the speaker's pixels that are near-white (an actor washed out by a light)
 //   haze      how much bloom and light shafts lift everything not already near white (a veil over the whole picture)
+//   think     on a line inside a character's inner thought (a 'think' event, src/cutfx.js): the frame's mean against the
+//             same frame drawn lit (it must sink to about a quarter) and the thinker's own pixels' mean (they must stay
+//             lit); the void check then does not apply
 //   occluded  the share of rays from the camera to the speaker (head, chest, knees) that set geometry stops first (a
 //             remade set's wall, throne or roof in front of the speaker; cut-out leaves and effects do not count)
 // It also logs every fade and every line / card shown, and, every rendered frame, whether the world can be seen (the
@@ -18,6 +21,7 @@
 //             line or interactive screen (a flash of a scene), and a world swapped for another while in view (a pop)
 import * as THREE from 'three';
 import * as R from './rules.js';
+import { LINE_SHOW } from './tracks.js';
 
 export function install(E) {
   const Q = window.__qa = { fades: [], shown: [] };
@@ -61,6 +65,7 @@ export function install(E) {
     for (const a of E.actors.values()) {
       if (talking && !a.hidden && a.root.visible && a.dissolve > 0.02 && a.dissolve < 0.98) Q.half.push({ w, f: Math.round(st.t), slot: a.u.slot, d: +a.dissolve.toFixed(2) });   // a fade-in held under a line
       if (a.hidden || a.u.slot == null || a.u.slot === 'descent' || !a.root.visible) continue;
+      if (talking && say && say.tag === st.tag && (LINE_SHOW[say.tag + ':' + say.f + ':' + say.who] || {})[a.u.slot]) continue;   // shown for this line by design (src/tracks.js LINE_SHOW)
       const tr = (window.__remake.tracks || {})[a.u.slot] || S.actors[a.u.slot]; if (!tr) continue;   // the track as shown (src/scene.js soften: a unit the camera left behind stays)
       let p = null; for (const q of tr) { if (q[0] > st.t) break; p = q; }
       const want = p && p.length > 1 ? p[3] : null;
@@ -93,6 +98,15 @@ export function install(E) {
     const y0 = h * 0.12, y1 = h * 0.72, all = read(0, y0, w, y1 - y0);
     let dark = 0, n = 0; for (let i = 0; i < all.length; i += 4 * 7) { n++; if (all[i] + all[i + 1] + all[i + 2] < 24) dark++; }
     out.void = +(dark / n).toFixed(3);
+    { const say = window.__remake && window.__remake.say, S = say && globalThis.SCENES[say.tag];
+      const ev = S && S.events.find(e => e.kind === 'native' && e.name === 'think' && e.f < say.f && say.f <= e.end);   // (a line on op 33's own frame comes before it, lit)
+      const mean = px => { let sum = 0, k = 0; for (let i = 0; i < px.length; i += 4 * 7) { sum += px[i] + px[i + 1] + px[i + 2]; k++; } return sum / k / 765; };
+      if (ev) {
+        const W0 = E.world, R = W0.renderer, d = W0.thinkDim || 1, ex = R.toneMappingExposure, st = W0.bloom.strength;
+        R.toneMappingExposure = ex / d; W0.bloom.strength = st / d; E.world.render(); const lit = mean(read(0, y0, w, y1 - y0));
+        R.toneMappingExposure = ex; W0.bloom.strength = st; E.world.render();
+        out.think = { slot: ev.slot, world: +mean(all).toFixed(3), lit: +lit.toFixed(3) };
+      } }
     // haze: how much the glow passes (bloom, light shafts) lift the frame's dark and mid tones, a veil over the picture
     {
       const W0 = E.world, b0 = W0.bloom.enabled, sh = (W0.shaftMeshes || []).map(m => m.visible);
@@ -120,11 +134,12 @@ export function install(E) {
     const bx = hx - sz * 0.45, by = hy - sz * 0.15, bw = sz * 0.9, bh = sz * 1.15;
     const A = read(bx, by, bw, bh);
     act.root.visible = false; E.world.render(); const B = read(bx, by, bw, bh); act.root.visible = true; E.world.render();
-    let diff = 0, mine = 0, white = 0;
+    let diff = 0, mine = 0, white = 0, lum = 0;
     for (let i = 0; i < A.length; i += 4) {
       const d = Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]); diff += d;
-      if (d > 45) { mine++; if (A[i] > 238 && A[i + 1] > 230 && A[i + 2] > 215) white++; }
+      if (d > 45) { mine++; lum += A[i] + A[i + 1] + A[i + 2]; if (A[i] > 238 && A[i + 1] > 230 && A[i + 2] > 215) white++; }
     }
+    if (out.think) out.think.speaker = mine ? +(lum / mine / 765).toFixed(3) : 0;
     out.speaker.diff = +(diff / (A.length / 4)).toFixed(1);
     out.speaker.visible = out.speaker.diff > 6;
     out.speaker.blown = mine ? +(white / mine).toFixed(2) : 0;

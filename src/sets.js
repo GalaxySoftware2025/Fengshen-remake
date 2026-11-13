@@ -99,7 +99,7 @@ function fire(E, p) {
     const fl = 0.82 + 0.18 * Math.sin(t * 11 + x) * Math.sin(t * 7.3 + z); L.intensity = base * fl; glow.material.opacity = 0.32 * fl;
     f1.material.uniforms.uHeat.value = 0.92 + 0.12 * fl; f1.scale.y = 0.94 + 0.1 * fl;
     if ((em += dt) > 0.09 / size) { em = 0;   // embers: bright specks that drift up, flicker and die
-      E.vfx.spark(x + rand(-0.1, 0.1) * size, y + 0.3 * size, z, { vx: rand(-0.15, 0.15), vy: rand(0.6, 1.3) * size, vz: rand(-0.1, 0.1), life: rand(0.6, 1.3), size: rand(0.015, 0.03), r: 1, gg: rand(0.45, 0.75), b: 0.12, shape: 1, flicker: 1, wob: 0.6, ph: rand(0, 9) }); }
+      E.vfx.spark(x + rand(-0.1, 0.1) * size, y + 0.3 * size, z, { vx: rand(-0.15, 0.15), vy: rand(0.6, 1.3) * size, vz: rand(-0.1, 0.1), life: rand(0.6, 1.3), size: rand(0.015, 0.03), r: 1, gg: rand(0.45, 0.75), b: 0.12, shape: 6, flicker: 1, wob: 0.6, ph: rand(0, 9) }); }
     if (p.smoke !== false && (sm += dt) > 0.24) { sm = 0; E.vfx.smokePuff(x, y + 0.85 * size, z, { vx: rand(-0.05, 0.05), vy: rand(0.35, 0.6), life: rand(2.2, 3.2), size: 0.12 * size, size1: 0.6 * size, tint: [0.3, 0.27, 0.25] }); }
   });
 }

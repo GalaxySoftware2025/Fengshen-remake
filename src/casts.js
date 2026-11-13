@@ -46,7 +46,7 @@ async function strike(a, P, col, power = 1, o) {                       // the at
 }
 const rise = (a, h, sec) => anim(sec, k => { a.hover = Math.sin(k * Math.PI / 2) * h; });
 const land = (a, h, sec) => anim(sec, k => { a.hover = h * (1 - k * k); }).then(() => { a.hover = 0; });
-const spark = (p, col, o = {}) => vfx.spark(p.x, p.y, p.z, Object.assign({ life: 0.6, size: 0.06, r: col[0], gg: col[1], b: col[2], shape: 1 }, o));
+const spark = (p, col, o = {}) => vfx.spark(p.x, p.y, p.z, Object.assign({ life: 0.6, size: 0.06, r: col[0], gg: col[1], b: col[2], shape: 5 }, o));
 // sparks spiralling up round him
 function swirl(a, P, col, sec, o = {}) { let T = 0; return during(sec, (k, dt) => { T += dt; const n = o.rate || 40;
   for (let i = 0; i < Math.ceil(dt * n); i++) { const t = T * (o.spin || 7) + rand(0, 6.28), r = (o.r || 0.6) * (1 - k * 0.3); spark(V(P.x + Math.cos(t) * r, P.y + 0.1 + rand(0, 1.1), P.z + Math.sin(t) * r), col, { vy: rand(0.6, 1.4), vx: -Math.sin(t) * 1.2, vz: Math.cos(t) * 1.2, drag: 1.5, size: o.size || rand(0.04, 0.07), shape: o.shape ?? 1 }); } }); }
@@ -65,7 +65,7 @@ function smoke(a, P, tint, sec, o = {}) { let T = 0; return during(sec, (k, dt) 
 // a glowing orb over his head that swells and flares
 function orb(a, col, sec, o = {}) { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(...col).multiplyScalar(1.6), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
   m.renderOrder = 7; return vfx.timed(m, sec, k => { m.position.copy(a.head().add(V(0, 0.4, 0))); m.scale.setScalar((o.r || 0.16) * Math.min(1, k * 2.5) * (1 + 0.1 * Math.sin(k * 40))); m.material.opacity = k > 0.85 ? (1 - k) / 0.15 : 0.9; },
-    () => { const q = a.head().add(V(0, 0.4, 0)); vfx.burst(q, { n: 22, speed: 2.6, cols: [[1, 1, 1], col], size: 0.05, life: 0.4, g: 0, shape: 1 }); vfx.light(q, col, 3, 0.3, 4); }); }
+    () => { const q = a.head().add(V(0, 0.4, 0)); vfx.burst(q, { n: 22, speed: 2.6, cols: [[1, 1, 1], col], size: 0.05, life: 0.4, g: 0, shape: 5 }); vfx.light(q, col, 3, 0.3, 4); }); }
 // lightning crashing down round him
 function bolts(P, col, n, sec) { let fired = 0; return during(sec, k => { while (fired < n * k) { fired++; const t = rand(0, 6.28), l = rand(0.6, 1.1), q = V(P.x + Math.cos(t) * l, 0, P.z + Math.sin(t) * l); q.y = effectH(q.x, q.z);
   vfx.bolt(q.clone().add(V(rand(-0.3, 0.3), 2.2, rand(-0.3, 0.3))), q, col, 0.15, { width: 0.022, jag: 0.35 }); vfx.burst(q, { n: 6, speed: 1.5, cols: [[1, 1, 1], col], size: 0.04, life: 0.3, g: 0, shape: 0 }); } }); }
@@ -122,10 +122,10 @@ export const CASTS = {
     let T = 0;
     vfx.timed(eye, 0.9, (k, dt) => { T += dt; face(eye); eye.position.copy(at()); const open = Math.min(1, T / 0.25) * (k > 0.8 ? (1 - k) / 0.2 : 1);
       eye.scale.set(0.6 + 0.4 * open, Math.max(0.02, open), 1); });
-    for (let i = 0; i < 10; i++) { const t = i / 10 * 6.28, c = at(); vfx.spark(c.x + Math.cos(t) * 0.5, c.y + Math.sin(t) * 0.5, c.z, { seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.3, size: 0.06, r: 1, gg: 0.85, b: 0.45, shape: 1 }); }
+    for (let i = 0; i < 10; i++) { const t = i / 10 * 6.28, c = at(); vfx.spark(c.x + Math.cos(t) * 0.5, c.y + Math.sin(t) * 0.5, c.z, { seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.3, size: 0.06, r: 1, gg: 0.85, b: 0.45, shape: 5 }); }
     await wait(300);
     const E = at(); vfx.flash(GOLD, 0.1); vfx.light(E, GOLD, 12, 0.4, 6);
-    vfx.burst(E, { n: 30, speed: 3.2, cols: [[1, 1, 0.9], GOLD], size: 0.05, life: 0.45, g: 0, shape: 1 });
+    vfx.burst(E, { n: 30, speed: 3.2, cols: [[1, 1, 0.9], GOLD], size: 0.05, life: 0.45, g: 0, shape: 5 });
     await wait(420);
   },
   // 姜子牙: he lifts his staff and gold rises round him (no trigram circle under him: every magic circle went at the
@@ -133,7 +133,7 @@ export const CASTS = {
   7: async (a, P) => {
     const GOLD = [1, 0.85, 0.45];
     pose.cast(a, 0);
-    for (let i = 0; i < 18; i++) { const t = i / 18 * 6.28, r = 0.9; vfx.spark(P.x + Math.cos(t) * r, P.y + 0.05, P.z + Math.sin(t) * r, { vy: rand(1.2, 2.2), vx: -Math.cos(t) * 0.5, vz: -Math.sin(t) * 0.5, life: 0.7, size: 0.06, r: 1, gg: 0.85, b: 0.45, shape: 1 }); }
+    for (let i = 0; i < 18; i++) { const t = i / 18 * 6.28, r = 0.9; vfx.spark(P.x + Math.cos(t) * r, P.y + 0.05, P.z + Math.sin(t) * r, { vy: rand(1.2, 2.2), vx: -Math.cos(t) * 0.5, vz: -Math.sin(t) * 0.5, life: 0.7, size: 0.06, r: 1, gg: 0.85, b: 0.45, shape: 5 }); }
     vfx.pillar(P, GOLD, 0.5, 2.4, 0.8, { taper: 0.8, intensity: 0.35, grow: 1 });
     vfx.light(P.clone().setY(P.y + 0.6), GOLD, 8, 0.9, 5);
     await anim(0.9, () => {});
@@ -160,10 +160,10 @@ export const CASTS = {
     let T = 0;
     const put = (open, sway) => { const b = base(); for (const t of tails) { face(t.m, 1, -t.ang * open + Math.sin(T * 7 + t.ang * 2) * 0.12 * sway); t.m.position.copy(b); t.m.scale.setScalar(0.35 + 0.65 * open); t.m.material.opacity = Math.min(1, open * 1.5); } };
     await anim(0.4, (k, dt = 1 / 60) => { T += dt; put(1 - Math.pow(1 - k, 3), 1);
-      if (Math.random() < dt * 30) { const t = rand(0, 6.28), c = a.chest(); vfx.spark(c.x + Math.cos(t) * 0.6, c.y + rand(-0.3, 0.4), c.z + Math.sin(t) * 0.6, { vy: rand(0.3, 0.9), life: 0.6, size: rand(0.05, 0.08), r: 1, gg: 0.5, b: 0.85, shape: 1 }); } });
+      if (Math.random() < dt * 30) { const t = rand(0, 6.28), c = a.chest(); vfx.spark(c.x + Math.cos(t) * 0.6, c.y + rand(-0.3, 0.4), c.z + Math.sin(t) * 0.6, { vy: rand(0.3, 0.9), life: 0.6, size: rand(0.05, 0.08), r: 1, gg: 0.5, b: 0.85, shape: 5 }); } });
     vfx.light(a.chest(), PINK, 6, 0.6, 5);
     await anim(0.4, (k, dt = 1 / 60) => { T += dt; put(1, 1); });
-    pose.cast(a, 1); vfx.burst(a.chest().addScaledVector(right, 0.25), { n: 18, speed: 2, cols: [[1, 1, 1], PINK], size: 0.05, life: 0.4, g: 0, shape: 1 });
+    pose.cast(a, 1); vfx.burst(a.chest().addScaledVector(right, 0.25), { n: 18, speed: 2, cols: [[1, 1, 1], PINK], size: 0.05, life: 0.4, g: 0, shape: 5 });
     await anim(0.25, (k, dt = 1 / 60) => { T += dt; put(1 - k, 1 - k); });
     for (const t of tails) t.m.visible = false;   // (gone with their beat)
     await wait(150);
@@ -210,7 +210,7 @@ export const CASTS = {
   // 小龍女, the dragon girl: her hand raised, water winds up round her like a dragon and breaks into frost
   10: async (a, P) => {
     const W = [0.45, 0.8, 1]; raise(a, 0); ribbons(a, P, [W, [0.8, 0.95, 1], W], 0.8, { spin: 9, width: 0.08, h: 1.7 });
-    await wait(800); const c = a.head().add(V(0, 0.3, 0)); vfx.burst(c, { n: 30, speed: 2.4, cols: [[1, 1, 1], W], size: 0.05, life: 0.5, g: 1.5, shape: 1 }); vfx.light(c, W, 3, 0.3, 5); await wait(250);
+    await wait(800); const c = a.head().add(V(0, 0.3, 0)); vfx.burst(c, { n: 30, speed: 2.4, cols: [[1, 1, 1], W], size: 0.05, life: 0.5, g: 1.5, shape: 5 }); vfx.light(c, W, 3, 0.3, 5); await wait(250);
   },
   // 燃燈道人: his hand raised, the lamp flames kindle in a ring round him
   11: async (a, P) => { raise(a, 0); flameRing(P, 0.7, 0, 0.95, { rate: 50, size: 0.8 }); vfx.light(P.clone().setY(P.y + 0.5), [1, 0.8, 0.5], 3, 1, 5); await wait(1000); },
@@ -233,7 +233,7 @@ export const CASTS = {
     ribbons(a, P, [[0.1, 0.25, 0.2], [0.15, 0.3, 0.25], [0.2, 0.5, 0.4]], 0.9, { r: 0.6, h: 1.8, spin: 9, width: 0.07 });
     vfx.timed(m, 0.95, k => { const f = Math.min(1, k / 0.4); m.position.copy(top()).add(V(0, f * 0.35, 0)); pointAlong(m, V(0, 1, 0)); m.scale.setScalar(0.5 + f * 1.3); });
     await wait(450);
-    const q = top().add(V(0, 2.2, 0)); vfx.light(q, JADE, 9, 0.4, 6); vfx.burst(q, { n: 24, speed: 2.6, cols: [[1, 1, 1], JADE], size: 0.05, life: 0.4, g: 0, shape: 1 });
+    const q = top().add(V(0, 2.2, 0)); vfx.light(q, JADE, 9, 0.4, 6); vfx.burst(q, { n: 24, speed: 2.6, cols: [[1, 1, 1], JADE], size: 0.05, life: 0.4, g: 0, shape: 5 });
     await wait(550);
   },
   // 魔禮海: he strikes the 碧玉琵琶, and its four strings send wind and fire running out round him
@@ -284,7 +284,7 @@ export const CASTS = {
     vfx.timed(beast, 0.85, k => { const t = k * 6.28 * 1.05 - 1.57, r = 0.85 * Math.sin(Math.min(1, k * 1.4) * Math.PI / 2) * (k > 0.85 ? (1 - k) / 0.15 : 1), y = 0.35 + Math.abs(Math.sin(k * 6.28 * 3)) * 0.25;
       beast.position.set(P.x + Math.cos(t) * r, P.y + y, P.z + Math.sin(t) * r); face(beast); beast.scale.x = Math.cos(t + 1.57) > 0 ? -1 : 1; trail.push(beast.position.clone()); });
     await wait(850);
-    vfx.burst(a.chest(), { n: 16, speed: 2, cols: [[1, 1, 1], WHITE], size: 0.04, life: 0.3, g: 0, shape: 1 });
+    vfx.burst(a.chest(), { n: 16, speed: 2, cols: [[1, 1, 1], WHITE], size: 0.04, life: 0.3, g: 0, shape: 5 });
     await wait(200);
   },
   // 超戰將: he braces, and gold sparks pour up round him
@@ -329,10 +329,10 @@ export const CASTS = {
   // 蟹將, the crab general: he braces and bubbles rise round him
   21: async (a, P) => { pose.guard(a); swirl(a, P, [0.75, 0.9, 1], 0.9, { rate: 30, spin: 2, size: 0.07 }); await wait(1000); },
   // 蝦兵, the shrimp soldier: a hop and a splash
-  22: async (a, P) => { await rise(a, 0.3, 0.2); await land(a, 0.3, 0.14); vfx.burst(P.clone().setY(P.y + 0.1), { n: 24, speed: 2.2, cols: [[0.85, 0.95, 1], [0.4, 0.75, 1]], size: 0.05, life: 0.6, g: 6, shape: 1, up: 0.8 }); await wait(600); },
+  22: async (a, P) => { await rise(a, 0.3, 0.2); await land(a, 0.3, 0.14); vfx.burst(P.clone().setY(P.y + 0.1), { n: 24, speed: 2.2, cols: [[0.85, 0.95, 1], [0.4, 0.75, 1]], size: 0.05, life: 0.6, g: 6, shape: 5, up: 0.8 }); await wait(600); },
   // 海龍王, the dragon king: a column of water winds up round him and bursts into spray
   23: async (a, P) => { raise(a, 0); ribbons(a, P, [[0.3, 0.6, 1], [0.6, 0.85, 1], [0.3, 0.6, 1], [0.9, 0.95, 1]], 0.85, { spin: 7, width: 0.09, r: 0.65, h: 2 }); await wait(850);
-    vfx.burst(a.head().add(V(0, 0.6, 0)), { n: 36, speed: 2.6, cols: [[1, 1, 1], [0.45, 0.75, 1]], size: 0.05, life: 0.6, g: 3, shape: 1 }); await wait(250); },
+    vfx.burst(a.head().add(V(0, 0.6, 0)), { n: 36, speed: 2.6, cols: [[1, 1, 1], [0.45, 0.75, 1]], size: 0.05, life: 0.6, g: 3, shape: 5 }); await wait(250); },
   // ---- spirits and beasts
   // 守護靈, the guardian spirit: it rises a little, soul-fire circling it
   33: async (a, P) => { await rise(a, 0.25, 0.25); swirl(a, P, [0.65, 0.95, 1], 0.7, { rate: 24, spin: 4, size: 0.08 }); await wait(700); await land(a, 0.25, 0.15); },

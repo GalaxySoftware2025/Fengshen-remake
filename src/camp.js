@@ -22,11 +22,11 @@ export function slotList(E, box, mode, state) {
       box.innerHTML = `<h3>${mode === 'save' ? '儲存記錄' : '讀取記錄'}</h3>`;
       const t = h('div', 'slots'); t.appendChild(h('div', 'sl head', '<span></span><span>場所</span><span>等級</span><span>次數</span><span></span>'));
       for (const { slot, state: s } of Save.list()) {
-        if (mode === 'save' && slot === Save.AUTO) continue;
-        const sum = s && K.summary(s), row = h('div', 'sl' + (s ? '' : ' empty'));
+        const sum = s && K.summary(s), row = h('div', 'sl' + (s ? '' : ' empty') + (mode === 'save' && slot === Save.AUTO ? ' locked' : ''));
         row.innerHTML = `<span>${slot === Save.AUTO ? '自動記錄' : '記錄' + CN[slot + 1]}</span>` + (s ? `<span>${sum.place}</span><span>${sum.lv}</span><span>${sum.saves}</span><span class="dt">${dateText(s.at)}</span>` : '<span>—</span><span></span><span></span><span></span>');
         row.onclick = () => {
           if (mode === 'load') { if (s) res(s); return; }
+          if (slot === Save.AUTO) return E.ui.toast('自動記錄由遊戲自動儲存，無法手動儲存', 1400);   // shown to save too, as the bottom row, but the game's own (written before every battle) [the user's call]
           // [design, the user's request: the original saves at once] ask first, as 出擊 does (否 lit), naming an overwrite
           draw(); [...box.querySelectorAll('.sl')].find(r => r.dataset.slot === String(slot)).classList.add('pick');
           const q = h('div', 'lask', `<span>${s ? '要覆蓋記錄' + CN[slot + 1] + '嗎？' : '要儲存至記錄' + CN[slot + 1] + '嗎？'}</span>`), yes = h('button', '', '是'), no = h('button', 'on', '否');
@@ -64,15 +64,16 @@ function people(E, box, state) {
   let cur = state.roster[0].cid;
   const draw = () => {
     box.innerHTML = '<h3>查看人物</h3>';
-    const wrap = h('div', 'people'), list = h('div', 'htabs'), card = h('div', 'pcard');   // the heroes as 裝備物品's tabs, the card under them
+    const out = cid => !(state.pick || []).includes(cid);   // not chosen for the next battle: greyed, as on 裝備物品 and 出戰人選 [the user's call]
+    const wrap = h('div', 'people'), list = h('div', 'htabs'), card = h('div', 'pcard' + (out(cur) ? ' out' : ''));   // the heroes as 裝備物品's tabs, the card under them
     for (const r of state.roster) {
-      const p = D.party.find(u => u.cid === r.cid) || r, t = h('div', 'pt' + (r.cid === cur ? ' on' : ''));
+      const p = D.party.find(u => u.cid === r.cid) || r, t = h('div', 'pt' + (r.cid === cur ? ' on' : '') + (out(r.cid) ? ' out' : ''));
       t.appendChild(E.bank.portrait(p.sprite, 2)); t.insertAdjacentHTML('beforeend', `<span>${C().heroes[r.cid].name}</span><small>Lv ${r.lv}</small>`);
       t.onclick = () => { cur = r.cid; draw(); }; list.appendChild(t);
     }
     const r = K.heroRec(state, cur), H = C().heroes[cur], g = H.growth, next = r.lv < 99 ? g[r.lv].map((v, i) => v - g[r.lv - 1][i]) : null;
     const p = D.party.find(u => u.cid === cur);
-    card.appendChild(E.bank.walker(p.sprite, 4));   // the chosen hero marking time, as on 裝備物品 [the user's call]
+    card.appendChild(E.bank.walker(p.sprite, 4, out(cur)));   // the chosen hero marking time, as on 裝備物品 [the user's call]; grey and standing if not going
     card.insertAdjacentHTML('beforeend', `<div class="pn"><b>${H.name}</b><span>${H.cls}・${H.elem}　Lv ${r.lv}　經驗 ${r.exp}</span></div>
       <div class="ps">${statLine(r)}</div>
       ${next ? `<div class="pg"><b>下一級</b>生命 +${next[0]}　法力 +${next[1]}　攻 +${next[2]}　防 +${next[3]}　速 +${next[4]}${g[r.lv][5] !== 255 ? '　學會「' + C().spells[g[r.lv][5]].name + '」' : ''}</div>` : ''}
@@ -204,8 +205,8 @@ export async function campScene(E, state, onChange) {
   // the keyboard (keynav.js): the menu and everything on the open page; O answers a question 否, closes the save slots,
   // else goes from the page back to the menu
   const nav = keynav($('camp'), {
-    items: '#c-menu button, #c-panel .pt, #c-panel .islot:not(.empty), #c-panel .ibag .it:not(.none), #c-panel .lh:not(.ro), #c-panel .sl:not(.head), #c-panel button',
-    start: () => menu.querySelector('button.on') || menu.firstElementChild, prefer: '#c-panel .lask button.on',
+    items: '#c-menu button, #c-panel .pt, #c-panel .islot:not(.empty), #c-panel .ibag .it:not(.none), #c-panel .lh:not(.ro), #c-panel .sl:not(.head):not(.locked), #c-panel button',   // (not 自動記錄 in the save list: nothing to do there)
+    start: () => menu.querySelector('button.on') || menu.firstElementChild, prefer: '#c-panel .lask button.on', groups: ['#c-menu', '#c-panel'],
     back: cur => {
       const no = box.querySelector('.lask button.on'); if (no) return no.click();
       const ret = [...box.querySelectorAll('.bar button')].find(b => /返回/.test(b.textContent)); if (ret) return ret.click();

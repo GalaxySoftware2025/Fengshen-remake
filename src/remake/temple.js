@@ -4,12 +4,13 @@
 // a marble balustrade over a sea of clouds.
 import * as THREE from 'three';
 import * as T from '../kit/tex.js';
-import { Levels, mats, box, pillar, latticeWall, curtain, stairs, shade, merged } from '../kit/parts.js';
+import { Levels, mats, box, pillar, latticeWall, curtain, shade, merged } from '../kit/parts.js';
 import { craneBird, flap } from './title.js';
 import { darken } from '../cutfx.js';
 
-const UP = 0.2;
-function levels() { const L = new Levels(8, 10, 4); L.set(0, 1.8, 8, 4.6, UP).set(0, 4.6, 8, 9.1, 0); L.stairs(0, 4.4, 8, 4.8, 0, UP, 2, 's'); return L; }
+// one level floor: the original's step across row 4.6 is left out [the user's call: it divided the room in two]
+const UP = 0;
+function levels() { return new Levels(8, 10, 4).set(0, 1.8, 8, 9.1, 0); }
 const LV = levels();
 
 function disc(draw, n = 1024) { const c = document.createElement('canvas'); c.width = c.height = n; draw(c.getContext('2d'), n); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
@@ -213,10 +214,9 @@ async function build(E, FX) {
   const tiles = T.material(T.weave(0xbcdcc0, 8), { envMapIntensity: 0.7 }, [0.7, 0.7]);
   const marbleM = T.material(T.marble(0xf4eef4, 0x9a8ab8, 1), { envMapIntensity: 0.8 }, [0.5, 0.5]);
   S.add(LV.mesh(tiles, marbleM, -1.4, 0.5));
-  for (const r of LV.ramps) S.add(stairs(r, marbleM, marbleM, 0.5));
   // the carpet and its mandala
   const rugM = T.material(T.carpet(0x1a3684), {});
-  for (const [z0, z1] of [[2.0, 4.4], [4.8, 9.05]]) {
+  for (const [z0, z1] of [[2.0, 9.05]]) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(5, z1 - z0).rotateX(-Math.PI / 2), rugM.clone());
     for (const k of ['map', 'normalMap', 'roughnessMap']) { m.material[k] = rugM[k].clone(); m.material[k].repeat.set(1, (z1 - z0) / 2.4); m.material[k].needsUpdate = true; }
     m.position.set(4, LV.at(4, (z0 + z1) / 2) + 0.012, (z0 + z1) / 2); m.receiveShadow = true; S.add(m);

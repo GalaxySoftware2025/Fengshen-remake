@@ -173,7 +173,7 @@ async function build(E, FX) {
   // tall golden grass over the plain, shorter at the banks; boulders and pebbles; the wildflowers; scrub on the banks
   const clear = (x, z) => !CHESTS.some(([cx, cy]) => x > cx - 0.2 && x < cx + 1.2 && z > cy - 0.2 && z < cy + 1.2);
   const near = (x, z) => x > -2.5 && z > -2.5 && x < MW + 2.5 && z < MH + 2.5;   // past the map (seen only at the view's edges) a third as thick: frame rate [the user]
-  S.add(grass(land.scatter(CL.grass, 48, clear).filter(([x, , z]) => near(x, z) || Math.random() < 0.35), { size: 0.67, cols: ['#c8a848', '#b89a3a', '#d8bc5a', '#a88c34', '#9a8a3a'] }));
+  S.add(grass(land.scatter(CL.grass, 48, clear).filter(([x, , z]) => near(x, z) || Math.random() < 0.35), { size: 0.67, cols: ['#c8a848', '#b89a3a', '#d8bc5a', '#a88c34', '#9a8a3a'], core: [-2.5, -2.5, MW + 2.5, MH + 2.5] }));
   S.add(grass(land.scatter(CL.ground, 6, clear), { size: 0.4, cols: ['#b0983e', '#9a8a3a', '#c0a448'] }));
   const rockM = T.material(T.rock(0x6a5240, 'bankRock', 0.25), { color: 0xf0d0b0 }, [0.5, 0.5]);
   // boulders and pebbles off the cells a unit can stand on (lying there they rose through the move squares: the user's

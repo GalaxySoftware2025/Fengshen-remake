@@ -12,7 +12,7 @@ import REMADE from './remake/index.js';
 import * as Audio from './audio.js';
 import * as Keys from './keys.js';
 import { speed } from './speed.js';
-import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff } from './tracks.js';
+import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff, LINE_FACE, LINE_SHOW } from './tracks.js';
 import * as CUT from './cutfx.js';
 registerSets(REMADE);
 const { G } = R;
@@ -26,6 +26,9 @@ const SET_VIEW = { pitch: 0.95, dist: 20, fov: 22 };
 let view = VIEW;
 // op 11's balloon kinds -> frames of assets/fx/emotes.png [ROM 0x19CDC] (drawn from src/emotes.js, its HD redraw)
 const EMOTE = { 0: [0, 1, 2], 1: [3], 2: [4], 3: [5], 4: [6, 7], 5: [8, 9, 10] }, EMOTE_REST = [11, 12];
+// a sprite the original grows in rather than flickering on: 海龍王's dragon (scene 19's cut 0x0EE120, extract/scenes.js
+// RAW_CUTS), small at its first frame and full size 8-10 frames later, about its middle (orig.py 19 846-868: f850-858)
+const GROWN = new Set(['0edf20']), GROW_F = 9;
 
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src)); document.head.appendChild(s); }); }
 export async function sceneData(tag) {
@@ -194,13 +197,15 @@ export async function play(E, tag, part, hooks) {
     }
   };
   // put every actor where its track says at time t
+  let lineFace = null, lineShow = null;   // facings held for the line showing (LINE_FACE); units shown for it (LINE_SHOW)
   const pose = snap => {
     if (window.__remake) window.__remake.sceneT = { tag, t };   // the original frame now shown (src/qa.js checks actors against it)
     atLabel.textContent = 'scene=' + tag + ' at=' + Math.round(t) + (mapKeyOf(S, t) ? '  map ' + mapKeyOf(S, t) : '');   // where we are, for #scene=…&at=…
     const set = worldReady && setFor(mapKeyOf(S, t)), stand = set && set.standIn;
     for (const [slot, a] of units) {
       const tr = a.tr; let i = 0; while (i + 1 < tr.length && tr[i + 1][0] <= t) i++;
-      const p = tr[i], q = tr[i + 1], vis = p && p[0] <= t && p.length > 1;
+      const ls = lineShow && lineShow[slot], last = ls && tr.filter(r => r[0] <= t && r.length > 3).pop();   // (shown for the line in the sheet it last wore)
+      const p = last ? [t, ls[0], ls[1], last[3], ls[2]] : tr[i], q = last ? null : tr[i + 1], vis = p && p[0] <= t && p.length > 1;
       let act = E.actors.get(a.u);
       const mk = mapKeyOf(S, t), mm = mk && S.maps[mk];
       const parked = vis && parkedOff(p[1], p[2], mm);   // (scene 3's 綠盔士 waits at x -128)   // put off the map by the script, out of the original's sight: never in ours (our view is wider)
@@ -218,7 +223,7 @@ export async function play(E, tag, part, hooks) {
       act.lie = LYING.has(p[3]);   // drawn lying on the ground: laid flat on it
       act.stone = p[6] ? 1 : 0;   // turned to stone (the prologue's fox army, 0x278E): bluish white at the flash, grey by 16 frames on
       if (p[6]) { const k = Math.min(1, Math.max(0, (t - p[0]) / 16)); act.stoneCol = (act.stoneCol || new THREE.Color()).setRGB(1.12 - 0.12 * k, 1.16 - 0.16 * k, 1.3 - 0.3 * k); }
-      a.u.gfx = p[3]; a.u.facing = p[4] || 'down'; a.u.x = Math.round(x / 32); a.u.y = Math.round(y / 32);
+      a.u.gfx = p[3]; a.u.facing = (lineFace && lineFace[slot]) || p[4] || 'down'; a.u.x = Math.round(x / 32); a.u.y = Math.round(y / 32);   // (lineFace: a facing held for the line showing, LINE_FACE)
       const wasWalking = act.walking; act.hidden = false; act.walking = moving;
       act.fade = offFade(tr.offstage, t);   // offstage: walked off the original's screen (src/tracks.js): faded out
       if (moving) { const sp = Math.hypot(q[1] - p[1], q[2] - p[2]) / (q[0] - p[0]);
@@ -228,7 +233,10 @@ export async function play(E, tag, part, hooks) {
         act.ghost = true; for (const m of [act.mesh.material, act.big.material]) { m.transparent = true; m.opacity = 0.62; m.depthWrite = false; m.needsUpdate = true; }
       }
       const ap = appearing.get(slot);
-      if (ap) {
+      if (ap && GROWN.has(p[3])) {   // grown in from small about its middle, no flicker (the original's cut)
+        const k = Math.max(0, Math.min(1, (t - ap.t0) / Math.min(GROW_F, ap.dur))); act.size = 0.3 + 0.7 * k; act.lift = 0.5 * (1 - act.size); act.dissolve = 0;
+        if (k >= 1) { appearing.delete(slot); act.size = 1; act.lift = 0; }
+      } else if (ap) {
         const k = Math.min(1, (t - ap.t0) / ap.dur); act.dissolve = 1 - k;
         if (ap.burst) { ap.burst = false; const P = act.chest(); E.vfx.burst(P, { n: 24, speed: 1.6, cols: [[0.85, 0.8, 1], [1, 1, 1]], size: 0.04, life: 0.9, g: -0.5, up: 0.3 }); E.vfx.ring(act.pos, [0.75, 0.7, 1], 1.1, 0.6, { intensity: 0.6 }); }
         if (k >= 1) { appearing.delete(slot); act.dissolve = 0; }
@@ -348,6 +356,7 @@ export async function play(E, tag, part, hooks) {
         else if (e.kind === 'say') {
           t = e.pre ? e.f - 0.5 : e.f;   // show the line at its own frame: the clock may have run past it, and units can leave one frame later; a line the script runs before its frame's unit changes (export_scenes.py `pre`) shows the cast as it stood before them
           for (const ap of appearing.values()) ap.dur = Math.min(ap.dur, Math.max(1, t - ap.t0));   // a fade-in under way finishes: a line never holds a unit half-dissolved
+          lineFace = LINE_FACE[tag + ':' + e.f + ':' + e.who] || null; lineShow = LINE_SHOW[tag + ':' + e.f + ':' + e.who] || null;
           pose(fresh); if (fresh) warm(E); fresh = false;
           // the speaker framed above the dialogue box and below the top edge (the band the tour's framing probe checks): the
           // original's 224 px screen is all view, ours loses its lower third to the box, so a cast low or high on the
@@ -366,6 +375,7 @@ export async function play(E, tag, part, hooks) {
           if (window.__remake) window.__remake.say = { tag, f: e.f, who: e.who, actor: e.actor, n: (window.__remake.say && window.__remake.say.tag === tag ? window.__remake.say.n : 0) + 1 };
           if (window.__qa) window.__qa.shown.push({ t: performance.now(), kind: 'say' });
           await E.ui.say(e.text, e.who || null);
+          lineFace = null; if (lineShow) { lineShow = null; pose(); }   // (gone again with the line)
           if (lineProp) lineProp.visible = false;
           if (!(evs[ei] && evs[ei].kind === 'say' && evs[ei].f === e.f)) frameFix = 0;   // after the last line here, back to the original's framing (a glide)
         }

@@ -308,6 +308,13 @@ export function afterAction() {
   if (v) { G.over = Object.assign({ win: true }, typeof v === 'object' ? v : {}); return { over: true, trig }; }
   return { over: false, trig };
 }
+// the same, once a unit has walked and before it acts: a battle won on reaching a place (battle 7's gate, H.winAfterAct)
+// is won only when the unit's action is done [the user's call]
+export function afterMove() {
+  if (!H.winAfterAct) return afterAction();
+  const trig = checkTrigger();
+  return { over: checkDefeat(), trig };
+}
 // a new round: the battle's round hook runs first (磻溪's fire spreads), then the defeat check; returns what the hook did
 export function startRound() {
   G.round++;
@@ -573,7 +580,7 @@ function summoner(u, r) {
     let s = 10; while (s < 30 && G.units.some(v => v.alive && v.slot === s)) s++;
     if (s >= 30) break;
     for (const v of G.units) if (!v.alive && v.slot === s) v.slot = null;
-    const v = makeUnit(Object.assign({ exp: 0, items: [] }, sm), 'enemy', { slot: s }); v.x = x; v.y = y; v.facing = 'down';
+    const v = makeUnit(Object.assign({ exp: 0, items: [] }, sm), 'enemy', { slot: s }); v.x = x; v.y = y; v.facing = 'down'; v.calledBy = u;   // (calledBy: the call shown, src/callup.js)
     G.units.push(v); (G.joined ||= []).push(v); G.summoned = (G.summoned || 0) + 1;
     break;
   }

@@ -351,6 +351,7 @@ export function house(M, o) {
   // gables: plaster triangles with a timber king post
   const tri = new THREE.Shape(); tri.moveTo(-D / 2, 0); tri.lineTo(D / 2, 0); tri.lineTo(0, rise); tri.closePath();
   for (const ex of [o.x0 + 0.02, o.x1 - 0.02]) { const m = shade(new THREE.Mesh(new THREE.ShapeGeometry(tri), plasterM)); m.rotation.y = Math.PI / 2; m.position.set(ex, top, cz); m.material.side = THREE.DoubleSide; g.add(m); g.add(box(timber, ex - 0.04, top, cz - 0.05, ex + 0.04, ridgeY - 0.05, cz + 0.05)); }
+  g.userData.building = true;   // (a flier over it stays below, drawn over the roof, which is never cut away: battle.js roofed)
   return shade(g);
 }
 // a stack of split logs, 3-2-1, lying along x; ends show pale end grain

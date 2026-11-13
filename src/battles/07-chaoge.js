@@ -16,7 +16,9 @@
 //   4  文王 at (9, 9) or (22, 9): on to (16, 5), before the gate                                         [0x0EBD92]
 // The reinforcements (record 0x0EBECE): 綠盔士 Lv 7, 攻 15, 防 8, 速 7, HP 20, moving 3, asleep (AI 7 within 6) and waking
 // to AI 6; each takes the first free unit slot from 10 (a fallen man's slot is free again: 0x1D97A).
-// Win [0x01AF62]: 林雲, 燕蓉, 楊戩 or 文王 on (15, 4) or (16, 4), before the gate's doors; or every enemy down.
+// Win [0x01AF62]: 林雲, 燕蓉, 楊戩 or 文王 on (15, 4) or (16, 4), before the gate's doors; or every enemy down. Here
+// (15, 3) and (16, 3), against the doors, opened to walking (wall in the ROM's map), and won once the unit's action is
+// done, not on arriving [the user's call: in the remade court (15, 4) stands a row off the doors].
 // Lose [0x01AD7C]: 文王 down, or no one left on the heroes' side.
 import { G, D, setAiP, players, makeUnit, AROUND } from '../rules.js';
 import { spriteKey } from '../sprites.js';
@@ -24,7 +26,7 @@ import { sayList } from '../says.js';
 import { WEN } from './06-feizhong2.js';
 
 const slot = n => G.units.find(u => u.slot === n && u.alive);
-export const EXITS = [[15, 4], [16, 4]];
+export const EXITS = [[15, 3], [16, 3]];
 export const GUEST = Object.assign({}, WEN, { x: 16, y: 23, facing: 'up', aip: [16, 13, 0x00, 0x0e, 0xb7, 0xae, 0xff, 0xff], aggro: 16 });
 // the reinforcement's record (ROM 0x0EBECE)
 export const RECRUIT = { cid: 14, name: '綠盔士', lv: 7, atk: 15, df: 8, spd: 7, hp: 20, mhp: 20, mp: 0, mmp: 0, exp: 0, moveType: 0, move: 3,
@@ -45,7 +47,9 @@ function spawn(G, wave) {
 
 export default {
   n: 7,
+  winAfterAct: true,
   load(D) {
+    D.terrain = D.terrain.map((r, y) => y === 3 ? r.map((t, x) => EXITS.some(e => e[0] === x) ? D.terrain[4][x] : t) : r);   // the cells against the doors: the paving before them
     D.enemies = D.enemies.concat([Object.assign({}, GUEST)]);   // in place from the start: the hook copies him in before anyone moves
   },
   setup(G) { G.beats = 0; G.joined = []; for (const u of G.units) if (u.side === 'player') u.facing = 'up'; },

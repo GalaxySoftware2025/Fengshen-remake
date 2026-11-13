@@ -12,6 +12,8 @@
 //   vision    scene 65 [0x51F2]: heaven looks down on the world: each vignette comes up out of white, an orb of light going round it
 //   cheer     scene 65 [0x5130]: the court's balloons as 姬發 takes the throne
 //   darken    (for a set's 'redden', scene 65 [0x21732]): the map sinks to dark in its steps, the cast left as it was
+//   think     op 33 / 34 [0x1B2E2, 0x1B3E0]: a character's inner thought: the world and the rest of the cast sink to near black,
+//             the thinker alone kept lit, till the thought is spoken and it all comes back
 import * as THREE from 'three';
 import { groundH } from './world.js';
 import { emoteTexture, FRAMES as EMOTE_FRAMES } from './emotes.js';
@@ -63,7 +65,7 @@ export function wisp(E, ev, clock, actorOf) {
     // the blink: 林雲 flickers pale with the wisp, every other frame [the cut alternates their palette line]
     if (target) target.flash = t >= ev.blink && t < ev.hit ? (Math.floor(t) % 2 ? 0.85 : 0) : (target.flash > 0.84 ? 0 : target.flash);
     // the burst and the white: up over 16 frames, held, down over 16
-    if (t >= ev.hit && t < ev.hit + 1.5 && target) { const c = target.chest(); E.vfx.burst(c, { n: 40, speed: 2.4, cols: [[1, 0.5, 0.25], [1, 0.9, 0.7]], size: 0.05, life: 0.6, g: 2 }); E.vfx.light(c, [1, 0.6, 0.4], 10, 0.4, 5); E.vfx.shake(0.12, 0.3); }
+    if (t >= ev.hit && t < ev.hit + 1.5 && target) { const c = target.chest(); E.vfx.burst(c, { shape: 5, n: 40, speed: 2.4, cols: [[1, 0.5, 0.25], [1, 0.9, 0.7]], size: 0.05, life: 0.6, g: 2 }); E.vfx.light(c, [1, 0.6, 0.4], 10, 0.4, 5); E.vfx.shake(0.12, 0.3); }
     const [a, b, c, d] = ev.white, k = t < a ? 0 : t < b ? (t - a) / (b - a) : t < c ? 1 : t < d ? 1 - (t - c) / (d - c) : 0;
     if (k > 0) { E.vfx.screen.flash = Math.max(E.vfx.screen.flash, k * 0.92); E.vfx.screen.flashCol.setRGB(1, 0.98, 0.94); }
   });
@@ -124,7 +126,7 @@ export function tablets(E, ev, clock) {
       it.g.position.set(x, groundH(x, z) + H_HANG + Math.sin(t * 0.06 + it.tb.k * 1.6) * 0.06, z);
       it.s.material.opacity = rise; it.a.material.opacity = 0.35 + 0.15 * Math.sin(t * 0.1 + it.tb.k);
     }
-    if (t >= ev.meet && !flashed) { flashed = true; const p = V3(mid[0], groundH(...mid) + H_HANG, mid[1]); E.vfx.burst(p, { n: 30, speed: 2.2, cols: [[1, 1, 1], [1, 0.85, 0.5]], size: 0.05, life: 0.6, g: 0, shape: 1 }); E.vfx.light(p, [1, 0.9, 0.7], 8, 0.5, 6); E.vfx.screen.flash = Math.max(E.vfx.screen.flash, 0.5); E.vfx.screen.flashCol.setRGB(1, 0.97, 0.9); }
+    if (t >= ev.meet && !flashed) { flashed = true; const p = V3(mid[0], groundH(...mid) + H_HANG, mid[1]); E.vfx.burst(p, { n: 30, speed: 2.2, cols: [[1, 1, 1], [1, 0.85, 0.5]], size: 0.05, life: 0.6, g: 0, shape: 5 }); E.vfx.light(p, [1, 0.9, 0.7], 8, 0.5, 6); E.vfx.screen.flash = Math.max(E.vfx.screen.flash, 0.5); E.vfx.screen.flashCol.setRGB(1, 0.97, 0.9); }
     orb.visible = t >= ev.meet && t < end;
     if (orb.visible) { orb.position.set(mid[0], groundH(...mid) + H_HANG, mid[1]); core.material.rotation = t * 0.05; glow.material.opacity = 0.5 + 0.2 * Math.sin(t * 0.2); }
   });
@@ -146,7 +148,7 @@ export function light(E, ev, clock) {
     orb.visible = vis; orb.position.set(x, groundH(x, z) + H_HANG + 0.15, z);
     core.material.rotation = t * 0.08; lamp.intensity = vis ? 4 : 0;
     if (t >= ev.path[0][0] && (!prev || prev.distanceToSquared(orb.position) > 0.0004)) { trail.push(orb.position.clone()); prev = orb.position.clone(); }
-    if (t >= s0 && !burst) { burst = true; E.vfx.burst(orb.position.clone(), { n: 36, speed: 2.6, cols: [[1, 1, 1], [1, 0.8, 0.45]], size: 0.05, life: 0.6, g: 0, shape: 1 }); E.vfx.light(orb.position.clone(), [1, 0.9, 0.7], 10, 0.5, 7); }
+    if (t >= s0 && !burst) { burst = true; E.vfx.burst(orb.position.clone(), { n: 36, speed: 2.6, cols: [[1, 1, 1], [1, 0.8, 0.45]], size: 0.05, life: 0.6, g: 0, shape: 5 }); E.vfx.light(orb.position.clone(), [1, 0.9, 0.7], 10, 0.5, 7); }
     for (const fl of ev.flashes) if (t >= fl && t < fl + 3 && !flashed.has(fl)) { flashed.add(fl); E.vfx.screen.flash = Math.max(E.vfx.screen.flash, 0.7); E.vfx.screen.flashCol.setRGB(1, 1, 1); }
   });
 }
@@ -225,7 +227,7 @@ export function ascend(E, ev, clock, actorOf) {
       return;
     }
     if (a) a.flash = 0;
-    if (!glowed) { glowed = true; const p = V3(sx, groundH(sx, sz) + 0.55, sz); E.vfx.burst(p, { n: 26, speed: 2.2, cols: [[1, 1, 1], [1, 0.8, 0.45]], size: 0.05, life: 0.5, g: 0, shape: 1 }); E.vfx.light(p, [1, 0.9, 0.7], 8, 0.5, 6); }
+    if (!glowed) { glowed = true; const p = V3(sx, groundH(sx, sz) + 0.55, sz); E.vfx.burst(p, { n: 26, speed: 2.2, cols: [[1, 1, 1], [1, 0.8, 0.45]], size: 0.05, life: 0.5, g: 0, shape: 5 }); E.vfx.light(p, [1, 0.9, 0.7], 8, 0.5, 6); }
     const [px, pz] = pathAt(ev.path, t), x = px + 0.5, z = pz + 0.5, rise = Math.min(1, (t - ev.flash) / (end - 6 - ev.flash));
     lt.visible = t < end - 6; lt.scale.setScalar(1); lt.material.opacity = 1; lt.position.set(x, groundH(x, z) + 0.55 + rise * rise * 3.2, z);
     if (!prev || prev.distanceToSquared(lt.position) > 0.001) { trail.push(lt.position.clone()); prev = lt.position.clone(); }
@@ -283,4 +285,26 @@ export function darken(E, ev, clock) {
     for (const a of (E.actors || new Map()).values()) a.glow = 1 + 2.4 * k;
   };
   E.world.updaters.push(tick);
+}
+
+// a character's inner thought (op 33 [0x1B2E2]: every sprite but the thinker's onto a palette line that steps down with the
+// map's, five steps of ev.speed frames, to about 7% of its screen values (orig.py 8 960-1006); op 34, at ev.end, steps
+// it back as fast): the exposure down to 12%, the room's brightness to about a quarter of its own on screen (scene 8 f987:
+// 0.083 of 0.359; the user's call: a fifth less dark than the near black it had, 0.013, as the original), the thinker's
+// light raised by as much so it shows as before, and the bloom faded with it (its soft halo round a sprite, lost on a lit
+// floor, ringed the thinker on the black)
+export function think(E, ev, clock, slotActor) {
+  const W = E.world, R = W.renderer; if (!R) return;
+  const span = 5 * ev.speed, ex = R.toneMappingExposure, st = W.bloom ? W.bloom.strength : 0, MIN = 0.12;
+  let dim = 1, who = null;
+  const apply = d => {
+    if (d === dim) return; dim = d;
+    R.toneMappingExposure = ex * d; if (W.bloom) W.bloom.strength = st * d; W.thinkDim = d;   // (src/qa.js: the frame lit again, to compare)
+    const a = slotActor(ev.slot); if (who && who !== a) who.gain = 1; who = a; if (a) a.gain = d < 1 ? 1 / d : 1;
+  };
+  run(E, 'think' + ev.f, clock, ev.end + span, t => {
+    if (t == null || t < ev.f) return apply(1);
+    const k = t < ev.end ? Math.min(1, (t - ev.f) / span) : Math.max(0, 1 - (t - ev.end) / span);
+    apply(MIN ** k);   // (geometric: even steps on screen, as the original's palette steps; a linear ramp hardly dims till its end)
+  });
 }

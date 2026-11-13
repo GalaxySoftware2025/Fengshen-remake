@@ -8,6 +8,7 @@ import * as E from './battle.js';
 import * as K from './campaign.js';
 import * as Save from './save.js';
 import { mountSpeed } from './speed.js';
+import { mountMenu, showControls } from './gamemenu.js';
 import { defaultParty, autoPick } from './party.js';
 import { rulesOf, fxOf } from './battles/index.js';
 import { campScene, slotList } from './camp.js';
@@ -23,11 +24,12 @@ import { keynav } from './keynav.js';
 const { D, G } = R;
 const $ = id => document.getElementById(id);
 const { opts, V, tileCenter } = E;
-const direct = opts.arena || /battle=\d+|auto|sandbox/.test(location.hash);   // #from= and #scene= stay in the campaign
+let direct = opts.arena || /battle=\d+|auto|sandbox/.test(location.hash);   // #from= and #scene= stay in the campaign
 opts.campaign = !direct;   // battle FX: the campaign plays the scene's pre- and post-battle lines as scenes
 
 let FX = {}, loaded = 0, dirty = false;   // the battle whose world is built; dirty once a battle has been played on it
 let told = false;   // direct: the scene before the battle has just played (its lines are not repeated over the map)
+let thru = false;   // the test page's battle goes on into the story after a win, as the campaign does (single())
 function loadScript(src) {
   return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('cannot load ' + src)); document.head.appendChild(s); });
 }
@@ -72,14 +74,7 @@ const clickOnce = el => new Promise(res => { const key = e => { if (Keys.is(e, '
 const SEEN = 'fengshen-remake.controls';
 async function controlsPage() {
   try { if (localStorage.getItem(SEEN)) return; } catch (e) { /* storage blocked */ }
-  const box = $('controls');
-  box.innerHTML = '<div class="panel"><h3>操作說明</h3><table>' + Keys.HELP.map(h => `<tr><td>${h.pre ? `<small>${h.pre}</small>` : ''}${h.caps.map(c => `<kbd>${c}</kbd>`).join('')}${h.also ? `<small>${h.caps.length ? '或 ' : ''}${h.also}</small>` : ''}</td><td>${h.what}</td></tr>`).join('') +
-    '</table><div class="press">點擊或按 I 繼續</div></div>';
-  box.classList.remove('hidden');
-  await new Promise(res => { const key = e => { if (!['ok', 'cancel', 'fast'].some(a => Keys.is(e, a))) return; e.preventDefault(); done(); },
-    done = () => { box.removeEventListener('click', done); window.removeEventListener('keydown', key); res(); };
-    box.addEventListener('click', done); window.addEventListener('keydown', key); });
-  box.classList.add('hidden');
+  await showControls();
   try { localStorage.setItem(SEEN, '1'); } catch (e) { /* not remembered */ }
 }
 // a battle without its own staging: the scene's pre-battle lines over the map, then its name (DESIGN §7: name only)
@@ -91,14 +86,15 @@ async function intro() {
 }
 async function endScene(res) {
   E.ui.show('hud', false);
+  const solo = direct && !thru;   // one battle that starts over (a test that goes on into the story ends a win as the campaign does)
   if (res.win) {
     if (FX.victory) await FX.victory(E);
-    else { await E.ui.banner('戰役勝利', D.name, 1600); if (direct) for (const l of D.outro) await E.speak(l.text, l.who); }   // the campaign plays the outro as a scene
-    if (!direct) return;   // the campaign goes straight on to the scene's outro: the banner has said it (no second victory screen, whose 點擊重新開始 does not apply)
+    else { await E.ui.banner('戰役勝利', D.name, 1600); if (solo) for (const l of D.outro) await E.speak(l.text, l.who); }   // the campaign plays the outro as a scene
+    if (!solo) return;   // the campaign goes straight on to the scene's outro: the banner has said it (no second victory screen, whose 點擊重新開始 does not apply)
     const end = FX.end || { title: '戰役勝利', sub: '—— 待續 ——' };
     $('end-title').textContent = end.title; $('end-sub').textContent = end.sub;
-  } else { $('end-title').textContent = '戰役失敗'; $('end-sub').textContent = (res.why || '') + (direct ? '' : '　·　回到出陣前，保留等級與物品'); }
-  document.querySelector('#end .press').textContent = direct ? '點擊或按 I 重新開始' : '點擊或按 I 返回出陣';
+  } else { $('end-title').textContent = '戰役失敗'; $('end-sub').textContent = (res.why || '') + (solo ? '' : '　·　回到出陣前，保留等級與物品'); }
+  document.querySelector('#end .press').textContent = solo ? '點擊或按 I 重新開始' : '點擊或按 I 返回出陣';
   setScreen('end'); E.ui.show('hud', false);
   await clickOnce($('end'));
 }
@@ -203,9 +199,10 @@ async function titleMenu() {
   } finally { window.removeEventListener('keydown', key); }
 }
 // the story and the battles in the original's order: scene intro → (camp → battle → scene outro) → next scene …
-async function campaign() {
+// state0: the test page's state after a won battle (single()); a test state (state.test) never writes the auto-save
+async function campaign(state0) {
   Object.assign(window.__remake, { endScene });   // (QA: the campaign's end of a battle)
-  let state = start();
+  let state = state0 || start();
   if (!state) state = await titleMenu();
   for (;;) {
     window.__remake.state = state;
@@ -224,37 +221,43 @@ async function campaign() {
     }
     // the battle's camp
     K.enterCamp(state, await battleData(state.battle));
+    if (!state.test) Save.write(Save.AUTO, state);     // 自動記錄: the battle's preparation, as it opens [the user's call: it showed the battle before]
     G.chestFlags = JSON.parse(JSON.stringify(state.chestFlags || {}));   // the chests opened before, by table (rules.js loadChests)
     if (loaded !== state.battle || dirty) await openBattle(state.battle, K.partyOf(state));
     else D.party = K.partyOf(state);
     await Scene.clearFade(); if (D.music != null) Audio.music(D.music, 0.6, true);   // the preparation plays the coming battle's song, from the top (not carried on from the scene before) [the user's calls]
     E.stage(autoPick(D.party, D.partyRules)); setScreen('camp'); orbit(true, 20);
     const r = await campScene(E, state, () => { D.party = K.partyOf(state); });
+    if (r === 'title' && state.test) { location.href = 'test/index.html'; return; }   // 回到測試 (camp.js)
     if (r === 'title') { await Scene.darken(); orbit(false); state = await titleMenu(); continue; }
     if (r.load) { state = r.load; continue; }
     const before = JSON.parse(JSON.stringify(state));
-    Save.write(Save.AUTO, before);                     // auto-save before every battle
+    if (!state.test) Save.write(Save.AUTO, before);   // auto-save before every battle
     const res = await fight(r.battle);
     if (res.win) K.afterBattle(state, G.units, true, G.found, G.chestFlags);  // then the scene's outro
-    else { state = K.afterBattle(before, G.units, false, G.found, G.chestFlags); Save.write(Save.AUTO, state); }   // a loss: back to the camp as it was before the battle, but the heroes keep what they gained in it (levels, experience, items) [the user's call]
+    else { state = K.afterBattle(before, G.units, false, G.found, G.chestFlags); if (!state.test) Save.write(Save.AUTO, state); }   // a loss: back to the camp as it was before the battle, but the heroes keep what they gained in it (levels, experience, items) [the user's call]
   }
 }
 // development starts: #from=N opens the camp before battle N with its roster snapshot (磻溪), #scene=S plays scene S
+// (the test page's scene links: a test state, no auto-save)
 function start() {
   const m = location.hash.match(/from=(\d+)/), sc = location.hash.match(/scene=(prologue2?|\d+)/);
   if (m && globalThis.PARTIES[+m[1]]) return K.snapshotGame(+m[1]);
-  if (sc) { const st = K.newGame(); st.scene = sc[1].startsWith('prologue') ? sc[1] : +sc[1]; st.chapter = -1; return st; }
+  if (sc) { const st = K.newGame(); st.scene = sc[1].startsWith('prologue') ? sc[1] : +sc[1]; st.chapter = -1; st.test = true; return st; }
   return null;
 }
 
 // ---------------------------------------------------------------- direct (one battle, Phase 1 flow)
 // the story scene that leads into battle n, as the campaign plays it (battle 1: the hunt, the escort on the road), then
 // the battle's world rebuilt in the dark. A battle with its own staging (FX.intro, 磻溪) keeps that instead.
-async function story(n) {
+async function leadIn(n) {   // battle n's scene tag, if that scene plays it
   const tag = D.scene == null ? null : String(D.scene).padStart(2, '0');
-  if (tag == null || FX.intro) return false;
-  const S = await Scene.sceneData(tag).catch(() => null);
-  if (!S || S.battle !== n) return false;
+  const S = tag && await Scene.sceneData(tag).catch(() => null);
+  return S && S.battle === n ? tag : null;
+}
+async function story(n) {
+  const tag = FX.intro ? null : await leadIn(n);
+  if (!tag) return false;
   await Scene.darken(); setScreen(null); E.ui.show('hud', false);
   await Scene.play(E, tag, 'intro', {});
   await openBattle(n);
@@ -271,6 +274,8 @@ async function single() {
     Object.assign(window.__remake, { E, stage: E.stage, ui: E.ui, wait: E.wait, setScreen, endScene }); return;
   }
   let test = null;
+  thru = !opts.auto && !opts.go && !!await leadIn(n);   // a won test goes on with the scene's outro, the next scenes and battles [the user's call]
+  if (thru) opts.campaign = true;   // (battle FX: the outro is that scene's, not lines over the map)
   for (;;) {
     let chosen;
     if (opts.auto || opts.go) chosen = autoPick(D.party, D.partyRules);   // &go: straight into round 1 (no title, lead-in scene, brief, deploy or intro)
@@ -284,13 +289,16 @@ async function single() {
       chosen = r.battle;
     }
     const res = await fight(chosen);
+    if (test && res.win && thru) {   // on as the campaign: the scene after the battle, then the story (the test's state: no saves)
+      K.afterBattle(test, G.units, true, G.found, G.chestFlags); test.scene = D.scene; direct = false; return campaign(test);
+    }
     if (test) K.afterBattle(test, G.units, res.win, G.found);   // the next try keeps what was gained
     if (opts.auto || opts.go) break;
   }
 }
 
 async function main() {
-  mountSpeed();   // the game speed, top right (src/speed.js)
+  mountSpeed(); mountMenu();   // the menu, top right: the game speed and the controls page (src/speed.js, src/gamemenu.js)
   E.boot(); Audio.attach();
   if (/qa/.test(location.hash)) (await import('./qa.js')).install(E);   // QA probes for tools/qa/tour.js
   await document.fonts.ready;

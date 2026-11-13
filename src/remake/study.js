@@ -1,13 +1,14 @@
-// 西伯侯's divination room (map 002498), remade: a raised floor of green glazed tiles, a brown rug with the bagua inlaid
+// 西伯侯's divination room (map 002498), remade: a floor of green glazed tiles, a brown rug with the bagua inlaid
 // in gold, the low desk with books and a cushion behind it, tiger skins either side, scroll cabinets with cushions down
 // both sides, a lattice folding screen between gold curtains, purple lacquer columns and walls, celadon vases.
 import * as THREE from 'three';
 import * as T from '../kit/tex.js';
-import { Levels, mats, box, pillar, latticeWall, curtain, screen, stairs, shade, V3 } from '../kit/parts.js';
+import { Levels, mats, box, pillar, latticeWall, curtain, screen, shade, V3 } from '../kit/parts.js';
 import { moneyTree, treeState } from '../kit/moneytree.js';
 
-const UP = 0.22;   // the room's raised north part (rows 0-9); the step runs right across at row 9
-function levels() { const L = new Levels(8, 15, 4); L.set(0, 0, 8, 9, UP).set(0, 9, 8, 15, 0); L.stairs(0, 8.7, 8, 9.3, 0, UP, 2, 's'); return L; }
+// one level floor: the original's step across row 9 is left out [the user's call: it divided the room in two]
+const UP = 0;
+function levels() { return new Levels(8, 15, 4).set(0, 0, 8, 15, 0); }
 const LV = levels();
 
 function decal(draw, n = 512) {
@@ -107,10 +108,9 @@ const build = way => async function build(E, FX) {
   const tiles = T.material(T.weave(W.tiles, 8), { envMapIntensity: 0.6 }, [0.7, 0.7]);
   const stone = T.material(T.bricks(W.step, 2, 'studyStep' + way), {});
   S.add(LV.mesh(tiles, stone, -1.2, 0.5));
-  for (const r of LV.ramps) S.add(stairs(r, tiles, stone, 0.5));
-  // the rug: brown wool, gold border, rows 3-14, raised a hair over the tiles (it runs down the step as two pieces)
+  // the rug: brown wool, gold border, rows 3-14, raised a hair over the tiles
   const rugT = T.carpet(W.rug), rugM = T.material(rugT, {});
-  for (const [z0, z1] of [[3, 8.7], [9.3, 14]]) {
+  for (const [z0, z1] of [[3, 14]]) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(7, z1 - z0).rotateX(-Math.PI / 2), rugM.clone());
     for (const k of ['map', 'normalMap', 'roughnessMap']) { m.material[k] = rugM[k].clone(); m.material[k].repeat.set(1, (z1 - z0) / 3); m.material[k].needsUpdate = true; }
     m.position.set(4, LV.at(4, (z0 + z1) / 2) + 0.012, (z0 + z1) / 2); m.receiveShadow = true; S.add(m);
@@ -122,7 +122,7 @@ const build = way => async function build(E, FX) {
   const lat = T.material(T.paper(0xfaf0dc), { emissive: new THREE.Color(1, 0.92, 0.78), emissiveIntensity: 0.45, side: THREE.DoubleSide });
   // the room runs on to both sides into the haze: more floor, the folding screens and columns continuing
   for (const [a, b] of [[-9, 0], [8, 17]]) {
-    S.add(box(tiles, a, -0.6, 0.6, b, UP, 9, 0.5), box(tiles, a, -0.6, 9, b, 0, 15, 0.5));
+    S.add(box(tiles, a, -0.6, 0.6, b, 0, 15, 0.5));
     S.add(screen(M, a + 0.3, b - 0.3, 1.9, UP, 2.1, 12, lat));
     for (let x = a + 1.5; x < b; x += 3) S.add(pillar(M, x, 2.85, UP, 2.8, 0.22));
     S.add(box(M.lacquerDark, a, UP, 0.6, b, UP + 2.9, 0.8));

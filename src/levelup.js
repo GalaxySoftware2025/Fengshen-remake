@@ -183,7 +183,9 @@ export function clothStrip(o) {   // a camera-facing strip of cloth drawn throug
 // 楊戩's level-up pieces: the third eye (pinned to the eye mark in his own frames), 哮天犬 drawn as a glowing silver hound
 // (a four-beat gallop and a sitting frame)
 let EYE_TEX = null, HOUND_TEX = null;
-const YANG_MARK = { guard: [65, 33.5] };   // the third eye's centre in his 128 px guard frame (act row 2, frame 3)
+// the third eye's centre on his brow mark in his 128 px facing-us frames: standing (walk frame 0) and the two marking-time
+// steps (frames 1, 2: the head 4 px lower)
+const YANG_MARK = { stand: [65.5, 29.5], step: [65.5, 33.5] };
 export function eyeTex() {   // a vertical eye: gold-white lids round a red-gold iris and a dark slit
   const c = document.createElement('canvas'); c.width = 64; c.height = 128; const g = c.getContext('2d');
   const lids = () => { g.beginPath(); g.moveTo(32, 4); g.quadraticCurveTo(62, 64, 32, 124); g.quadraticCurveTo(2, 64, 32, 4); g.closePath(); };
@@ -279,13 +281,14 @@ async function yangLevel(a, P) {
   const mist = (n, r, up) => { for (let i = 0; i < n; i++) { const t = rand(0, 6.28), rr = rand(0.2, r); vfx.smokePuff(P.x + Math.cos(t) * rr, P.y + 0.08, P.z + Math.sin(t) * rr, { vx: -Math.sin(t) * 0.6, vz: Math.cos(t) * 0.6, vy: rand(0.05, up), drag: 1.5, life: rand(1, 1.5), size: rand(0.25, 0.35), size1: rand(0.6, 0.85), tint: [0.78, 0.84, 0.95] }); } };
   // a point on his sprite, from its pixels: [x, y] in the 128 px body frame (both sprite planes put the body at 0..1 tall)
   const onSprite = (px, py, z = 0.02) => { const m = a.big.visible ? a.big : a.mesh; m.updateMatrixWorld(); return m.localToWorld(V(px / 128 - 0.5, 1 - py / 128, z)); };
-  const mark = YANG_MARK.guard;
-  a.u.facing = 'down'; LV.guard(a);
-  // 1. silver mist gathers at his feet; the third eye opens on his brow and its gold beam sweeps the field
+  a.u.facing = 'down'; a.act = null;   // in his own standing and marking-time frames, not the guard's lunge (the user's call)
+  // 1. silver mist gathers at his feet; the third eye opens on his brow and its gold beam sweeps the field, he standing still
+  // on his standing frame for it (no marking time: the user's call)
+  const still = a.u.still; a.u.still = 0;
   mist(14, 0.9, 0.25); vfx.decal(P, [0.6, 0.7, 1], 1.1, 3.2, { intensity: 0.35 });
   EYE_TEX = EYE_TEX || eyeTex();
   const eye = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.1), new THREE.MeshBasicMaterial({ map: EYE_TEX, transparent: true, depthTest: false, toneMapped: false }));
-  eye.renderOrder = 9; const brow = () => onSprite(...mark);
+  eye.renderOrder = 9; const brow = () => onSprite(...(Math.round(a.mat.map.offset.x * 9) === 0 ? YANG_MARK.stand : YANG_MARK.step));
   vfx.timed(eye, 1e9, () => { eye.position.copy(brow()); eye.quaternion.copy(world.camera.quaternion); eye.visible = a.viewDir(cam.yaw) === 'down'; });   // hidden while he looks away
   await anim(0.45, k => { eye.scale.set(1, Math.max(0.04, ease(k)), 1); });
   vfx.flash([1, 0.9, 0.6], 0.15); vfx.light(brow(), [1, 0.85, 0.5], 10, 0.5, 5);
@@ -299,7 +302,7 @@ async function yangLevel(a, P) {
     if (Math.random() < 0.7) vfx.spark(to.x + rand(-0.15, 0.15), to.y, to.z + rand(-0.15, 0.15), { vy: rand(0.6, 1.4), life: 0.6, size: rand(0.04, 0.07), r: 1, gg: 0.85, b: 0.45, shape: 0 });
     if (Math.random() < 0.25) vfx.decal(to, [1, 0.75, 0.35], 0.35, 0.5, { intensity: 0.5 });
   });
-  beam.end();
+  beam.end(); a.u.still = still;
   // 2. 哮天犬 springs out of the mist behind him, gallops a full circle round him, slows and sits at his front right
   HOUND_TEX = HOUND_TEX || houndTex();
   const map = HOUND_TEX.clone(); map.needsUpdate = true;
@@ -324,8 +327,8 @@ async function yangLevel(a, P) {
     const d = q.clone().sub(P); a.u.facing = Math.abs(d.x) > Math.abs(d.z) ? (d.x > 0 ? 'right' : 'left') : (d.z > 0 ? 'down' : 'up');   // his eyes follow the hound
   });
   frame(4); dog.scale.x = P.clone().sub(prev).dot(right) < 0 ? -1 : 1;   // it sits looking up at him
-  // 3. he turns back to us in his guard as the hound sits (no blade thrust to the sky: the user's call)
-  a.u.facing = 'down'; LV.guard(a);
+  // 3. he turns back to us as the hound sits (no blade thrust to the sky: the user's call)
+  a.u.facing = 'down';
   await wait(900);
   await anim(0.3, k => { eye.scale.set(1, Math.max(0.04, 1 - ease(k)), 1); dog.material.opacity = 1 - k; });
   for (const it of vfx.items.filter(i => i.mesh === eye || i.mesh === dog)) it.life = 0;
@@ -431,7 +434,7 @@ async function linLevel(a, P) {
   const { toCam } = axes(), BLUE = [0.3, 0.62, 1];
   const shut = await (once.c.linEyes || (once.c.linEyes = linEyesShut(a)));
   // 1. he spins, faster and then slowing, in a wind that rises round him
-  await spinUp(a, P, [0.6, 0.8, 1], 1.6);
+  await spinUp(a, P, [0.25, 0.5, 1], 1.6);   // blue
   // 2. he stops facing us and closes his eyes; blue light rises softly round him
   a.u.facing = 'down'; a.act = { kind: 'tex', tex: shut };
   vfx.decal(P, BLUE, 0.9, 3.4, { intensity: 0.4 }); vfx.light(P.clone().setY(P.y + 0.9), [0.55, 0.75, 1], 2.5, 3.2, 4);
@@ -444,7 +447,7 @@ async function linLevel(a, P) {
   await anim(0.9, k => {
     fadeTo(k * k); big.position.copy(base).setY(base.y + k * 0.25); face(big);
     for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.8, 1.4), y = big.position.y + rand(0.3, 2.6), q = V(back.x + Math.cos(t) * r, y, back.z + Math.sin(t) * r);
-      vfx.spark(q.x, q.y, q.z, { vx: 0, vy: 0, seek: { x: back.x, y, z: back.z, k: 5 }, life: 0.45, size: rand(0.03, 0.05), r: 0.7, gg: 0.88, b: 1, shape: 1 }); }
+      vfx.spark(q.x, q.y, q.z, { vx: 0, vy: 0, seek: { x: back.x, y, z: back.z, k: 5 }, life: 0.45, size: rand(0.03, 0.05), r: 0.7, gg: 0.88, b: 1, shape: 5 }); }
     motes(1, 0.5);
   });
   vfx.flash([0.6, 0.8, 1], 0.08); vfx.light(back.clone().setY(P.y + 1.6), [0.45, 0.7, 1], 10, 0.6, 6);
@@ -586,17 +589,17 @@ async function huangLevel(a, P) {
   // war-fire: low golden flames climb round him, the light gathering in his chest
   vfx.light(a.chest(), [1, 0.75, 0.3], 6, 1.2, 4);
   await anim(0.7, k => { for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.35, 0.65); vfx.realFire(P.x + Math.cos(t) * r, P.y - 0.05, P.z + Math.sin(t) * r, { size: rand(0.3, 0.45) * (0.5 + k), asp: 1.5, life: 0.6, vy: 0.5 }); }
-    a.flash = 0.45 * k; const c = a.chest(); vfx.spark(c.x + rand(-0.5, 0.5), c.y + rand(-0.4, 0.6), c.z, { vx: 0, vy: 0, seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.45, size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.4, shape: 1 }); });
+    a.flash = 0.45 * k; const c = a.chest(); vfx.spark(c.x + rand(-0.5, 0.5), c.y + rand(-0.4, 0.6), c.z, { vx: 0, vy: 0, seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.45, size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.4, shape: 5 }); });
   // the tiger bursts out of his chest, lunging at the camera, growing as it comes
   const map = once('tigerFront3', () => glowStrip(512, 512, 2, 'rgba(255,150,40,0.7)', (g, i) => drawTigerFront(g, i === 1))).clone(); map.needsUpdate = true; map.repeat.set(0.5, 1);
   const tiger = card(map, 1, 1, { order: 9.5 }); tiger.material.depthTest = false;   // (solid, its own colours: see-through and brightened, the hero showed through its jaws and it read soft [the user's call: real, ferocious])
   const c0 = a.chest(), cp = world.camera.position, toward = cp.clone().sub(c0).normalize(), dist = cp.distanceTo(c0);
-  vfx.flash([1, 0.8, 0.4], 0.15); vfx.burst(c0, { n: 30, speed: 2.5, cols: [[1, 0.95, 0.7], [1, 0.7, 0.25]], size: 0.05, life: 0.5, g: 0, shape: 1 });
+  vfx.flash([1, 0.8, 0.4], 0.15); vfx.burst(c0, { n: 30, speed: 2.5, cols: [[1, 0.95, 0.7], [1, 0.7, 0.25]], size: 0.05, life: 0.5, g: 0, shape: 5 });
   a.flash = 0;
   await anim(0.55, k => {
     const e = 1 - Math.pow(1 - k, 3); tiger.position.copy(c0).addScaledVector(toward, e * dist * 0.25).add(V(0, e * 0.25, 0));
     face(tiger); tiger.scale.setScalar(0.3 + e * 1.5); tiger.material.opacity = Math.min(1, k * 4); map.offset.x = k > 0.7 ? 0.5 : 0;
-    if (Math.random() < 0.8) vfx.spark(tiger.position.x + rand(-0.6, 0.6), tiger.position.y + rand(-0.5, 0.5), tiger.position.z, { vy: rand(-0.3, 0.4), life: 0.5, size: rand(0.04, 0.06), r: 1, gg: 0.8, b: 0.35, shape: 1 });
+    if (Math.random() < 0.8) vfx.spark(tiger.position.x + rand(-0.6, 0.6), tiger.position.y + rand(-0.5, 0.5), tiger.position.z, { vy: rand(-0.3, 0.4), life: 0.5, size: rand(0.04, 0.06), r: 1, gg: 0.8, b: 0.35, shape: 5 });
   });
   // the roar
   map.offset.x = 0.5; LV.atk(a, 1);
@@ -606,7 +609,7 @@ async function huangLevel(a, P) {
   await anim(0.5, k => { tiger.scale.setScalar(1.8 + Math.sin(k * 30) * 0.03); face(tiger); });
   // it breaks into gold embers
   const tp = tiger.position.clone();
-  for (let i = 0; i < 50; i++) vfx.spark(tp.x + rand(-0.7, 0.7), tp.y + rand(-0.6, 0.6), tp.z + rand(-0.3, 0.3), { vx: rand(-1, 1), vy: rand(-0.2, 1.4), vz: rand(-0.5, 0.5), life: rand(0.6, 1.2), size: rand(0.04, 0.07), r: 1, gg: rand(0.7, 0.9), b: 0.35, shape: 1, flicker: 1, ph: rand(0, 6) });
+  for (let i = 0; i < 50; i++) vfx.spark(tp.x + rand(-0.7, 0.7), tp.y + rand(-0.6, 0.6), tp.z + rand(-0.3, 0.3), { vx: rand(-1, 1), vy: rand(-0.2, 1.4), vz: rand(-0.5, 0.5), life: rand(0.6, 1.2), size: rand(0.04, 0.07), r: 1, gg: rand(0.7, 0.9), b: 0.35, shape: 5, flicker: 1, ph: rand(0, 6) });
   await anim(0.4, k => { tiger.scale.setScalar(1.8 + k * 0.4); tiger.material.opacity = 1 - k; face(tiger); });
   drop(tiger);
   LV.guard(a);
@@ -739,12 +742,12 @@ async function leiLevel(a, P) {
   let F = 0; const flap = (dt, hz) => { F += dt * hz; a.act = { kind: 'tex', tex: FLAP[Math.floor(F * FLAP.length) % FLAP.length] }; };
   flap(0, 0);
   // the wings beat: he rises slowly, wrapped in his wind and thunder; it stays round him while he hangs in the air
-  const winds = [0, 1, 2].map(() => vfx.ribbon({ col: [0.75, 0.85, 1], width: 0.045, n: 22, fade: 0.4 }));
+  const winds = [0, 1, 2].map(() => vfx.ribbon({ col: [0.75, 0.85, 1], width: 0.045, n: 88, fade: 0.4 }));   // (four points a frame: round, not a polygon)
   for (let i = 0; i < 10; i++) { const t = i / 10 * 6.28; vfx.smokePuff(P.x + Math.cos(t) * 0.3, P.y + 0.05, P.z + Math.sin(t) * 0.3, { vx: Math.cos(t) * 1.6, vz: Math.sin(t) * 1.6, vy: 0.1, drag: 2.5, life: 0.8, size: 0.2, size1: 0.55, tint: [0.62, 0.56, 0.46] }); }
   let T = 0;
   const windAndThunder = (dt, crackle) => {   // three streams of wind circling him at his height, and lightning crackling off his wings
     T += dt; const c = a.chest();
-    winds.forEach((w, j) => { const th = T * 9 + j * 2.1, r = 0.55 + j * 0.1; w.push(V(c.x + Math.cos(th) * r, c.y - 0.35 + j * 0.3 + Math.sin(T * 4 + j) * 0.08, c.z + Math.sin(th) * r)); });
+    winds.forEach((w, j) => { for (let s = 3; s >= 0; s--) { const Ts = T - dt * s / 4, th = Ts * 9 + j * 2.1, r = 0.55 + j * 0.1; w.push(V(c.x + Math.cos(th) * r, c.y - 0.35 + j * 0.3 + Math.sin(Ts * 4 + j) * 0.08, c.z + Math.sin(th) * r)); } });
     if (Math.random() < dt * crackle) { const s = Math.random() < 0.5 ? -1 : 1, from = c.clone().add(V(s * 0.3, 0.15, 0)); vfx.bolt(from, from.clone().add(V(s * rand(0.3, 0.6), rand(-0.3, 0.4), rand(-0.3, 0.3))), BOLT, 0.09, { width: 0.016, jag: 0.4 }); }
     if (Math.random() < dt * 12) vfx.spark(c.x + rand(-0.5, 0.5), c.y + rand(-0.4, 0.4), c.z + rand(-0.3, 0.3), { vy: rand(-0.2, 0.3), life: 0.3, size: 0.04, r: 0.75, gg: 0.85, b: 1, shape: 0, flicker: 1, ph: rand(0, 9) });
   };
@@ -1008,18 +1011,20 @@ async function randengLevel(a, P) {
   await wait(250);
 }
 
-// the spin a level-up opens with (林雲's, and from the user's call every hero's but 楊戩's, 哪吒's and 土行孫's): round and round,
+// the spin a level-up opens with (林雲's, and from the user's call every hero's but 哪吒's and 土行孫's): round and round,
 // faster and then slowing, about two rounds whatever the length, in a wind of the hero's colour rising round them, turning
 // their way (down, left, up, right: clockwise from above, the user's call; the wind once went against the turn, the user's
-// report), ending facing us (the turn ends on right, so facing us is the next step of it, not a jump)
+// report), ending facing us (the turn ends on right, so facing us is the next step of it, not a jump). The wind in each hero's
+// own colour (the user's call), laid over the ground, not added to it, with a low core: added light, white-hot at its core,
+// burnt every colour to white on the bright ground
 async function spinUp(a, P, col, dur = 1.2) {
   a.u.facing = 'down'; a.act = null;
-  const winds = [0, 1, 2].map(() => vfx.ribbon({ col, width: 0.05, n: 18, fade: 0.35 }));
+  const winds = [0, 1, 2].map(() => vfx.ribbon({ col, width: 0.06, n: 72, fade: 0.35, gain: 0.25, white: 0.08, additive: false }));   // (four points a frame along the arc: a frame's 10 degrees in one straight piece showed corners, the user's report)
   let T = 0, turn = 0;
   await anim(dur, (k, dt = 1 / 60) => {
     T += dt; turn += dt * 12 / dur * Math.sin(Math.PI * Math.min(1, k * 1.05));
     LV.spin(a, turn, 1);
-    winds.forEach((w, j) => { const th = T * 10 + j * 2.1, r = 0.5 + j * 0.08; w.push(V(P.x + Math.cos(th) * r, P.y + 0.15 + j * 0.35 + k * 0.4, P.z + Math.sin(th) * r * 0.85)); });
+    winds.forEach((w, j) => { for (let s = 3; s >= 0; s--) { const th = (T - dt * s / 4) * 10 + j * 2.1, r = 0.5 + j * 0.08; w.push(V(P.x + Math.cos(th) * r, P.y + 0.15 + j * 0.35 + k * 0.4, P.z + Math.sin(th) * r * 0.85)); } });
     if (Math.random() < 0.5) { const t = rand(0, 6.28); vfx.smokePuff(P.x + Math.cos(t) * 0.35, P.y + 0.05, P.z + Math.sin(t) * 0.35, { vx: Math.cos(t) * 1.2, vz: Math.sin(t) * 1.2, vy: 0.15, drag: 2, life: 0.7, size: 0.12, size1: 0.35, tint: [0.62, 0.55, 0.46] }); }
   });
   winds.forEach(w => w.end());
@@ -1031,7 +1036,7 @@ export const LEVEL_POSE = {
   // 林雲: he spins, closes his eyes, and a great blue sword of light rises at his back and shoots into the sky (linLevel)
   p0: (a, P) => linLevel(a, P),
   // 燕蓉: facing us, draws and looses an arrow into the sky that bursts into 天女散花, flowers of many colours
-  p1: spun([1, 0.72, 0.88], async (a, P) => {
+  p1: spun([0.35, 1, 0.3], async (a, P) => {
     a.u.facing = 'down'; LV.atk(a, 0); await wait(250); LV.atk(a, 1); await wait(350); LV.atk(a, 2);   // facing the front, the arrow loosed skywards [the user's call; she turned her back before]
     const ar = arrowMesh([1, 0.75, 0.9], 0.5), from = a.chest().add(V(0, 0.3, 0)), rib = vfx.ribbon({ col: [1, 0.8, 0.9], width: 0.04, n: 14 });
     vfx.timed(ar, 0.45, k => { ar.position.copy(from).add(V(0, k * 3.2, 0)); rib.push(ar.position); }, () => {
@@ -1039,29 +1044,29 @@ export const LEVEL_POSE = {
     });
     await wait(500); a.u.facing = 'down'; a.act = null; await wait(1200);
   }),
-  // 楊戩: 二郎神, calm and all-seeing [the user's call: from his story]: silver mist gathers, the third eye opens on his brow and its
-  // gold beam sweeps the field (nothing is hidden from it), 哮天犬 bounds out of the mist and runs round him, and he
-  // finishes with one clean sweep of the three-pointed blade
-  p2: (a, P) => yangLevel(a, P),
+  // 楊戩: 二郎神, calm and all-seeing [the user's call: from his story]: he spins as the others do (the user's call), then silver
+  // mist gathers, the third eye opens on his brow and its gold beam sweeps the field (nothing is hidden from it), 哮天犬
+  // bounds out of the mist and runs round him, and sits by him (yangLevel)
+  p2: spun([1, 1, 1], yangLevel),
   // 黃飛虎: 武成王, the flying tiger: a spirit tiger bursts out of his chest at us and roars (huangLevel)
-  p3: spun([1, 0.8, 0.4], huangLevel),
+  p3: spun([1, 0.7, 0], huangLevel),
   // 哪吒: the lotus child [the user's call: from his story]: a lotus opens under him (太乙真人 remade him from lotus after he gave
   // his life back to his parents), the 風火輪 flare at his feet and lift him spinning in his red 混天綾, he flings the 乾坤圈
   // round the field and snatches it back, and drops spear-first into a burst of fire that scatters the petals
   p4: (a, P) => nezhaLevel(a, P),
   // 姬發: 鳳鳴岐山, the phoenix of Zhou circles him (jifaLevel)
-  p5: spun([1, 0.7, 0.32], jifaLevel),
+  p5: spun([1, 0.2, 0.25], jifaLevel),
   // 雷震子: wind-and-thunder wings, a storm, a thunderclap through the earth (leiLevel)
-  p6: spun([0.6, 0.66, 1], leiLevel),
+  p6: spun([0.65, 0.3, 1], leiLevel),
   // 姜子牙: the 杏黃旗 and its ten thousand golden lotuses (jiangLevel)
-  jiang: spun([1, 0.88, 0.5], jiangLevel),
+  jiang: spun([1, 1, 0.1], jiangLevel),
   // 黃天化: the 攢心釘 and a jade seven-pointed star (tianhuaLevel)
-  '0a76a2': spun([0.5, 1, 0.72], tianhuaLevel),
+  '0a76a2': spun([0, 0.8, 0.45], tianhuaLevel),
   // 土行孫: dives and burrows a heart, bursts out chattering (tuLevel)
   '0aa86c': (a, P) => tuLevel(a, P),
   // 小龍女: the water dragon and its pearl (longnvLevel)
-  '0d006e': spun([0.45, 0.8, 1], longnvLevel),
+  '0d006e': spun([0.2, 0.85, 1], longnvLevel),
   // 燃燈道人: the 定海珠 laid out as a formation, a lamp flame over his head (randengLevel)
-  '0d2ad2': spun([1, 0.86, 0.55], randengLevel),
+  '0d2ad2': spun([1, 0.3, 0], randengLevel),
 };
 export const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;

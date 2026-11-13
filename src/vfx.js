@@ -11,7 +11,19 @@ const PFS = `varying vec4 vCol; varying float vShape;
   void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c);
     vec3 rgb = vCol.rgb; float a;
     float kind = floor(vShape + 0.0005);   // the shape by its whole number: a turning one carries its angle in the fraction (4.0-4.999 a petal), never past it (test/particles.mjs)
-    if (kind > 3.5) {   // a peach petal: rounded, narrow at its base, a little notch at its tip; it narrows and widens as it turns (tumbling)
+    if (kind > 6.5) {   // an ice shard: a thin diamond turned by the shape's fraction, one face lit, a bright edge
+      float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
+      float e = abs(q.x) / 0.16 + abs(q.y) / 0.46; a = 1.0 - smoothstep(0.86, 1.0, e);
+      rgb *= mix(0.8, 1.25, step(0.0, q.x)) + 0.35 * smoothstep(0.7, 0.95, e);
+    } else if (kind > 5.5) {   // an ember: a white-hot core in a glow of its colour
+      a = (1.0 - smoothstep(0.0, 0.5, d)) * 0.6 + (1.0 - smoothstep(0.1, 0.18, d)) * 0.4;
+      rgb = mix(rgb, vec3(1.0, 0.95, 0.8), 1.0 - smoothstep(0.04, 0.14, d));
+    } else if (kind > 4.5) {   // a glint: a four-point star turned by the shape's fraction, rays thinning to their tips
+      float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
+      float ra = (1.0 - smoothstep(0.0, 0.06 * (1.0 - abs(q.y) / 0.5), abs(q.x))) * (1.0 - smoothstep(0.3, 0.48, abs(q.y)));
+      float rb = (1.0 - smoothstep(0.0, 0.06 * (1.0 - abs(q.x) / 0.5), abs(q.y))) * (1.0 - smoothstep(0.3, 0.48, abs(q.x)));
+      a = max(max(ra, rb), 1.0 - smoothstep(0.05, 0.13, d));
+    } else if (kind > 3.5) {   // a peach petal: rounded, narrow at its base, a little notch at its tip; it narrows and widens as it turns (tumbling)
       float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
       float t = clamp((q.y + 0.42) / 0.84, 0.0, 1.0), flip = 0.3 + 0.7 * abs(cos(r * 2.0));
       float w = 0.27 * flip * pow(t, 0.55) * sqrt(max(0.0, 1.0 - t * t));
@@ -25,7 +37,9 @@ const PFS = `varying vec4 vCol; varying float vShape;
       float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
       float w = 0.17 * (1.0 - pow(abs(q.y) / 0.46, 2.0)); a = (1.0 - smoothstep(w - 0.03, w + 0.01, abs(q.x))) * step(abs(q.y), 0.46);
       rgb *= 0.78 + 0.5 * smoothstep(-0.15, 0.15, q.x) - 0.25 * (1.0 - smoothstep(0.0, 0.02, abs(q.x)));
-    } else a = vShape > 0.5 ? step(max(abs(c.x), abs(c.y)), 0.42) : (1.0 - smoothstep(0.0, 0.5, d)) * (vShape < -0.5 ? 1.0 : (0.35 + 0.65 * (1.0 - smoothstep(0.0, 0.22, d))));
+    } else if (vShape > 0.5) {   // a spark: a crisp round dot (shapes: -1 a soft dot, 0 a glow, 1 a spark, 2 a leaf, 3 a blade, 4 a petal, 5 a glint, 6 an ember, 7 a shard; it was a square: specks of square pixels over the 3D, the user's report)
+      a = 1.0 - smoothstep(0.3, 0.46, d);   // (its own colour: brightened in the middle, added light burnt it to white)
+    } else a = (1.0 - smoothstep(0.0, 0.5, d)) * (vShape < -0.5 ? 1.0 : (0.35 + 0.65 * (1.0 - smoothstep(0.0, 0.22, d))));
     if (a < 0.01) discard; gl_FragColor = vec4(rgb, vCol.a * a); }`;
 class Particles {
   constructor(scene, n, blending) {
@@ -41,7 +55,11 @@ class Particles {
   }
   add(p) {
     if (this.list.length >= this.n) this.list.shift();
-    this.list.push(Object.assign({ vx: 0, vy: 0, vz: 0, g: 0, drag: 0, age: 0, life: 1, size: 0.1, size1: null, r: 1, gg: 1, b: 1, a: 1, shape: 0, fadeIn: 0.08, wob: 0 }, p));
+    const q = Object.assign({ vx: 0, vy: 0, vz: 0, g: 0, drag: 0, age: 0, life: 1, size: 0.1, size1: null, r: 1, gg: 1, b: 1, a: 1, shape: 0, fadeIn: 0.08, wob: 0 }, p);
+    if ((q.shape === 5 || q.shape === 7) && !q.spin) q.shape += Math.random() * 0.999;   // a glint or a shard: each turned its own way
+    const grow = { 5: 2.2, 6: 1.3, 7: 1.5 }[Math.floor(q.shape)];   // (a glint's thin rays, a shard's sliver, an ember's halo: larger than a spark to read as one)
+    if (grow) { q.size *= grow; if (q.size1 != null) q.size1 *= grow; }
+    this.list.push(q);
   }
   update(dt) {
     const L = this.list; let w = 0;
@@ -210,18 +228,18 @@ const BALL_VS = `uniform float uT, uRag; varying vec3 vN, vV, vP; ${NOISE}
 // ribbon trail: a camera-facing strip through the last N positions of a moving point, bright core fading to the tail
 class Ribbon {
   constructor(vfx, o) {
-    this.v = vfx; this.o = Object.assign({ n: 24, width: 0.12, col: [1, 1, 1], fade: 0.25, taper: 1 }, o); this.pts = []; this.dead = false; this.fadeK = 1;
+    this.v = vfx; this.o = Object.assign({ n: 24, width: 0.12, col: [1, 1, 1], fade: 0.25, taper: 1, gain: 1.8, white: 1.2, additive: true }, o); this.pts = []; this.dead = false; this.fadeK = 1;
     const N = this.o.n, g = this.geo = new THREE.BufferGeometry();
     this.pos = new Float32Array(N * 2 * 3); this.uvs = new Float32Array(N * 2 * 2);
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage)); g.setAttribute('uv', new THREE.BufferAttribute(this.uvs, 2).setUsage(THREE.DynamicDrawUsage));
     const idx = []; for (let i = 0; i < N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } g.setIndex(idx);
-    this.mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
-      uniforms: { uCol: { value: new THREE.Color(...this.o.col) }, uA: { value: 1 } },
+    this.mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: this.o.additive ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide, toneMapped: false,   // (additive: light added, white on a bright ground; else the colour laid over it)
+      uniforms: { uCol: { value: new THREE.Color(...this.o.col) }, uA: { value: 1 }, uGain: { value: this.o.gain }, uWhite: { value: this.o.white }, uSolid: { value: this.o.additive ? 0 : 1 } },   // (gain, white: how far the core burns past the colour to white)
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform vec3 uCol; uniform float uA; varying vec2 vUv;
+      fragmentShader: `uniform vec3 uCol; uniform float uA, uGain, uWhite, uSolid; varying vec2 vUv;
         void main(){ vec2 uv = clamp(vUv, 0.0, 1.0);   // MSAA can extrapolate varyings past the strip: keep pow() bases >= 0
           float across = 1.0 - abs(uv.y * 2.0 - 1.0); float core = across * across * across; float along = pow(1.0 - uv.x, 1.6);
-          vec3 c = uCol * (0.8 + core * 1.8) + vec3(core * along * 1.2); gl_FragColor = vec4(c, across * along * uA); }` });
+          vec3 c = uCol * (0.8 + core * uGain) + vec3(core * along * uWhite); gl_FragColor = vec4(c, mix(across, min(1.0, across * 2.2), uSolid) * along * uA); }` });   // (laid over: solid across most of its width)
     this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 6;
     vfx.timed(this.mesh, 1e9, (k, dt) => this.tick(dt));
   }

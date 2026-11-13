@@ -297,24 +297,45 @@ export function grass(pts, o = {}) {
   mat.onBeforeCompile = sh => { swayed(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal *= faceDirection;');
     sh.uniforms.uSteps = STEP.uSteps; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec4 uSteps[16];').replace('#include <project_vertex>', TROD); };
   mat.customProgramCacheKey = () => 'grassTuft2';
-  // in chunks of 6 x 6 cells, each its own instanced mesh with its own bounds, so the camera skips those out of view
-  // (battle 8's meadow is ~100k tufts: drawn as one mesh, every one of them went through the GPU each frame)
-  const CH = 6, chunks = new Map();
-  for (const p of pts) { const k = Math.floor(p[0] / CH) + ',' + Math.floor(p[2] / CH); (chunks.get(k) || chunks.set(k, []).get(k)).push(p); }
-  const out = new THREE.Group(), d = new THREE.Object3D(), c = new THREE.Color();
   // drawn before the characters (render order 2) and without writing depth: a unit standing in grass shows whole
-  // over it, as the original's sprites do; the ground and rocks still hide the grass behind them
+  // over it, as the original's sprites do; the ground and rocks still hide the grass behind them. Without depth the
+  // last tuft drawn is the one on top, so every tuft is drawn far to near: in bands across the view (4 cells deep), each
+  // its own instanced mesh (its own bounds: the camera skips those out of view; battle 8's meadow is ~100k tufts, drawn
+  // as one mesh every one of them went through the GPU each frame), the bands far to near by their render order, the
+  // tufts in each sorted by depth. Built again when the camera turns to another quarter. o.core [x0, z0, x1, z1]: the
+  // play area; each band is cut where it leaves it, into the core and the two sides (the thin grass past the map,
+  // seen only at the view's edges, else drawn with every band: twice the tufts), the only places the order breaks. (In 6 x 6 chunks, drawn near
+  // to far, the far chunk's dark roots lay over the near one's tips along every chunk edge: a seam [the user's report].)
   mat.depthWrite = false;
-  for (const list of chunks.values()) {
-    const m = new THREE.InstancedMesh(geo, mat, list.length);
-    list.forEach(([x, y, z], i) => {
-      const s = (o.size ?? 0.45) * (0.6 + Math.random() * 0.7); d.position.set(x, y - 0.02, z); d.rotation.set(0, Math.random() * 6.3, 0); d.scale.set(s * 1.25, s * 0.7, s * 1.25); d.updateMatrix(); m.setMatrixAt(i, d.matrix);   // 30% shorter [the user's request]
-      const t = (0.8 + Math.random() * 0.4) * 0.7, warm = Math.random() * 0.06; m.setColorAt(i, c.setRGB(t + warm, t, t * (0.88 - warm)));   // 30% darker [the user's request]
+  const d = new THREE.Object3D();
+  const tufts = pts.map(([x, y, z]) => {
+    const s = (o.size ?? 0.45) * (0.6 + Math.random() * 0.7); d.position.set(x, y - 0.02, z); d.rotation.set(0, Math.random() * 6.3, 0); d.scale.set(s * 1.25, s * 0.7, s * 1.25); d.updateMatrix();   // 30% shorter [the user's request]
+    const t = (0.8 + Math.random() * 0.4) * 0.7, warm = Math.random() * 0.06;   // 30% darker [the user's request]
+    return { x, z, m: d.matrix.clone(), c: new THREE.Color(t + warm, t, t * (0.88 - warm)) };
+  });
+  const BAND = 4, out = new THREE.Group(), dir = new THREE.Vector3();
+  let quarter = -1, queued = false;
+  const build = q => {   // q: the way the camera looks, 0 north (-z), 1 east (+x), 2 south (+z), 3 west (-x)
+    quarter = q; for (const m of out.children.slice()) { out.remove(m); m.dispose(); }
+    const far = q === 0 ? t => t.z : q === 2 ? t => -t.z : q === 1 ? t => -t.x : t => t.x;   // smaller: farther off
+    const C = o.core, side = !C ? () => 1 : q === 0 || q === 2 ? t => t.x < C[0] ? 0 : t.x > C[2] ? 2 : 1 : t => t.z < C[1] ? 0 : t.z > C[3] ? 2 : 1;
+    const bands = new Map();
+    for (const t of tufts) { const k = Math.floor(far(t) / BAND) * 4 + side(t); (bands.get(k) || bands.set(k, []).get(k)).push(t); }
+    const keys = [...bands.keys()].sort((a, b) => a - b), nb = Math.floor(keys[keys.length - 1] / 4) - Math.floor(keys[0] / 4) + 1;
+    keys.forEach(k => {
+      const bi = Math.floor(k / 4) - Math.floor(keys[0] / 4), list = bands.get(k).sort((a, b) => far(a) - far(b)), m = new THREE.InstancedMesh(geo, mat, list.length);
+      m.userData.seg = k & 3;   // (tools/qa/sets.js: the order is checked within each of the three)
+      list.forEach((t, i) => { m.setMatrixAt(i, t.m); m.setColorAt(i, t.c); });
+      m.computeBoundingSphere(); m.renderOrder = 1 + bi * 1e-4 / nb;   // (far bands first; all before the characters' 2)
+      m.onBeforeRender = (renderer, scene, camera) => {
+        fillSteps(renderer);
+        camera.getWorldDirection(dir); const nq = Math.abs(dir.z) >= Math.abs(dir.x) ? (dir.z < 0 ? 0 : 2) : (dir.x > 0 ? 1 : 3);
+        if (nq !== quarter && !queued) { queued = true; requestAnimationFrame(() => { queued = false; build(nq); }); }   // (not inside the render)
+      };
+      m.receiveShadow = true; m.userData.noAO = true; out.add(m);
     });
-    m.computeBoundingSphere(); m.renderOrder = 1;
-    m.onBeforeRender = renderer => fillSteps(renderer);
-    m.receiveShadow = true; m.userData.noAO = true; out.add(m);
-  }
+  };
+  build(0);
   out.userData.noAO = true; return out;
 }
 // stones: lumpy displaced icosahedra in rock material. None stands taller than o.maxH over the ground it lies on (0.18:

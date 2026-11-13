@@ -377,6 +377,11 @@ export function exportScenes(R, rom, recs, battles, natives = {}, files = {}, sh
         events.push({ f, kind: 'emotes', slots: Array.from({ length: a[1] - a[0] + 1 }, (_, i) => String(a[0] + i)), frame: w === 44 ? 4 : 11 });
       } else if (w === 14 && a[0] <= 30 && 30 <= a[1]) events.push({ f, kind: 'emoteOff' });
       else if (w === 14 && a[0] <= 1 && 1 <= a[1]) events.push({ f, kind: 'emotesOff' });
+      else if (w === 33) {   // [0x1B2E2] a character's inner thought: every sprite onto palette line 3 but sprite entry a[0] - 1 (unit a[0] - 0x20's) on
+        // line 2, lines 0, 1 and 3 stepped down to near black (0x21968, a[1] frames a step, five steps), till op 34 [0x1B3E0] steps them back
+        const nx = rec.ops.find(x => x.at > o.at && x.op === 34);
+        events.push({ f, kind: 'native', name: 'think', slot: String(a[0] - 0x20), end: nx ? nx.f : f + 60, speed: a[1] });
+      }
       else if (w === 1) events.push({ f, kind: 'fadeIn', speed: H(0) });
       else if (w === 8) events.push({ f, kind: 'fadeOut', speed: H(0) });
       else if (w === 56) events.push({ f, kind: 'music', id: H(0) });

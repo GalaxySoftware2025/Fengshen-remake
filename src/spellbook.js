@@ -168,10 +168,10 @@ function crystals(v, P, n, scale, hold, mat) {
       const g = Math.min(1, Math.max(0, (t - i * 0.03) / 0.14)), w = (i === 0 ? 0.22 : 0.15) * scale;
       m.scale.set(w * g + 0.001, h * g + 0.001, w * g + 0.001);
       if (t > hold && !m.userData.b) { m.userData.b = 1; m.visible = false;
-        v.burst(p.clone().setY(p.y + h * 0.5), { n: 10, speed: 3, cols: ICE_COLS, size: 0.04, life: 0.6, g: 9, shape: 1 }); shatter(v, p.clone().setY(p.y + h * 0.5), 5, mat, { size: 0.16 * scale + 0.06 }); }
+        v.burst(p.clone().setY(p.y + h * 0.5), { n: 10, speed: 3, cols: ICE_COLS, size: 0.04, life: 0.6, g: 9, shape: 7 }); shatter(v, p.clone().setY(p.y + h * 0.5), 5, mat, { size: 0.16 * scale + 0.06 }); }
     });
   }
-  v.burst(P.clone().setY(P.y + 0.2), { n: 16, speed: 3.5, cols: ICE_COLS, size: 0.045, life: 0.6, g: 8, shape: 1 }); frost(v, P, 0.9 * scale + 0.3, hold + 1.2);
+  v.burst(P.clone().setY(P.y + 0.2), { n: 16, speed: 3.5, cols: ICE_COLS, size: 0.045, life: 0.6, g: 8, shape: 7 }); frost(v, P, 0.9 * scale + 0.3, hold + 1.2);
   for (let i = 0; i < 6; i++) { const a = rand(0, 6.28), s = rand(1, 2); v.smokePuff(P.x, P.y + 0.08, P.z, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.4, life: rand(1, 1.5), size: 0.25, size1: 0.8, tint: [0.62, 0.78, 0.95] }); }
 }
 // lightning: a strike from the sky onto p, with its splash
@@ -972,7 +972,7 @@ async function burstFist(ctx) {
   await ctx.wait(250);
   v.explode(tg, 0.7, { n: 22 }); v.flash([1, 0.7, 0.4], 0.3); v.shake(0.22, 0.35); v.hitstop = 0.12;
   for (let i = 0; i < 3; i++) later(i * 70, () => v.ring(tg, i ? FIRE : [1, 1, 1], 1.4 + i * 0.6, 0.35, { vertical: true, yaw: yawOf(dir), y: tg.y }));
-  v.burst(tg, { n: 70, speed: 6, cols: [[1, 0.95, 0.7], FIRE, [1, 0.3, 0.05]], size: 0.07, life: 0.9, g: 5 });
+  v.burst(tg, { shape: 6, n: 70, speed: 6, cols: [[1, 0.95, 0.7], FIRE, [1, 0.3, 0.05]], size: 0.07, life: 0.9, g: 5 });
   v.light(tg, FIRE, 30, 0.6, 7); glowTargets(ctx, 0.8);
   ctx.hit(); await ctx.wait(300); a.act = null; await ctx.wait(800); outro(ctx);
 }
@@ -997,7 +997,7 @@ async function fiveQi(ctx) {
       const f = Math.min(1, (T - drop) / 0.4); o.position.copy(sky).lerp(tg, f * f);   // falling like a star
       if (!rib) rib = v.ribbon({ col, width: 0.18, n: 14, fade: 0.4 }); rib.push(o.position);
       if (f >= 1 && !done) { done = true; o.visible = false; rib.end();
-        v.shake(0.06, 0.12); dustBurst(v, cell, 0.3); v.burst(tg, { n: 22, speed: 3, cols: [[1, 1, 1], col], size: 0.05, life: 0.6, g: 1 });
+        v.shake(0.06, 0.12); dustBurst(v, cell, 0.3); v.burst(tg, { shape: 5, n: 22, speed: 3, cols: [[1, 1, 1], col], size: 0.05, life: 0.6, g: 1 });
         ticker(v, 1.6, kk => { for (let j = 0; j < 2; j++) v.flame(cell.x + rand(-0.3, 0.3), cell.y, cell.z + rand(-0.3, 0.3), { size: rand(0.35, 0.55) * (1 - kk * 0.5), asp: 2, life: 0.5, vy: rand(0.8, 1.6), tint: [0.25, 0.6, 1.8] }); });
         v.pillar(cell, col, 0.35, 2.4, 1.2, { intensity: 0.5, grow: 1 }); v.light(tg, col, 12, 0.6, 5);
       }
@@ -1172,14 +1172,14 @@ function lavaSea(v, cells, c0, life) {
 // a lava bomb: a gobbet of fire heaved from a up through h to b, trailing fire, bursting where it lands
 function lavaBomb(v, a, b, h, life) {
   const ball = v.fireball(rand(0.13, 0.2), { heat: 1.1 }), tail = v.ribbon({ col: FIRE, width: 0.22, n: 12 }), up = Math.max(a.y, b.y) + h;
-  v.burst(a.clone().setY(a.y + 0.1), { n: 8, speed: 2.4, cols: [[1, 0.85, 0.4], FIRE], size: 0.06, life: 0.5, g: 9, shape: 1, floor: a.y + 0.02 });   // the splash it leaves
+  v.burst(a.clone().setY(a.y + 0.1), { n: 8, speed: 2.4, cols: [[1, 0.85, 0.4], FIRE], size: 0.06, life: 0.5, g: 9, shape: 6, floor: a.y + 0.02 });   // the splash it leaves
   v.timed(ball, life, (k, dt, t) => {
     ball.userData.mat.uniforms.uT.value = t; ball.position.copy(a).lerp(b, k); ball.position.y = a.y + (b.y - a.y) * k + 4 * (up - Math.max(a.y, b.y)) * k * (1 - k) + 0.1;
     tail.push(ball.position); if (Math.random() < 0.5) v.realFire(ball.position.x, ball.position.y, ball.position.z, { size: 0.35, asp: 1.3, life: 0.2, vy: 0.4 });
   }, () => {
     tail.end(); ball.visible = false; const p = b.clone().setY(b.y + 0.15);
     v.explode(p, 0.38, { n: 6, smoke: false }); v.light(p, FIRE, 7, 0.22, 4);
-    v.burst(p, { n: 12, speed: 3, cols: [[1, 0.9, 0.5], FIRE], size: 0.05, life: 0.6, g: 9, shape: 1, floor: b.y + 0.02 });
+    v.burst(p, { n: 12, speed: 3, cols: [[1, 0.9, 0.5], FIRE], size: 0.05, life: 0.6, g: 9, shape: 6, floor: b.y + 0.02 });
   });
 }
 const perSec = (dt, rate) => { const n = dt * rate; return Math.floor(n) + (Math.random() < n % 1 ? 1 : 0); };   // how many to spawn this frame for rate a second (any frame rate)
@@ -1223,7 +1223,7 @@ async function inferno(ctx) {
   v.flash([1, 0.45, 0.15], 0.12); v.shake(0.3, 0.5); v.hitstop = 0.08; glowTargets(ctx, 1, 0.9);   // (no white-out: the columns are the blow)
   cells.forEach((c, i) => later(i * 25, () => {
     ticker(v, 0.8, (k, dt) => { for (let j = perSec(dt, 22); j > 0; j--) { const a = rand(0, 6.28), r = rand(0, 0.38); v.realFire(c.x + Math.cos(a) * r, c.y, c.z + Math.sin(a) * r, { size: rand(0.4, 0.7) * (1 - k * 0.5), asp: rand(1.4, 1.9), life: rand(0.45, 0.7), vy: rand(3.5, 5.5), vx: Math.cos(a) * 0.4, vz: Math.sin(a) * 0.4 }); } });   // (many small flames, spread: big tall ones stood as slabs)
-    v.burst(c.clone().setY(c.y + 0.2), { n: 16, speed: 3.6, cols: [[1, 0.9, 0.5], FIRE], size: 0.06, life: 0.8, g: 8, shape: 1, floor: c.y + 0.02 });
+    v.burst(c.clone().setY(c.y + 0.2), { n: 16, speed: 3.6, cols: [[1, 0.9, 0.5], FIRE], size: 0.06, life: 0.8, g: 8, shape: 6, floor: c.y + 0.02 });
   }));
   ctx.hit();
   // then it cools: a black crust closes over the sea, wisps of smoke off it, and it sinks away
@@ -1283,7 +1283,7 @@ async function skyFire(ctx) {
     later(i * 60, () => {
       v.pillar(p, [1, 0.42, 0.08], 0.32, rand(2.5, 3.8), 0.8, { intensity: 1.5, grow: 1 });
       ticker(v, 0.6, k => { v.realFire(p.x + rand(-0.15, 0.15), p.y, p.z + rand(-0.15, 0.15), { size: rand(0.6, 0.9) * (1 - k * 0.5), asp: 2.4, life: 0.5, vy: rand(3, 5) }); });
-      v.burst(p.clone().setY(p.y + 0.2), { n: 14, speed: 3, cols: [[1, 0.9, 0.5], FIRE], size: 0.06, life: 0.7, g: 8, shape: 1, floor: p.y + 0.02 });
+      v.burst(p.clone().setY(p.y + 0.2), { n: 14, speed: 3, cols: [[1, 0.9, 0.5], FIRE], size: 0.06, life: 0.7, g: 8, shape: 6, floor: p.y + 0.02 });
     });
   }
   v.shake(0.2, 0.4); v.flash([1, 0.5, 0.2], 0.3); v.hitstop = 0.06;
@@ -1300,11 +1300,11 @@ async function iceSplit(ctx) {
   DARK(ctx, 0.35, 0.9, 0.5, 0.2);
   await ctx.until(F); ctx.cue();
   const hub = at.clone().setY(at.y + 2.2), S = F + (ctx.track[1] || 1.7) - 0.45, G = Math.max(1, S - ctx.now());   // (S: it splits, 0.45 s before the crystals burst on the second sound)
-  for (let i = 0; i < 40 + G * 20; i++) later(i * 15, () => { const p = hub.clone().add(V(rand(-1.5, 1.5), rand(-1, 1.5), rand(-1.5, 1.5))); v.spark(p.x, p.y, p.z, { seek: { x: hub.x, y: hub.y, z: hub.z, k: 5 }, life: 0.6, size: rand(0.06, 0.12), r: 0.85, gg: 0.95, b: 1, shape: 1, flicker: 1, ph: rand(0, 9) }); });
+  for (let i = 0; i < 40 + G * 20; i++) later(i * 15, () => { const p = hub.clone().add(V(rand(-1.5, 1.5), rand(-1, 1.5), rand(-1.5, 1.5))); v.spark(p.x, p.y, p.z, { seek: { x: hub.x, y: hub.y, z: hub.z, k: 5 }, life: 0.6, size: rand(0.06, 0.12), r: 0.85, gg: 0.95, b: 1, shape: 7, flicker: 1, ph: rand(0, 9) }); });
   const big = new THREE.Mesh(chunkGeometry(), mat); big.position.copy(hub); big.scale.setScalar(0.01);
   v.timed(big, G, (k, dt, t) => { big.scale.setScalar(0.01 + 0.5 * ease(Math.min(1, t / 0.7))); big.rotation.y += dt * 2; big.rotation.x += dt; big.position.y = hub.y + Math.sin(t * 2.5) * 0.12; });
   await ctx.until(S);
-  v.flash([0.8, 0.95, 1], 0.12); v.burst(hub, { n: 30, speed: 3, cols: ICE_COLS, size: 0.06, life: 0.6, g: 0 });
+  v.flash([0.8, 0.95, 1], 0.12); v.burst(hub, { shape: 7, n: 30, speed: 3, cols: ICE_COLS, size: 0.06, life: 0.6, g: 0 });
   cells.forEach((c, i) => {
     const o = new THREE.Mesh(chunkGeometry(), mat); o.scale.setScalar(0.28); const tg = c.clone().setY(c.y + 0.3), rib = v.ribbon({ col: ICEC, width: 0.14, n: 16 });
     v.timed(o, 0.45, (k, dt) => { o.position.copy(bezier(hub, hub.clone().lerp(tg, 0.5).add(V(0, 0.8, 0)), tg, k * k)); o.rotation.y += dt * 6; rib.push(o.position); }, () => { rib.end(); o.visible = false; crystals(v, c, 6, 0.8, 0.9, mat); v.ring(c, ICEC, 1.2, 0.4); v.shake(0.06, 0.1); });
@@ -1322,7 +1322,7 @@ async function blizzard(ctx) {
   DARK(ctx, 0.7, 1, 0.7, 0.35);
   const B = basis(ctx), wind = B.right.clone().multiplyScalar(-5);
   ticker(v, F + tr[2] + 0.2 - ctx.now(), (k) => {
-    for (let i = 0; i < 14; i++) v.spark(c0.x + rand(-6, 6) - wind.x * 0.4, c0.y + rand(0.2, 5), c0.z + rand(-6, 6) - wind.z * 0.4, { vx: wind.x * rand(0.8, 1.3), vy: -rand(0.8, 1.6), vz: wind.z * rand(0.8, 1.3) + rand(-0.5, 0.5), life: rand(0.8, 1.4), size: rand(0.05, 0.11), r: 0.92, gg: 0.96, b: 1, a: 0.9, shape: 1, wob: 1.5, ph: rand(0, 6) });
+    for (let i = 0; i < 14; i++) v.spark(c0.x + rand(-6, 6) - wind.x * 0.4, c0.y + rand(0.2, 5), c0.z + rand(-6, 6) - wind.z * 0.4, { vx: wind.x * rand(0.8, 1.3), vy: -rand(0.8, 1.6), vz: wind.z * rand(0.8, 1.3) + rand(-0.5, 0.5), life: rand(0.8, 1.4), size: rand(0.05, 0.11), r: 0.92, gg: 0.96, b: 1, a: 0.9, shape: 7, wob: 1.5, ph: rand(0, 6) });
     if (Math.random() < 0.18) v.smokePuff(c0.x + rand(-4, 4), c0.y + rand(0.3, 1.2), c0.z + rand(-4, 4), { vx: wind.x * 0.5, vz: wind.z * 0.5, life: 1.4, size: 0.7, size1: 1.6, tint: [0.8, 0.9, 1] });
   });
   await ctx.until(F + tr[1]);
@@ -1356,7 +1356,7 @@ async function iceAvalanche(ctx) {
   v.light(hang, ICEC, 14, F + 3 - ctx.now(), 8);
   parts.forEach((m, i) => later(i * 110, () => {
     const from = hang.clone().add(V(rand(-5, 5), rand(-2, 2.5), rand(-5, 5))), fly = new THREE.Mesh(chunkGeometry(), mat), rib = v.ribbon({ col: ICEC, width: 0.08, n: 10 }); fly.scale.setScalar(0.5);
-    lob(v, fly, from, hang.clone().add(m.position), 0.6, 0.45, () => { rib.end(); m.visible = true; size = Math.min(1.35, size + 0.16); v.burst(hang.clone().add(m.position), { n: 12, speed: 2, cols: ICE_COLS, size: 0.05, life: 0.4, g: 2 }); }, { each: p => rib.push(p) });
+    lob(v, fly, from, hang.clone().add(m.position), 0.6, 0.45, () => { rib.end(); m.visible = true; size = Math.min(1.35, size + 0.16); v.burst(hang.clone().add(m.position), { shape: 7, n: 12, speed: 2, cols: ICE_COLS, size: 0.05, life: 0.4, g: 2 }); }, { each: p => rib.push(p) });
   }));
   ticker(v, F + 0.2 - ctx.now(), (k, dt) => { if (k > 0.5 && Math.random() < dt * 8) v.bolt(hang.clone().add(V(rand(-0.6, 0.6), rand(-0.4, 0.4), rand(-0.6, 0.6))), hang.clone().add(V(rand(-0.6, 0.6), rand(-0.4, 0.4), rand(-0.6, 0.6))), [0.85, 0.95, 1], 0.08, { width: 0.02, jag: 0.2 }); });   // cracks of light
   // it calves: boulder after boulder crashes onto the target, ice spikes bursting from the ground after each
@@ -1365,7 +1365,7 @@ async function iceAvalanche(ctx) {
     const r = rand(0.38, 0.6), m = new THREE.Mesh(chunkGeometry(), mat); m.scale.setScalar(r); const off = V(rand(-0.35, 0.35), 0, rand(-0.35, 0.35));
     size = Math.max(0.55, size - 0.06);
     lob(v, m, hang.clone().add(V(rand(-0.5, 0.5), -0.4, rand(-0.5, 0.5))), at.clone().add(off).setY(at.y + r * 0.6), 0, 0.42, (p) => {
-      v.burst(p, { n: 34, speed: 5, cols: ICE_COLS, size: 0.07, life: 0.8, g: 9 }); v.shake(0.1, 0.15); v.flash([0.8, 0.9, 1], 0.08); v.ring(at, ICEC, 1.8, 0.35); glowTargets(ctx, 0.6, 0.3);
+      v.burst(p, { shape: 7, n: 34, speed: 5, cols: ICE_COLS, size: 0.07, life: 0.8, g: 9 }); v.shake(0.1, 0.15); v.flash([0.8, 0.9, 1], 0.08); v.ring(at, ICEC, 1.8, 0.35); glowTargets(ctx, 0.6, 0.3);
       shatter(v, p, 7, mat, { size: 0.2, speed: 2.6 });
       const a = rand(0, 6.28), d = rand(0.9, 1.9), sp = at.clone().add(V(Math.cos(a) * d, 0, Math.sin(a) * d)); sp.y = effectH(sp.x, sp.z);   // a spike bursting up
       const spike = new THREE.Mesh(shardGeometry(6, 0.18), mat); spike.position.copy(sp); spike.rotation.set(rand(-0.3, 0.3), rand(0, 6), rand(-0.3, 0.3)); const h = rand(0.6, 1.1);
@@ -1380,7 +1380,7 @@ async function iceAvalanche(ctx) {
   const block = new THREE.Mesh(shardGeometry(6, 0.22), mat); block.position.copy(at).setY(at.y - 0.05);
   v.timed(block, 1.1, (k, dt, t) => { const g = Math.min(1, t / 0.18), sw = t > 0.95 ? 1 + (t - 0.95) * 2 : 1; block.scale.set(0.75 * sw, 2.2 * g * sw + 0.001, 0.75 * sw); },
     () => {
-      v.burst(at.clone().setY(at.y + 0.9), { n: 140, speed: 7.5, cols: ICE_COLS, size: 0.08, life: 1.1, g: 9 }); v.flash([0.9, 0.97, 1], 0.55); v.shake(0.28, 0.4); v.hitstop = 0.14;
+      v.burst(at.clone().setY(at.y + 0.9), { shape: 7, n: 140, speed: 7.5, cols: ICE_COLS, size: 0.08, life: 1.1, g: 9 }); v.flash([0.9, 0.97, 1], 0.55); v.shake(0.28, 0.4); v.hitstop = 0.14;
       shatter(v, at.clone().setY(at.y + 0.9), 18, mat, { size: 0.32, speed: 3.6 }); v.ring(at, ICEC, 5, 0.8, { intensity: 1.6 }); v.ring(at, [1, 1, 1], 2.4, 0.4);
       for (const s2 of spikes) { s2.spike.userData.gone = true; shatter(v, s2.sp.clone().setY(s2.sp.y + s2.h * 0.5), 4, mat, { size: 0.16, speed: 2.2 }); }
     });
@@ -1457,14 +1457,14 @@ async function greatThunder(ctx) {
   for (let i = 0; i < 8; i++) v.bolt(at.clone().add(V(rand(-0.7, 0.7), 12, rand(-0.7, 0.7))), at.clone().add(V(rand(-0.3, 0.3), 0.1, rand(-0.3, 0.3))), i < 2 ? [1, 1, 1] : BOLT, 0.8, { width: i < 2 ? 0.2 : 0.12 });
   v.flash([1, 1, 1], 1); v.shake(0.4, 0.7); v.hitstop = 0.18; v.screen.chroma = 0.7;
   for (let i = 0; i < 14; i++) { const a = i / 14 * 6.28 + rand(-0.15, 0.15), len = rand(1.8, 3.2), e = at.clone().add(V(Math.cos(a) * len, 0, Math.sin(a) * len)); e.y = effectH(e.x, e.z) + 0.05; v.bolt(at.clone().setY(at.y + 0.05), e, BOLT, 0.5, { width: 0.06, jag: 0.35 }); }   // along the earth
-  v.burst(at.clone().setY(at.y + 0.2), { n: 120, speed: 8, cols: [[1, 1, 1], BOLT, [0.5, 0.6, 1]], size: 0.06, life: 0.9, g: 4 });
+  v.burst(at.clone().setY(at.y + 0.2), { shape: 5, n: 120, speed: 8, cols: [[1, 1, 1], BOLT, [0.5, 0.6, 1]], size: 0.06, life: 0.9, g: 4 });
   v.ring(at, BOLT, 6, 1.0, { intensity: 1.8 }); v.ring(at, [1, 1, 1], 3, 0.5); v.decal(at, [0.5, 0.6, 1], 2.4, 2.2); dustBurst(v, at, 1.3, [0.3, 0.3, 0.38]);
   glowTargets(ctx, 1, 1.2); ctx.hit();
   // the afterglow: arcs crawl over the target; three last strikes round it
   plasma(v, at.clone().setY(at.y + 0.6), BOLT, 1.5, 0.6);
   for (let i = 0; i < 3; i++) later(500 + i * 280, () => {
     const a = rand(0, 6.28), r = rand(1.3, 2.1), p = at.clone().add(V(Math.cos(a) * r, 0, Math.sin(a) * r)); p.y = effectH(p.x, p.z);
-    v.bolt(p.clone().setY(p.y + 11), p, BOLT, 0.25, { width: 0.08 }); v.flash([0.8, 0.85, 1], 0.25); v.ring(p, BOLT, 1.4, 0.4); v.burst(p.clone().setY(p.y + 0.1), { n: 20, speed: 3, cols: [[1, 1, 1], BOLT], size: 0.05, life: 0.5 });
+    v.bolt(p.clone().setY(p.y + 11), p, BOLT, 0.25, { width: 0.08 }); v.flash([0.8, 0.85, 1], 0.25); v.ring(p, BOLT, 1.4, 0.4); v.burst(p.clone().setY(p.y + 0.1), { shape: 5, n: 20, speed: 3, cols: [[1, 1, 1], BOLT], size: 0.05, life: 0.5 });
   });
   await ctx.until(E - 0.1); outro(ctx);
 }
@@ -1484,7 +1484,7 @@ async function lightBurst(ctx) {
   // he glows, the light gathering in him
   const hand = a.chest().add(V(0, 0.4, 0));
   ticker(v, Math.max(0, F - ctx.now()), (k, dt) => { a.flash = 0.25 + 0.3 * k * (0.6 + 0.4 * Math.sin(ctx.now() * 30));
-    for (let j = perSec(dt, 40); j > 0; j--) { const t = rand(0, 6.28), r = rand(0.5, 0.9); v.spark(hand.x + Math.cos(t) * r, hand.y + rand(-0.4, 0.3), hand.z + Math.sin(t) * r, { seek: { x: hand.x, y: hand.y, z: hand.z, k: 6 }, life: 0.35, size: rand(0.03, 0.05), r: 1, gg: 0.95, b: 0.85, shape: 1 }); } }, () => { a.flash = 0; });
+    for (let j = perSec(dt, 40); j > 0; j--) { const t = rand(0, 6.28), r = rand(0.5, 0.9); v.spark(hand.x + Math.cos(t) * r, hand.y + rand(-0.4, 0.3), hand.z + Math.sin(t) * r, { seek: { x: hand.x, y: hand.y, z: hand.z, k: 6 }, life: 0.35, size: rand(0.03, 0.05), r: 1, gg: 0.95, b: 0.85, shape: 5 }); } }, () => { a.flash = 0; });
   // the ball of light flies up off him, and a white streak crosses the sky
   await ctx.until(F);
   const ball = glowCard(v, WHITE, 0.5), rib = v.ribbon({ col: WHITE, width: 0.12, n: 12, fade: 0.3 }), to = hand.clone().addScaledVector(B.right, 2).add(V(0, 7, 0));
@@ -1497,13 +1497,13 @@ async function lightBurst(ctx) {
   const at = c => c.clone().setY(c.y + 0.55), yaw = yawOf(B.toCam);
   const ring = (s, pale) => { for (const c of cells) { const p = at(c); v.ring(p, WHITE, 1.1 * s, 0.3, { vertical: true, yaw, y: p.y, intensity: 1.6 });
       const g = glowCard(v, WHITE, 0.5 * s); g.position.copy(p); v.timed(g, 0.22, k => { g.scale.setScalar(0.5 * s * (1 + k)); g.material.opacity = 1 - k; });
-      v.burst(p, { n: 6, speed: 2 * s, cols: [WHITE], size: 0.04, life: 0.3, g: 0, shape: 1 }); }
+      v.burst(p, { n: 6, speed: 2 * s, cols: [WHITE], size: 0.04, life: 0.3, g: 0, shape: 5 }); }
     if (pale) v.flash([1, 0.98, 0.92], 0.14); };
   const fire = (s, col, dark) => { for (const c of cells) { const p = at(c), fb = v.fireball(0.3 * s, { ragged: 1, heat: dark ? 0.9 : 1.3, tint: dark ? [1, 0.45, 0.35] : [1, 1, 1] });
       fb.position.copy(p); v.timed(fb, 0.3, (k, dt, t) => { fb.userData.mat.uniforms.uT.value = t; fb.scale.setScalar(0.5 + 0.9 * Math.sin(Math.min(1, k * 1.6) * Math.PI / 2)); fb.userData.mat.uniforms.uHeat.value = (dark ? 0.9 : 1.3) * (1 - k * 0.6); }, () => { fb.visible = false; });
       v.explode(p, 0.32 * s, { n: Math.round(9 * s), smoke: !!dark, tint: dark ? [1.1, 0.4, 0.3] : [1.2, 1, 0.8], smokeTint: [0.2, 0.08, 0.06] });   // (the flame round the core: the fireball alone read pale in daylight)
-      v.burst(p, { n: 10 * s, speed: 3 * s, cols: [col, [1, 0.85, 0.5]], size: 0.05, life: 0.45, g: 2, shape: 1 }); v.light(p, col, 6 * s, 0.25, 4); } };
-  const sparks = () => { for (const c of cells) v.burst(at(c), { n: 14, speed: 2.5, cols: [WHITE, [1, 0.85, 0.5]], size: 0.035, life: 0.35, g: 1, shape: 1 }); };
+      v.burst(p, { n: 10 * s, speed: 3 * s, cols: [col, [1, 0.85, 0.5]], size: 0.05, life: 0.45, g: 2, shape: 5 }); v.light(p, col, 6 * s, 0.25, 4); } };
+  const sparks = () => { for (const c of cells) v.burst(at(c), { n: 14, speed: 2.5, cols: [WHITE, [1, 0.85, 0.5]], size: 0.035, life: 0.35, g: 1, shape: 5 }); };
   const BEATS = [[2.0, () => ring(1, true)], [2.25, () => fire(1, ORANGE)], [2.5, () => ring(0.7, true)], [2.75, () => ring(1, true)], [3.0, () => fire(1, ORANGE)], [3.25, sparks], [3.5, () => fire(0.7, ORANGE)]];
   for (const [t, f] of BEATS) { await ctx.until(t); f(); v.shake(0.06, 0.12); }
   // the last: the screen darkens and dark-red fire bursts on every cell with the blow
@@ -1531,7 +1531,7 @@ async function heavenWrath(ctx) {
   await ctx.until(2.32);
   for (const c of cells) v.pillar(c, col, 0.42, 7, 0.9, { intensity: 1.4 });
   v.flash([1, 1, 1], 0.95); v.shake(0.3, 0.5); v.hitstop = 0.1; v.ring(c0, col, R * 2 + 3, 1);
-  for (const c of cells) v.burst(c.clone().setY(c.y + 0.3), { n: 14, speed: 3, cols: [[1, 1, 1], col], size: 0.05, life: 0.7 });
+  for (const c of cells) v.burst(c.clone().setY(c.y + 0.3), { shape: 5, n: 14, speed: 3, cols: [[1, 1, 1], col], size: 0.05, life: 0.7 });
   glowTargets(ctx, 1, 1); ctx.hit();
   await ctx.wait(1300); outro(ctx);
 }
@@ -1703,7 +1703,7 @@ async function hearts(ctx) {
     const P = t.pos.clone(), s = card(HEART, 0.6, 0.6, { add: true, order: 8 }), d = i * 0.12;
     v.timed(s, D + 0.2 + d, (k, dt, tt) => {
       const f = Math.max(0, Math.min(1, (tt - d) / D)); s.position.set(P.x + Math.sin(f * 7) * 0.25 * (1 - f), P.y + 3 - f * 2.2, P.z); s.material.opacity = Math.min(1, f * 5) * (f > 0.9 ? (1 - f) * 10 : 1); s.scale.setScalar(0.6 + Math.sin(tt * 9) * 0.04);
-      if (f >= 1 && !s.userData.p) { s.userData.p = 1; v.burst(s.position, { n: 26, speed: 2, cols: [[1, 0.8, 0.85], col], size: 0.05, life: 0.8, g: 0.5 }); v.ring(P, col, 1.3, 0.6); v.light(P.clone().setY(P.y + 1), col, 10, 0.8, 5); ticker(v, 1, k2 => { t.flash = 0.5 * (1 - k2); }, () => { t.flash = 0; }); }
+      if (f >= 1 && !s.userData.p) { s.userData.p = 1; v.burst(s.position, { shape: 5, n: 26, speed: 2, cols: [[1, 0.8, 0.85], col], size: 0.05, life: 0.8, g: 0.5 }); v.ring(P, col, 1.3, 0.6); v.light(P.clone().setY(P.y + 1), col, 10, 0.8, 5); ticker(v, 1, k2 => { t.flash = 0.5 * (1 - k2); }, () => { t.flash = 0; }); }
     });
   });
   await ctx.until(F); ctx.hit(); await ctx.wait(900); outro(ctx);
@@ -1791,7 +1791,7 @@ async function revive(ctx) {
   await new Promise(res => v.timed(soul, 1.6, (k, dt, t) => { const e = ease(k), r = 0.6 * (1 - e); soul.position.copy(from).lerp(P.clone().setY(P.y + 0.6), e).add(V(Math.cos(t * 5) * r, 0, Math.sin(t * 5) * r)); rib.push(soul.position); rib2.push(soul.position); },
     () => { rib.end(); rib2.end(); soul.visible = false; res(); }));
   // it sinks in: halos rise up the body, golden motes drift away
-  v.flash(col, 0.35); v.burst(P.clone().setY(P.y + 0.6), { n: 30, speed: 2, cols: [[1, 1, 1], col, soulCol], size: 0.05, life: 0.8, g: -0.5 });
+  v.flash(col, 0.35); v.burst(P.clone().setY(P.y + 0.6), { shape: 5, n: 30, speed: 2, cols: [[1, 1, 1], col, soulCol], size: 0.05, life: 0.8, g: -0.5 });
   for (let i = 0; i < 4; i++) later(i * 160, () => v.ring(P, col, 0.9 - i * 0.12, 0.6, { y: P.y + 0.15 + i * 0.4, intensity: 1.4 }));
   v.pillar(P, col, 0.3, 2.6, 1.2, { intensity: 0.8, grow: 1 });
   ticker(v, 1.2, (k, dt) => { if (Math.random() < dt * 40) { const a = rand(0, 6.28), r = rand(0.2, 0.7); v.spark(P.x + Math.cos(a) * r, P.y + rand(0.1, 1.2), P.z + Math.sin(a) * r, { vy: rand(0.6, 1.4), vx: Math.cos(a) * 0.3, vz: Math.sin(a) * 0.3, life: 1.2, size: rand(0.03, 0.06), r: 1, gg: 0.9, b: 0.6, shape: 0, flicker: 1, ph: rand(0, 9) }); } });
@@ -1820,7 +1820,7 @@ async function diamondGuard(ctx, col, E) {
       prism.add(edge); prism.position.copy(P).setY(P.y + 0.9);
       v.timed(prism, 1.4, (k, dt, tt) => { const g = Math.min(1, tt / 0.2); prism.scale.set(1, g, 1); prism.rotation.y += dt * 0.8; const o = Math.min(1, (1.4 - tt) / 0.5); mat.opacity = 0.55 * o; edge.material.opacity = o; if (tt > 0.9) prism.position.y = P.y + 0.9 + (tt - 0.9) * 1.2; });
       v.ring(P, col, 1.4, 0.5); v.light(P.clone().setY(P.y + 1), col, 10, 1, 5); ticker(v, 1, k2 => { t.flash = 0.45 * (1 - k2); }, () => { t.flash = 0; });
-      for (let i = 0; i < 20; i++) later(800 + i * 25, () => v.spark(P.x + rand(-0.5, 0.5), P.y + rand(0.2, 1.8), P.z + rand(-0.5, 0.5), { vy: rand(0.6, 1.4), life: 0.9, size: 0.05, r: col[0], gg: col[1], b: col[2], shape: 1 }));
+      for (let i = 0; i < 20; i++) later(800 + i * 25, () => v.spark(P.x + rand(-0.5, 0.5), P.y + rand(0.2, 1.8), P.z + rand(-0.5, 0.5), { vy: rand(0.6, 1.4), life: 0.9, size: 0.05, r: col[0], gg: col[1], b: col[2], shape: 5 }));
     });
   }
   await ctx.until(F + 1.5); ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
@@ -1845,7 +1845,7 @@ async function shieldBreak(ctx, col, F, E) {
     later(B, () => {
       const q = s.position.clone(); s.visible = false;
       for (let i = 0; i < 10; i++) { const sh = rockMesh(rand(0.05, 0.1), 0x9fb4c8); lob(v, sh, q, P.clone().add(V(rand(-1, 1), 0, rand(-1, 1))), rand(0.3, 0.8), 0.6); }
-      v.burst(q, { n: 26, speed: 3, cols: [[0.9, 0.95, 1], [0.6, 0.7, 0.8]], size: 0.05, life: 0.7, g: 8 }); v.flash([0.6, 0.6, 0.7], 0.12);
+      v.burst(q, { shape: 5, n: 26, speed: 3, cols: [[0.9, 0.95, 1], [0.6, 0.7, 0.8]], size: 0.05, life: 0.7, g: 8 }); v.flash([0.6, 0.6, 0.7], 0.12);
       for (let i = 0; i < 16; i++) v.smokePuff(P.x + rand(-0.6, 0.6), P.y + rand(1.2, 1.8), P.z + rand(-0.6, 0.6), { vy: -rand(0.6, 1.1), life: 1.2, size: 0.3, size1: 0.6, tint: col.map(c => c * 0.25) });
       ticker(v, 0.9, k2 => { t.flash = (0.4 * (1 - k2)) * (Math.random() < 0.5 ? 1 : 0); }, () => { t.flash = 0; });
     });
@@ -1866,7 +1866,7 @@ async function sealTalisman(ctx) {
     tc.material.rotation = f < 1 ? t * 9 : 0; tc.material.color.setScalar(1 + (t > 0.6 ? 0.8 * Math.max(0, Math.sin((t - 0.6) * 18.8)) : 0));
     tc.material.opacity = Math.min(1, (TL - t) * 3);
   });
-  for (let i = 0; i < tr.length; i++) { await ctx.until(F + tr[i]); if (i === 0) ctx.cue(); v.burst(tgt, { n: 14, speed: 2.5, cols: [[1, 1, 0.85], col], size: 0.05, life: 0.5, g: 0 }); v.light(tgt, col, 12, 0.15, 5); if (i % 3 === 0) v.ring(tgt, col, 1.2, 0.3, { vertical: true, yaw: ctx.cam.yaw || 0, y: tgt.y }); }
+  for (let i = 0; i < tr.length; i++) { await ctx.until(F + tr[i]); if (i === 0) ctx.cue(); v.burst(tgt, { shape: 5, n: 14, speed: 2.5, cols: [[1, 1, 0.85], col], size: 0.05, life: 0.5, g: 0 }); v.light(tgt, col, 12, 0.15, 5); if (i % 3 === 0) v.ring(tgt, col, 1.2, 0.3, { vertical: true, yaw: ctx.cam.yaw || 0, y: tgt.y }); }
   await ctx.until(F + 1.5);
   const glyph = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); g.font = 'bold 96px "LXGW WenKai TC", serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = '#7fc0ff'; g.shadowBlur = 16; g.fillStyle = '#e8f4ff'; g.fillText('封', 64, 68); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const gc = card(glyph, 0.9, 0.9, { add: true, order: 9 }); gc.position.copy(tgt).setY(tgt.y + 0.7);
@@ -2072,7 +2072,7 @@ function fireBird(v, scene) {
       for (; acc > 1; acc -= 1) { const side = Math.random() < 0.5 ? -1 : 1, wu = Math.random(), tail = Math.random() < 0.35;
         const lp = tail ? V(rand(-0.8, 0.8), -0.4, -1.5 - rand(0, 3)) : V(side * (0.3 + wu * 3 * (1 - fold * 0.7)), 0.3 * flap, -0.4 - wu * 1.2 - fold * wu * 2);
         const q = o.p.clone().addScaledVector(r, lp.x * s).addScaledVector(u, lp.y * s).addScaledVector(f, lp.z * s);
-        v.spark(q.x, q.y, q.z, { vx: -f.x * 1.5 + rand(-0.5, 0.5), vy: rand(0.3, 1.4), vz: -f.z * 1.5 + rand(-0.5, 0.5), life: rand(0.5, 1), size: rand(0.03, 0.06) * Math.max(0.6, s), r: 1, gg: rand(0.45, 0.8), b: 0.2, shape: 1 }); }
+        v.spark(q.x, q.y, q.z, { vx: -f.x * 1.5 + rand(-0.5, 0.5), vy: rand(0.3, 1.4), vz: -f.z * 1.5 + rand(-0.5, 0.5), life: rand(0.5, 1), size: rand(0.03, 0.06) * Math.max(0.6, s), r: 1, gg: rand(0.45, 0.8), b: 0.2, shape: 6 }); }
     },
     dispose() { for (const m of [root, halo, core, eye, light]) m.parent && m.parent.remove(m); for (const m of parts) { m.geometry.dispose(); m.material.dispose(); } },
   };
@@ -2096,7 +2096,7 @@ async function summonPhoenix(ctx) {
   const g0 = effectH(caster.x, caster.z);
   for (let i = 0; i < 22; i++) { const a = i / 22 * 6.28; later(i * 18, () => v.realFire(caster.x + Math.cos(a) * 1.3, g0, caster.z + Math.sin(a) * 1.3, { size: rand(0.5, 0.8), life: 1.6 })); }
   v.decal(caster, [1, 0.35, 0.06], 1.8, 2.4, { flicker: true }); v.light(caster.clone().setY(g0 + 0.6), FIRE, 10, 2.4, 6);
-  ticker(v, 2.2, () => { for (let i = 0; i < 3; i++) v.spark(caster.x + rand(-3, 3), g0 + rand(0, 0.3), caster.z + rand(-2.5, 2.5), { vy: rand(0.6, 1.6), vx: rand(-0.2, 0.2), life: rand(1.2, 2), size: rand(0.03, 0.06), r: 1, gg: rand(0.4, 0.7), b: 0.15, shape: 1 }); });   // embers rising off the field
+  ticker(v, 2.2, () => { for (let i = 0; i < 3; i++) v.spark(caster.x + rand(-3, 3), g0 + rand(0, 0.3), caster.z + rand(-2.5, 2.5), { vy: rand(0.6, 1.6), vx: rand(-0.2, 0.2), life: rand(1.2, 2), size: rand(0.03, 0.06), r: 1, gg: rand(0.4, 0.7), b: 0.15, shape: 6 }); });   // embers rising off the field
   await ctx.wait(500);
   // the phoenix bursts out of the ring, beats its wings over him and climbs away
   v.flash([1, 0.6, 0.3], 0.45); v.shake(0.12, 0.4); v.ring(caster, FIRE, 4, 0.7, { intensity: 1.4 });
@@ -2123,7 +2123,7 @@ async function summonPhoenix(ctx) {
       trail.end();
       v.explode(tg, big ? 1.3 : 0.7, { n: big ? 30 : 14 }); v.impact(tg, FIRE, big ? 2 : 1.1); v.ring(at, [1, 0.55, 0.2], big ? 6 : 3, big ? 0.8 : 0.5, { intensity: big ? 2 : 1.2 });
       v.light(tg, [1, 0.6, 0.3], big ? 40 : 18, big ? 0.8 : 0.35, 8); v.shake(big ? 0.35 : 0.14, big ? 0.6 : 0.25); glowTargets(ctx, big ? 1 : 0.6, 0.3);
-      for (let i = 0; i < (big ? 70 : 24); i++) { const a = rand(0, 6.28), sp = rand(2, big ? 9 : 5); v.spark(tg.x, tg.y, tg.z, { vx: Math.cos(a) * sp, vy: rand(2, big ? 9 : 5), vz: Math.sin(a) * sp, g: 12, life: rand(0.6, 1.2), size: rand(0.03, 0.07), r: 1, gg: rand(0.5, 0.85), b: 0.25, shape: 1, floor: at.y + 0.02 }); }   // embers thrown
+      for (let i = 0; i < (big ? 70 : 24); i++) { const a = rand(0, 6.28), sp = rand(2, big ? 9 : 5); v.spark(tg.x, tg.y, tg.z, { vx: Math.cos(a) * sp, vy: rand(2, big ? 9 : 5), vz: Math.sin(a) * sp, g: 12, life: rand(0.6, 1.2), size: rand(0.03, 0.07), r: 1, gg: rand(0.5, 0.85), b: 0.25, shape: 6, floor: at.y + 0.02 }); }   // embers thrown
       scorch = Math.min(1, scorch + 0.12); v.decal(at, [0.08, 0.02, 0], 1.2 + scorch * 1.4, big ? 6 : 3, {});   // the ground scorched more each time
       if (k % 3 === 2) v.flash([1, 0.9, 0.8], 0.4);
       if (!k) ctx.cue();   // (the first dive's blow: the sound track from here)
@@ -2144,7 +2144,7 @@ async function summonPhoenix(ctx) {
   // the red burns out to white, and the world comes back, embers drifting down over the scorched ground
   ctx.cam.shot(at.clone().add(V(0, 1, 0)), { cine: true, dist: 11, pitch: 0.5, yaw: 0.4, speed: 1.2 });
   ticker(v, 1.1, q => { v.flash([1, 0.85, 0.75], 0.6 * Math.sin(q * Math.PI)); if (q > 0.5) DARK(ctx, 0.92 * (1 - q) * 2, 0.45, 0.92, 0.95); });
-  ticker(v, 1.4, () => { for (let i = 0; i < 2; i++) v.spark(at.x + rand(-2.5, 2.5), at.y + rand(2, 4), at.z + rand(-2, 2), { vy: -rand(0.3, 0.7), vx: rand(-0.3, 0.3), life: rand(1.2, 1.8), size: rand(0.03, 0.05), r: 1, gg: rand(0.4, 0.6), b: 0.15, shape: 1 }); });
+  ticker(v, 1.4, () => { for (let i = 0; i < 2; i++) v.spark(at.x + rand(-2.5, 2.5), at.y + rand(2, 4), at.z + rand(-2, 2), { vy: -rand(0.3, 0.7), vx: rand(-0.3, 0.3), life: rand(1.2, 1.8), size: rand(0.03, 0.05), r: 1, gg: rand(0.4, 0.6), b: 0.15, shape: 6 }); });
   await ctx.until(END); outro(ctx);
 }
 // 麒麟獸 [ROM fx 56; remade next-gen, 2026-10-23]: the qilin materialises in jade fire and gallops in an arc across the
@@ -2176,7 +2176,7 @@ async function summonQilin(ctx) {
         const fork = c.clone().setY(c.y + rand(3, 7)); v.bolt(fork, fork.clone().add(V(rand(-1.8, 1.8), -rand(1.5, 3), rand(-1, 1))), [1, 0.95, 0.7], 0.25, { width: 0.06 }); });
       v.pillar(c, gold, W * 0.5, 9, 0.6, { intensity: 2 });
       v.decal(c, [0.04, 0.02, 0.0], 0.9, END, {}); v.ring(c, [1, 0.95, 0.6], big ? 2.6 : 1.8, 0.4, { intensity: 1.8 }); v.light(c.clone().setY(c.y + 1), gold, big ? 30 : 16, 0.3, 7);
-      v.burst(c.clone().setY(c.y + 0.2), { n: 14, speed: 3.5, cols: [[1, 1, 0.85], gold], size: 0.05, life: 0.5 });
+      v.burst(c.clone().setY(c.y + 0.2), { shape: 5, n: 14, speed: 3.5, cols: [[1, 1, 0.85], gold], size: 0.05, life: 0.5 });
     }
     v.flash([1, 0.97, 0.8], k >= last - 2 ? 0.42 : 0.18); v.shake(big ? 0.3 : 0.12, 0.25); glowTargets(ctx, big ? 1 : 0.5, 0.25);
     if (big) { v.hitstop = 0.12; ctx.hit(); } };
@@ -2211,7 +2211,7 @@ async function summonSibuxiang(ctx) {
     v.timed(g, 0.55, k => { g.scale.setScalar(0.5 + k * 2.4); g.userData.halo.material.opacity = 1 - k; g.userData.core.material.opacity = 1 - k; });
     star(v, p, [0.95, 0.9, 1], 1.6, 0.4);
     v.ring(q, col, 2.2, 0.45, { intensity: 1.4 }); v.light(p, col, 9, 0.25, 5); if (i % 5 === 0) v.flash([0.92, 0.88, 1], 0.15); v.shake(0.05, 0.1);   // (lights and flashes kept low: forty of them overlap)
-    for (let j = 0; j < 8; j++) { const a = rand(0, 6.28), sp = rand(1.5, 3); v.spark(p.x, p.y, p.z, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(-1, 1), life: 0.4, size: 0.04, r: 0.85, gg: 0.85, b: 1, shape: 1 }); } };
+    for (let j = 0; j < 8; j++) { const a = rand(0, 6.28), sp = rand(1.5, 3); v.spark(p.x, p.y, p.z, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(-1, 1), life: 0.4, size: 0.04, r: 0.85, gg: 0.85, b: 1, shape: 5 }); } };
   for (let i = 1; i <= last; i++) { await ctx.until(FIRST + ctx.track[i]); orbAt(i, cells[Math.floor(rand(0, cells.length))]); }
   await ctx.wait(200);
   v.flash([1, 1, 1], 0.6); glowTargets(ctx, 1); ctx.hit(); await ctx.until(END); outro(ctx);

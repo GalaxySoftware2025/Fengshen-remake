@@ -5,5 +5,6 @@ import dungeon from '../remake/dungeon.js';
 
 export default {
   look: { set: dungeon },
+  moveFill: 'dark',   // the move squares dark throughout (battle.js measureLight), not white as a dark interior's [the user's call]
   stage() { dungeon.open(2); dungeon.open(5); },
 };

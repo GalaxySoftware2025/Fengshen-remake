@@ -6,8 +6,10 @@
 // moving the mouse hides it.
 import * as Keys from './keys.js';
 // root: the screen; items: a selector for the things to press; start(): where the frame starts; back(cur): cancel;
-// prefer: a selector, focused when it appears. Returns stop().
-export function keynav(root, { items, start, back, prefer }) {
+// prefer: a selector, focused when it appears; groups: selectors for the screen's parts (the camp's menu and page): W / S
+// keep to the frame's part while it has one that way (from 裝備物品's first hero S went out to the menu's button below
+// it, nearer than his items [the user's report]), A / D cross. Returns stop().
+export function keynav(root, { items, start, back, prefer, groups = [] }) {
   let cur = null, at = null, kb = false, seen = new Set();
   const shown = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !el.disabled; };
   const list = () => [...root.querySelectorAll(items)].filter(shown);
@@ -30,7 +32,8 @@ export function keynav(root, { items, start, back, prefer }) {
   };
   // the best one in direction (dx, dy): ahead of the frame, the least off its line (a row or column it shares counts as on it)
   const step = (dx, dy) => {
-    const p = mid(cur), els = list().filter(e => e !== cur);
+    const p = mid(cur), part = dy && groups.find(g => cur.closest(g)), all = list().filter(e => e !== cur);
+    const mine = part ? all.filter(e => e.closest(part) && (mid(e).y - p.y) * dy >= 4) : [], els = mine.length ? mine : all;
     let best = null;
     for (const e of els) {
       const q = mid(e), ahead = (q.x - p.x) * dx + (q.y - p.y) * dy;

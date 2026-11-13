@@ -97,10 +97,11 @@ const XIQI = {
 };
 export default XIQI;
 // the hall while 呂岳's plague holds 西岐 (scene 58 and battle 28: 0fba34, 0fba84, the same art), the same hall in a sick
-// light: the lamps low, a sallow haze hanging in it, the colours drained [design: the story's mood; scene 59, cured, is
-// the hall as ever]
+// light: the lamps a little low, a thin sallow haze, the colours a little drained [design: the story's mood; scene 59,
+// cured, is the hall as ever. Toned down to about a third of the first plague light, the user's pick of three: its
+// green floor and maroon carpet read as a filter over the whole map]
 export const xiqiPlague = Object.assign({}, XIQI, {
-  mood: Object.assign({}, XIQI.mood, { fog: 0x14160a, fogD: 0.022, sky: 0xd4dcae, under: 0x1e2210, hemi: 0.8, sun: 0xe0e4b8, sunI: 1.9, sat: 0.8, exposure: 1.06, bloom: 0.3,
-    env: { top: 0x6a7048, mid: 0x3a3c22, low: 0x14160a, lights: [[0, 6, -8, 0xe8ecc8, 4], [-7, 4, 0, 0xd8d098, 2.6], [7, 4, 0, 0xd8d098, 2.6], [0, 9, 3, 0xe8e4c0, 3.4]] } }),
-  lights: [{ x: 12.5, y: 3.0, z: 9, col: 0xd8c890, i: 2, d: 9 }],
+  mood: Object.assign({}, XIQI.mood, { fog: 0x14100a, fogD: 0.012, sky: 0xece2b8, under: 0x2e1e0e, hemi: 0.9, sun: 0xf4e0b4, sunI: 2.3, sat: 0.94, exposure: 1.1, bloom: 0.35,
+    env: { top: 0x8a6c46, mid: 0x56391e, low: 0x22150a, lights: [[0, 6, -8, 0xf6eccc, 5.2], [-7, 4, 0, 0xeed096, 3.4], [7, 4, 0, 0xeed096, 3.4], [0, 9, 3, 0xf4e2b8, 4.4]] } }),
+  lights: [{ x: 12.5, y: 3.0, z: 9, col: 0xecbc80, i: 2.6, d: 9 }],
 });
