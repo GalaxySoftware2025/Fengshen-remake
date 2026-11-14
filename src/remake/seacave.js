@@ -78,7 +78,7 @@ export function trees(list, at, leaves = ['#14401a', '#1e5a20', '#2e7024', '#6a9
 }
 // the cave's mouth: a black opening under a ragged arch of the boulders, a breath of cold air at its foot
 export function mouth(at, rockM, m = MOUTH) {
-  const g = new THREE.Group(), { x, z, w, h } = m, y = at(x, z);
+  const g = new THREE.Group(), { x, z, w, h } = m, y = at(x, z); g.name = 'cave-mouth'; g.userData.mouth = { x, z, w, h };   // (tools/qa/sets.js: no black open to the sky over its passage)
   const sh = new THREE.Shape(); sh.moveTo(-w / 2, 0); sh.lineTo(-w / 2, h * 0.55); sh.absarc(0, h * 0.55, w / 2, Math.PI, 0, true); sh.lineTo(w / 2, 0); sh.closePath();
   const hole = new THREE.Mesh(new THREE.ShapeGeometry(sh, 16), new THREE.MeshBasicMaterial({ color: 0x020203 }));
   hole.position.set(x, y - 0.02, z); g.add(hole);
@@ -87,6 +87,23 @@ export function mouth(at, rockM, m = MOUTH) {
     const a = Math.PI * k / 8, r = w / 2 + 0.12, b = shade(new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + (k % 3) * 0.03, 1), rockM));
     b.position.set(x - Math.cos(a) * r, y + h * 0.55 + Math.sin(a) * r * 1.05 - (k === 0 || k === 8 ? 0.5 : 0), z + 0.05); b.scale.set(1, 0.85, 0.8); g.add(b);
   }
+  // the passage's roof: the floor runs in under the arch (哪吒 walks in to row 1, f806-822), and the rock closes over it
+  // (open to the sky, the notch showed black over the arch from the scene's steep view, its stones a bar across a black
+  // gap [the user's report]; the mountains' mouths too, battle 12's [the user's report, 2026-11-13]).
+  // Where the ridge is lower than the arch (the mountains': ~0.9 to the arch's 1.2) the rock still closes over it: a thin
+  // slab hidden under a heap of the arch's own boulders, back over the whole black box, as the original's cave is a hole
+  // in the rock with rock all round it (a plain block read as a box set on the ridge).
+  { const ridge = Math.min(at(x - 0.8, z - 0.5), at(x + 0.8, z - 0.5)) - 0.12, y0 = at(x, z + 0.3) + h * 0.55 + w / 2 + 0.05;   // (sunk a little under the rock either side, boulders on it: no slab standing out)
+    if (ridge > y0) { g.add(shade(new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, ridge - y0, 0.95).translate(x, (ridge + y0) / 2, z - 0.45), rockM)));
+      g.add(stones([[-0.3, -0.75], [0.2, -0.6], [-0.05, -0.3], [0.35, -0.2], [-0.4, -0.2]].map(([dx, dz]) => [x + dx, ridge, z + dz]), rockM, { size: 0.26 })); }
+    else {
+      g.add(shade(new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.12, 1.3).translate(x, y0, z - 0.62), rockM)));   // (not under the hole's top: its face would cover the opening)
+      for (let j = 0; j < 3; j++) for (let i = 0; i < 4; i++) {
+        const q = Math.sin(i * 12.9 + j * 78.2 + x * 3.1) * 43758.5, f = q - Math.floor(q), r = 0.19 + f * 0.07;
+        const b = shade(new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), rockM));
+        b.position.set(x + (i - 1.5) * (w + 0.1) / 4 + (f - 0.5) * 0.08, y0 + 0.04 - j * 0.05 + f * 0.04, z - 0.15 - j * 0.42); b.scale.set(1, 0.8, 0.9); b.rotation.set(f * 3, f * 7, 0); g.add(b);
+      }
+    } }
   return g;
 }
 
@@ -114,12 +131,6 @@ async function build(E, FX) {
   S.add(trees(TREES, (x, z) => land.at(x, z)));
   const open = (x, z) => !TREES.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < 0.3) && Math.hypot(x - MOUTH.x, z - MOUTH.z - 0.4) > 0.6;
   S.add(grass(land.scatter(CL.grass, 80, open), { size: 0.4, cols: ['#2e6a1e', '#4a8a24', '#1e5a18', '#5a9a2a', '#3a7a20'] }));
-  // the passage's roof: the floor runs in under the arch (哪吒 walks in to row 1, f806-822), and the rock closes over it
-  // (open to the sky, the notch showed black over the arch from the scene's steep view, its stones a bar across a black
-  // gap [the user's report])
-  { const top = Math.min(land.at(MOUTH.x - 0.8, MOUTH.z - 0.5), land.at(MOUTH.x + 0.8, MOUTH.z - 0.5)) - 0.12, y0 = land.at(MOUTH.x, MOUTH.z + 0.3) + MOUTH.h * 0.55 + MOUTH.w / 2 + 0.05;   // (sunk a little under the rock either side, boulders on it: no slab standing out)
-    if (top > y0) { S.add(shade(new THREE.Mesh(new THREE.BoxGeometry(MOUTH.w + 0.3, top - y0, 0.95).translate(MOUTH.x, (top + y0) / 2, MOUTH.z - 0.45), rockM)));
-      S.add(stones([[-0.3, -0.75], [0.2, -0.6], [-0.05, -0.3], [0.35, -0.2], [-0.4, -0.2]].map(([dx, dz]) => [MOUTH.x + dx, top, MOUTH.z + dz]), rockM, { size: 0.26 })); } }
   const clearOfMouth = (x, z) => !(Math.abs(x - MOUTH.x) < MOUTH.w / 2 + 0.35 && z > MOUTH.z - 1.4 && z < MOUTH.z + 0.6);   // (strewn over the mouth they crossed the black opening: the user's report)
   S.add(stones(land.scatter(CL.rock, 3, clearOfMouth), rockM, { size: 0.26 }));
   S.add(shrubs(land.scatter(CL.rock, 0.6, (x, z) => clearOfMouth(x, z) && land.weight(x, z, CL.grass) > 0.05), { size: 0.34, cols: ['#2a5a1a', '#3a6e22', '#22481a'] }));

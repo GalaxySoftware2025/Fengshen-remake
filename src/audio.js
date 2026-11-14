@@ -9,6 +9,11 @@ const buffers = new Map(), loading = new Map();
 const MUSIC_VOL = 0.55, SFX_VOL = 0.8;
 export const SFX = { cursor: 0x8045, ok: 0x806b, cancel: 0x80ae, hit: 0x8089, saved: 0x8061 };   // saved: the original's on a save (tools/rom: menu.pkl, 儲存記錄 → a slot)   // the menus' and a blow's (tools/rom: menus at 0x140b8 / 0x140e6, the hunt's strike)
 
+// songs the original plays once through (no loop in the driver's data) that loop here, from the given second: the
+// prologue's (0x15, 109 s) ran out long before the prologue did, leaving it silent [the user's call]
+const LOOPED = { 0x15: 0 };
+// where song id loops (t its data/audio.js entry [length, loop start], dur the buffer's length): [start, end], or null to play once
+export const loopOf = (id, t, dur) => t && t[1] != null ? [t[1], Math.min(t[0], dur)] : LOOPED[id] != null ? [LOOPED[id], Math.min(t ? t[0] : dur, dur)] : null;
 const key = id => typeof id === 'string' ? id : id < 0x8000 ? id.toString(16).padStart(2, '0') : id.toString(16);   // a string: a sound of the remake's own (assets/audio/<name>.ogg)
 function muted() { try { return localStorage.getItem('fs-mute') === '1'; } catch (e) { return false; } }
 
@@ -53,7 +58,7 @@ export async function music(id, fade = 0.6, restart = false) {
   const buf = await load(id); if (!buf || want !== id || (cur && cur.id === id)) return;
   const t = table[key(id)], src = ctx.createBufferSource(), gain = ctx.createGain();
   src.buffer = buf;
-  if (t && t[1] != null) { src.loop = true; src.loopStart = t[1]; src.loopEnd = Math.min(t[0], buf.duration); }
+  const lp = loopOf(id, t, buf.duration); if (lp) { src.loop = true; [src.loopStart, src.loopEnd] = lp; }
   gain.gain.value = 1; src.connect(gain); gain.connect(musicBus); src.start();
   cur = { id, src, gain };
 }

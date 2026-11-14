@@ -103,7 +103,9 @@ export function tunnel(rockM, x, z, y, side) {
   const back = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, h * 0.8, 1.6), new THREE.MeshBasicMaterial({ color: 0x010203 })); back.position.set(0, h * 0.4, -0.82);
   const arch = new THREE.Group(); arch.add(hole, back);
   for (let k = 0; k < 9; k++) { const a = Math.PI * k / 8, r = w / 2 + 0.12, b = shade(new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + (k % 3) * 0.03, 1), rockM)); b.position.set(-Math.cos(a) * r, h * 0.55 + Math.sin(a) * r - (k === 0 || k === 8 ? 0.5 : 0), 0.05); arch.add(b); }
+  for (let k = 0; k < 4; k++) { const b = shade(new THREE.Mesh(new THREE.IcosahedronGeometry(0.2 + (k % 2) * 0.03, 1), rockM)); b.position.set((k - 1.5) * w / 4, h * 0.8 + 0.06, -0.22); b.scale.set(1, 0.8, 0.95); b.rotation.set(k, k * 2.3, 0); arch.add(b); }   // boulders behind the arch's, over the black box's front (its top showed black between them and the wall: tools/qa/sets.js; a flat cap read as a block)
   const [dx, dz] = side; arch.rotation.y = Math.atan2(-dx, -dz); arch.position.set(x + dx * 0.45, y, z + dz * 0.45); g.add(arch);
+  g.name = 'cave-mouth'; g.userData.mouth = { x: x + dx * 0.45, z: z + dz * 0.45, w, h, back: [dx, dz] };   // (tools/qa/sets.js: no black open to the sky over its passage)
   return g;
 }
 

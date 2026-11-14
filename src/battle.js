@@ -434,7 +434,7 @@ class Tiles {
       // a flier's square on the floor level of a cell with nothing drawn at that level (the void, water far below): against what
       // is seen under it, unsmoothed (battle 26's crystal beside it lifted the smoothed light over the void past the cutoff)
       const open = low && overNothing(t.x, t.y), rawL = groundRaw && groundRaw[t.y * R.MAP_W + t.x];
-      c.setRGB(...(move && (over ? backdropLum() < 0.4 : open && rawL != null ? rawL < 0.4 : groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK) ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);   // (over the void: the fill against what is seen beyond, a cloud sea or the dark)
+      c.setRGB(...(move && FX.moveFill !== 'dark' && (over ? backdropLum() < 0.4 : open && rawL != null ? rawL < 0.4 : groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK) ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);   // (over the void: the fill against what is seen beyond, a cloud sea or the dark; FX.moveFill 'dark': dark everywhere, over the void too [the user's call, battle 11's rock])
       this.edge.array[i] = move ? 1 : 0;
       this.decal.array[i] = info ? 1 : 0; this.hi.array[i] = info ? info.hi : -1e3;
       if (info) { const o = (t.y * W + t.x) * 4; cd[o] = c.r; cd[o + 1] = c.g; cd[o + 2] = c.b; cd[o + 3] = move ? 2 : 1; bd[o] = info.lo; bd[o + 1] = info.hi; bd[o + 2] = info.g; }
@@ -1503,6 +1503,14 @@ export async function pickRing(a, rows) {
 // allies [the user's call], for harm a foe), top left to bottom right
 const targetScore = (u, [x, y], prefer) => { const t = R.unitAt(x, y); if (!t) return 0; return prefer === 'ally' ? (t === u ? 3 : t.side === u.side ? 2 : 0) : (R.foes(u).includes(t) ? 2 : 0); };
 export const targetOrder = (u, cells, prefer) => cells.slice().sort((a, b) => targetScore(u, b, prefer) - targetScore(u, a, prefer) || a[1] - b[1] || a[0] - b[0]);
+// an arrow moves the cursor that way (d, on the map: the view's turn already in it), to the nearest cell there, one in
+// line before one off it; none that way, it stays. (It stepped through the order instead: from 燕蓉, down went up to
+// 林雲, the next in it [the user's report]; tools/qa/target.js)
+export const targetStep = (ordered, i, d) => {
+  const [x0, y0] = ordered[i]; let best = i, bc = Infinity;
+  ordered.forEach(([x, y], j) => { const al = (x - x0) * d[0] + (y - y0) * d[1], c = al + 2 * Math.abs((x - x0) * d[1] - (y - y0) * d[0]); if (al > 0 && c < bc) { bc = c; best = j; } });
+  return best;
+};
 export async function pickTarget(u, cells, range, area, color, prefer, attack) {
   const score = c => targetScore(u, c, prefer), ordered = targetOrder(u, cells, prefer);
   let i = 0, armed = false;
@@ -1524,7 +1532,7 @@ export async function pickTarget(u, cells, range, area, color, prefer, attack) {
       if (ev.k === 'click' && j === i) return done(ordered[i]);
       if (j !== i) armed = false; i = j; if (ev.k === 'click') armed = true; show();
     }
-    if (ev.k === 'DIR') { i = (i + ((ev.d[0] + ev.d[1]) > 0 ? 1 : ordered.length - 1)) % ordered.length; armed = false; show(); }
+    if (ev.k === 'DIR') { i = targetStep(ordered, i, ev.d); armed = false; show(); }
   }
   tiles.set([]); tiles.setCursor(null); targetMark.set(null); ui.forecast(null); ui.hint(''); return null;
   function done(c) { tiles.set([]); tiles.setCursor(null); targetMark.set(null); ui.forecast(null); ui.hint(''); return c; }

@@ -7,6 +7,7 @@ import { END } from './11-lianggong.js';
 
 export default {
   look: { set: hall },
+  moveFill: 'dark',   // the move squares dark throughout (battle.js), not white over the rock a flier crosses (the void its middle reads as) [the user's call]
   sprites: [spriteKey(0x0b62ba)],   // the 鬼靈 the 召喚師 call up
   async victory(E) {
     const { ui, wait, speak } = E;

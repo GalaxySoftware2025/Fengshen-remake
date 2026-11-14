@@ -210,6 +210,8 @@ export async function campScene(E, state, onChange) {
     back: cur => {
       const no = box.querySelector('.lask button.on'); if (no) return no.click();
       const ret = [...box.querySelectorAll('.bar button')].find(b => /返回/.test(b.textContent)); if (ret) return ret.click();
+      const tab = box.querySelector('.htabs .pt.on');   // 裝備物品: from an item (a slot, the bag) back to the chosen hero first, then to the menu [the user's call]
+      if (tab && cur && cur.closest('.iring, .ibag')) return nav.focus(tab);
       if (box.contains(cur)) nav.focus(menu.querySelector('button.on') || menu.firstElementChild);
     },
   });

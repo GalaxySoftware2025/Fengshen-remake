@@ -1057,7 +1057,7 @@ export const LEVEL_POSE = {
   // 姬發: 鳳鳴岐山, the phoenix of Zhou circles him (jifaLevel)
   p5: spun([1, 0.2, 0.25], jifaLevel),
   // 雷震子: wind-and-thunder wings, a storm, a thunderclap through the earth (leiLevel)
-  p6: spun([0.65, 0.3, 1], leiLevel),
+  p6: spun([1, 1, 1], leiLevel),   // (white rings, not purple [the user's call])
   // 姜子牙: the 杏黃旗 and its ten thousand golden lotuses (jiangLevel)
   jiang: spun([1, 1, 0.1], jiangLevel),
   // 黃天化: the 攢心釘 and a jade seven-pointed star (tianhuaLevel)

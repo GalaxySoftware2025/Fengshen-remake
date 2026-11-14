@@ -213,7 +213,7 @@ async function nezha(u) {
       vfx.timed(m, rand(2.2, 3.2), (k, dt) => { v.x += Math.sin(k * 9 + from.x) * dt * 0.8; v.multiplyScalar(1 - dt * 0.3); m.position.addScaledVector(v, dt); m.rotation.x += sp.x * dt; m.rotation.y += sp.y * dt; m.rotation.z += sp.z * dt; m.material.opacity = Math.min(1, k * 6) * (1 - k); }); };
     await anim(1.8, (k, dt = 1 / 60) => {
       T += dt; a.fade = Math.max(0, 1 - k * 1.25); head.addScaledVector(vel, dt); sash.push(head.clone());
-      for (let i = 0; i < 3; i++) if (Math.random() < 0.9 * (1 - k * 0.6)) fly(a.chest().add(V(rand(-0.25, 0.25), rand(-0.45, 0.35), rand(-0.1, 0.1))), k, 2.4);   // (his petals rise into the sky)
+      for (let i = 0; i < 3; i++) if (Math.random() < 0.45 * (1 - k * 0.6)) fly(a.chest().add(V(rand(-0.25, 0.25), rand(-0.45, 0.35), rand(-0.1, 0.1))), k, 2.4);   // (his petals rise into the sky; half as many as first made [the user's call])
     });
     a.hidden = true; sash.fade(0.6);
     // the lotus under him fades slowly away, whole (no bud rising, no petals of its own: the user's calls)
