@@ -19,7 +19,7 @@ const hutCell = (x, y) => x + 0.5 > HUT.x0 - 0.2 && x + 0.5 < HUT.x1 + 0.2 && y 
 const TUFTS = [[8.5, 7.5], [8.5, 8.5], [10.5, 11.5], [10.5, 12.5], [10.5, 13.3], [31.4, 5.8], [31.4, 6.8], [31.4, 7.8], [31.4, 8.8], [30.5, 9.6], [31.4, 9.6]];
 let land = null, forest = null;
 // 磻溪's fire (scene 26 from its frame 472, battle 13): the burnt columns, the front (the westmost), its two lights
-const FIRE = { cols: new Map(), front: null, lights: [], ash: {}, wall: null, glow: null };   // cols: column -> how far it has caught (0-1)
+const FIRE = { cols: new Map(), front: null, lights: [], ash: {}, wall: null, glow: null, hut: null, uChar: { value: 99 }, uCharT: { value: 0 } };   // cols: column -> how far it has caught (0-1); uChar: the hut charred east of this x
 const FIRE_BLOCK = 58;   // the block scene 26 lays down the map's east column (x 31, rows 3-9) as 申公豹 shows the fire
 // column col takes fire: flames there (flameWall), the canes char down, the floor scorched (k: 0 to 1, as it happens)
 export function burnCol(E, col, k = 1) {
@@ -28,13 +28,14 @@ export function burnCol(E, col, k = 1) {
   if (forest) forest.userData.burn(col, k);
   if (FIRE.glow && Math.min(...FIRE.cols.keys()) !== FIRE.front) FIRE.glow.userData.place(Math.min(...FIRE.cols.keys()));
   if (FIRE.ash[col]) FIRE.ash[col].material.opacity = 0.85 * k;
-  const front = Math.min(...FIRE.cols.keys()); if (front !== FIRE.front || was == null || Math.abs(k - was) > 0.04 || k === 1) { FIRE.front = front; if (FIRE.wall) FIRE.wall.layout(); }
+  const front = Math.min(...FIRE.cols.keys()); FIRE.uChar.value = front + 1 - FIRE.cols.get(front);   // (the front column catching from its east side)
+  if (front !== FIRE.front || was == null || Math.abs(k - was) > 0.04 || k === 1) { FIRE.front = front; if (FIRE.wall) FIRE.wall.layout(); }
 }
 // the forest fire in the remake's real fire (src/kit/fire.js sheets): tall sheets close along the front, lower ones on
 // the column behind it, a few smouldering further back; their height follows how far a column has caught
 function flameWall(S) {
   const fire = sheets(S), h = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };   // fixed per spot: a relayout keeps each sheet where it was
-  return { tick: t => fire.tick(t), layout() {
+  return { fire, tick: t => fire.tick(t), layout() {
     const list = [], front = FIRE.front;
     for (const [c, k] of FIRE.cols) {
       const age = c - front, step = age === 0 ? 0.55 : age === 1 ? 0.9 : 1.7;
@@ -44,7 +45,10 @@ function flameWall(S) {
         const x = c + 0.15 + r * 0.7, zz = z + r2 * step * 0.7, kk = 0.2 + 0.8 * k;
         const ht = (age === 0 ? 2.6 + r2 * 1.2 : age === 1 ? 1.3 + r2 * 0.5 : 0.5 + r2 * 0.3) * kk, wd = age === 0 ? 1.7 : age === 1 ? 1.2 : 0.7;
         // (a sheet's foot at the highest ground just behind it: leaning back, it cut into the bank there in a straight line)
-        const y = Math.max(land.at(x, zz), land.at(x + 0.6, zz), land.at(x + 1.2, zz), land.at(x, zz - 0.6)) - 0.15;
+        // (over the hut: on its roof, which burns where the fire has reached it, as the original lays its fire block over the
+        // hut's cells too [the user's report: the flames stood on the ground under the roof, the thatch untouched])
+        const ra = FIRE.hut && FIRE.hut.userData.roofAt, roof = ra ? Math.max(...[[x, zz], [x + 0.6, zz], [x + 1.2, zz], [x, zz - 0.6]].map(([a, b]) => ra(a, b) ?? -99)) : -99;
+        const y = Math.max(land.at(x, zz), land.at(x + 0.6, zz), land.at(x + 1.2, zz), land.at(x, zz - 0.6), roof) - 0.15;
         list.push([x, y, zz, ht, r * 37, (age === 0 ? 1.08 : age === 1 ? 0.95 : 0.8) * (0.6 + 0.4 * k), wd * (0.85 + r * 0.3)]);
       }
     }
@@ -71,6 +75,39 @@ function ash(col) {
   const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x140c08, transparent: true, opacity: 0, depthWrite: false }));
   m.userData.noRange = true; m.renderOrder = 0.5; return m;
 }
+// the hut burning where the fire has reached it: the thatch, logs and pole charred black east of FIRE.uChar (a ragged
+// edge), the edge glowing and embers winking in the char
+const CHAR_GLSL = `float chH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float chV(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(chH(i), chH(i + vec2(1.0, 0.0)), f.x), mix(chH(i + vec2(0.0, 1.0)), chH(i + 1.0), f.x), f.y); }
+`;
+function charHut(g) {
+  const seen = new Set();
+  g.traverse(o => { if (!o.isMesh) return; for (const m of [].concat(o.material)) {
+    if (seen.has(m) || !m.isMeshStandardMaterial) continue; seen.add(m);
+    const prev = m.onBeforeCompile, key = m.customProgramCacheKey.bind(m);
+    m.onBeforeCompile = function (sh, r) {
+      if (prev) prev.call(this, sh, r);
+      sh.uniforms.uChar = FIRE.uChar; sh.uniforms.uCharT = FIRE.uCharT;
+      sh.vertexShader = 'varying vec3 vCharW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vCharW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = 'varying vec3 vCharW;\nuniform float uChar, uCharT;\n' + CHAR_GLSL + sh.fragmentShader
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          vec2 chP = vCharW.xz + vec2(vCharW.y * 0.7);
+          float chN = chV(chP * 5.0) * 0.4 + chV(chP * 1.3) * 0.6, chE = vCharW.x - uChar + (chN - 0.5) * 0.7;
+          float chK = smoothstep(-0.05, 0.35, chE), chL = dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.035, 0.025, 0.018) * (0.4 + chL * 0.9 + chN * 0.5), chK);`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          float chF = 0.65 + 0.35 * sin(uCharT * 9.0 + chN * 23.0) * sin(uCharT * 5.3 + chN * 11.0);
+          float chG = smoothstep(-0.2, 0.05, chE) * (1.0 - smoothstep(0.05, 0.55, chE));   // the burning edge
+          float chB = chK * smoothstep(0.72, 0.85, chV(chP * 9.0 + 3.7)) * (0.5 + 0.5 * sin(uCharT * 3.0 + chN * 40.0));   // embers glowing in the char
+          totalEmissiveRadiance += vec3(1.0, 0.34, 0.07) * (chG * 1.6 + chB * 0.8) * chF;`);
+    };
+    m.customProgramCacheKey = () => key() + '|char'; m.needsUpdate = true;
+  } });
+  return g;
+}
+// QA (tools/qa/battlecheck.js hutBurns): the hut, the line it is charred east of, the flames' mesh
+export const fireQA = () => ({ hut: FIRE.hut, uChar: FIRE.uChar, flames: FIRE.wall && FIRE.wall.fire.mesh });
 // the forest east of the map already ablaze from col on (the map's last column and the eight past it), as 申公豹 shows
 // it in scene 26 and as battle 13 starts
 export function ablaze(E, col) { for (let c = col; c < col + 9; c++) burnCol(E, c, 1); }
@@ -111,6 +148,8 @@ export function hut(y, r = HUT) {
   const rim = [], rimM = straw;
   for (const [a, b, c, d] of [[ex0, ez1 - 0.12, ex1, ez1 + 0.02], [ex0, ez0 - 0.02, ex1, ez0 + 0.12], [ex0 - 0.02, ez0, ex0 + 0.12, ez1], [ex1 - 0.12, ez0, ex1 + 0.02, ez1]]) rim.push(box(rimM, a, top - 0.16, b, c, top + 0.04, d, 2));
   g.add(merged(rimM, rim), box(T.material(T.wood(0x5a3a1a, 'ridgePole'), {}), rx0 - 0.1, ry - 0.06, cz - 0.1, rx1 + 0.1, ry + 0.1, cz + 0.1));
+  // the roof's top at a point (null off it): the lowest of its four slopes, for what stands on it (磻溪's flames)
+  g.userData.roofAt = (x, z) => x < ex0 || x > ex1 || z < ez0 || z > ez1 ? null : top + 0.04 + rise * Math.min(1, (z - ez0) / (cz - ez0), (ez1 - z) / (ez1 - cz), (x - ex0) / (rx0 - ex0), (ex1 - x) / (ex1 - rx1));
   void cx; return shade(g);
 }
 
@@ -142,7 +181,7 @@ async function build(E, FX) {
     tex: { dirt: T.dirt(0x8a806a, 'gravelPath'), turf: T.turf(0x2a5a1e), rock: T.dirt(0x5a4630, 'forestBank') },
     tint: { dirt: 0xf0ece0, turf: 0xd0e8c0, rock: 0xd8c8b0 } });
   S.add(land.mesh({ dirtK: 0.3, rockK: 0.5, topGreen: 1, bed: 0x2a3a2a }));
-  S.add(hut(land.at(27.6, 6.5)));
+  S.add(FIRE.hut = charHut(hut(land.at(27.6, 6.5))));
   // the forest: canes on every blocked cell (and on past the map), low just south of the path (no one hidden behind)
   const southOf = (x, y) => { for (let d = 1; d <= 3; d++) if (open(x, y - d)) return d; return 9; };
   const pts = [];
@@ -155,12 +194,13 @@ async function build(E, FX) {
   S.add(forest = bamboo(pts));
   // the fire: none yet on a new build (the flames belong to the engine's effects, kept across builds), its warm light
   // flickering along the front once there is one
-  FIRE.cols.clear(); FIRE.front = null; FIRE.ash = {};
+  FIRE.cols.clear(); FIRE.front = null; FIRE.ash = {}; FIRE.uChar.value = 99;
   FIRE.wall = flameWall(S); S.add(FIRE.glow = frontGlow());
   FIRE.lights = [0, 1, 2].map(i => { const l = new THREE.PointLight(0xff7a2a, 0, 9, 1.6); l.position.set(40, 1.4, 2 + i * 5); S.add(l); return l; });
   let em = 0, sm = 0;
   E.world.updaters.push((dt, t) => {
     for (const [i, l] of FIRE.lights.entries()) { if (FIRE.front == null) { l.intensity = 0; continue; } l.position.x = FIRE.front + 0.2; l.intensity = 14 * (0.75 + 0.25 * Math.sin(t * 13 + i * 2.1) * Math.sin(t * 7.7 + i)); }
+    FIRE.uCharT.value = t;
     if (FIRE.front == null) { FIRE.glow.material.opacity = 0; return; }
     FIRE.wall.tick(t); FIRE.glow.material.opacity = 0.85 * (0.8 + 0.2 * Math.sin(t * 9) * Math.sin(t * 5.3));
     const f = FIRE.front, rz = () => -3 + Math.random() * (MH + 6);

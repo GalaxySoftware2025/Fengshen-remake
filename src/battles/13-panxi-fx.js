@@ -32,10 +32,10 @@ export default {
   async intro(E) {
     const { cam, ui, tileCenter, wait } = E;
     cam.shot(tileCenter(31, 7), { dist: 11, pitch: 0.3, yaw: -1.1, speed: 1.6 }); await wait(1600);
-    cam.shot(tileCenter(22, 6), { dist: 7, pitch: 0.28, yaw: -0.3, speed: 1.4 }); await ui.toast('姜子牙被縛於磻溪草廬', 1600);
+    cam.shot(tileCenter(22, 6), { dist: 7, pitch: 0.28, yaw: -0.3, speed: 1.4 }); await wait(1600);   // (no caption over 姜子牙 [the user's call])
     cam.shot(tileCenter(3, 3), { dist: 10, pitch: 0.45, yaw: 0.4, speed: 1.4 }); await wait(1200);
     cam.release(tileCenter(3, 3));
-    await ui.banner('磻溪之戰', '', 1700);
+    await ui.banner(D.name, '', 1700);   // 磻溪, as every battle's banner reads its name [the user's call]
   },
   // won: 姜子牙 is freed from the stake in a pillar of light, then the rescue lines and the scene's outro
   async victory(E) {

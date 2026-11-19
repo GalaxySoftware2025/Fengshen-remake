@@ -1,6 +1,7 @@
 // DOM interface layered over the 3D view.
 import { D } from './rules.js';
 import { sfx, SFX } from './audio.js';
+import { toUI } from './uiscale.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -54,7 +55,7 @@ export class UI {
   menu(opts, sel, sx, sy, top = sel) {
     const m = $('menu'), step = Math.PI / 2, rad = 78;
     if (!opts) { m.classList.add('hidden'); m.innerHTML = ''; m._opts = null; return; }
-    m.classList.remove('hidden'); m.style.left = sx + 'px'; m.style.top = sy + 'px';
+    m.classList.remove('hidden'); m.style.left = toUI(sx) + 'px'; m.style.top = toUI(sy) + 'px';   // (inside the overlay's zoom: src/uiscale.js)
     let goal = -opts[top].at * step;
     if (!m.children.length) {
       m._opts = opts; m._ang = goal;
@@ -84,7 +85,7 @@ export class UI {
     if (!R) { R = el('div', 'hidden'); R.id = 'ring'; $('menu').after(R); }
     if (!H) { H = el('div', 'hidden'); H.id = 'ringhead'; R.after(H); }
     if (!rows) { R.classList.add('hidden'); H.classList.add('hidden'); R.innerHTML = ''; R._rows = null; return; }
-    R.classList.remove('hidden'); H.classList.remove('hidden'); R.style.left = sx + 'px'; R.style.top = sy + 'px';
+    R.classList.remove('hidden'); H.classList.remove('hidden'); R.style.left = toUI(sx) + 'px'; R.style.top = toUI(sy) + 'px';
     const n = rows.length, rad = Math.max(94, Math.min(175, n * 15)), step = Math.PI * 2 / n;   // (room for the 72 px squares side by side)
     if (R._rows !== rows) {   // build: the icons and the bracket
       R.innerHTML = ''; R._rows = rows; R._ang = -top * step; R._goal = R._ang;
@@ -154,16 +155,16 @@ export class UI {
   layout(project, actors, dt, showBars) {
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i]; f.t += dt; if (f.t > f.life) { f.e.remove(); this.floaters.splice(i, 1); continue; }
-      const p = project(f.world); f.e.style.left = p.x + 'px'; f.e.style.top = p.y + 'px';
+      const p = project(f.world); f.e.style.left = toUI(p.x) + 'px'; f.e.style.top = toUI(p.y) + 'px';   // (screen points inside the overlay's zoom)
     }
     for (const a of actors) {
       const u = a.u, bar = this.hpbar(u), p = project(a.head());
       const vis = showBars && u.alive && !u.away && a.dissolve === 0 && !a.hidden && p.z < 1, fade = a.fade ?? 1;   // (a unit still to come in, faded out, shows no bar)
-      bar.style.opacity = vis ? (u.hp < u.mhp ? 1 : 0.55) * fade : 0; bar.style.left = p.x + 'px'; bar.style.top = (p.y - 10) + 'px';
+      bar.style.opacity = vis ? (u.hp < u.mhp ? 1 : 0.55) * fade : 0; bar.style.left = toUI(p.x) + 'px'; bar.style.top = (toUI(p.y) - 10) + 'px';
       const w = (u.hp / u.mhp * 100) + '%'; bar.children[1].style.width = w; bar.children[0].style.width = w;
       const st = u.status.sleep ? 'Zz 睡眠' : u.status.seal ? '封法' : u.status.poison ? '中毒' : '';
       this.tag(u, u.alive ? st : '');
-      const tg = this.tags.get(u); if (tg) { tg.style.left = p.x + 'px'; tg.style.top = (p.y - 16) + 'px'; }
+      const tg = this.tags.get(u); if (tg) { tg.style.left = toUI(p.x) + 'px'; tg.style.top = (toUI(p.y) - 16) + 'px'; }
     }
   }
 }

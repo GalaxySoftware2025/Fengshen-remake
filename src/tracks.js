@@ -19,6 +19,11 @@ export const LINE_FACE = {
 // -> { slot: [x, y, facing] } (map px, as the tracks), in the sheet it last wore. Scene 18: 哪吒 (slot 4), gone into the
 // cave at f823, calls from inside (f1345) and is seen at its mouth (3.5, 2.45: in the opening's front, wholly seen) for the line, gone again after
 export const LINE_SHOW = { '18:1345:哪吒': { 4: [96, 62, 'down'] } };
+// [design, the user's call] a song other than the one the scene's script starts: 'scene:frame' -> song id (src/scene.js;
+// test/scenes.mjs checks each names a song the script starts there). Scene 31 (麒麟山 won, on to 青龍關): battle 16's song
+// (14), where its script starts battle 15's (13) [the user's call, 2026-11-15]
+export const SCENE_SONG = { '31:0': 14 };
+export const songOf = (tag, e) => SCENE_SONG[tag + ':' + e.f] ?? e.id;
 // a track at frame f, as the player poses it: null when hidden, else { x, y, gfx, facing, moving, speed (px a frame) }
 export function at(tr, f) {
   let i = 0; while (i + 1 < tr.length && tr[i + 1][0] <= f) i++;
@@ -130,7 +135,7 @@ export function soften(tr, far, w, cam, loads = []) {   // loads: the frames of 
     }
   }
   if (out[0] === tr[0]) out.shift();
-  out.offstage = cam ? offstage(raw, f0, cam, off) : [];
+  out.offstage = cam ? offstage(raw, f0, cam, off, loads) : [];
   // a track that ends held (hidden at its last point, kept where it stood after a pan): gone at the next map load
   if (tr[tr.length - 1].length < 2 && raw[raw.length - 1]) { const m = loads.find(m => m > tr[tr.length - 1][0]); if (m != null) out.push([m]); }
   out.gone = gone;
@@ -141,16 +146,24 @@ export function soften(tr, far, w, cam, loads = []) {   // loads: the frames of 
 // the stretches a unit is offstage (see soften): runs of frames it is shown, off the original's screen and not held
 // after a pan; hidden when it walked out (it moved in the 10 frames before leaving), or was off from its first frame or
 // put there by the script, and it walks back in (moving as it enters), is put elsewhere, or is gone. [from, to) in frames
-export function offstage(raw, f0, cam, off) {
+export function offstage(raw, f0, cam, off, loads = []) {
   const out = [], n = raw.length, dist = (a, b) => a && b ? Math.hypot(a.rx - b.rx, a.ry - b.ry) : 0;
   const ends = e => { for (let j = e + 1; j < n; j++) if (raw[j]) return false; return true; };   // nothing of the track after: it left for good
   const outside = k => { const r = raw[k]; return !!r && off(r.rx, r.ry, cam(f0 + k)); };   // held frames too: one that walked off and is then kept stays offstage (a stretch that begins held, the camera leaving it, is not hidden)
   for (let k = 0; k < n; k++) {
     if (!outside(k)) continue;
-    let e = k; while (e + 1 < n && outside(e + 1)) e++;
+    // (a stretch ends where the unit is put elsewhere or its slot shows another sprite: its soft end faded in the one
+    // left standing [the user's report, 2026-11-18: scene 65's 楊戩 fading in at f1157-1164, his slot then 黃天化's])
+    const placed = j => dist(raw[j], raw[j - 1]) > 24 || (raw[j].p && raw[j - 1].p && raw[j].p[3] !== raw[j - 1].p[3]);
+    let e = k; while (e + 1 < n && outside(e + 1) && !placed(e + 1)) e++;
     const before = k > 0 && raw[k - 1], after = e + 1 < n && raw[e + 1];
     const walkedOut = !!before && !before.held && !raw[k].held && dist(raw[k], raw[Math.max(0, k - 10)]) > 4;
-    const placedIn = !!before && !raw[k].held && dist(raw[k], before) > 24, fromStart = (!before && !raw[k].held) || placedIn;   // put there by the script: a cut, no fade
+    const placedIn = !!before && !raw[k].held && dist(raw[k], before) > 24;
+    // (or kept from the map before, off the new one's screen from its first frames: the camera's jump there is no pan
+    // away from someone it showed [the user's report, 2026-11-18: scene 65's 楊戩 standing where he walked to on the
+    // map before, f895-1164, never drawn on this one])
+    const newMap = !!before && loads.some(m => f0 + k - m >= 0 && f0 + k - m <= 3);
+    const fromStart = (!before && !raw[k].held) || placedIn || newMap;   // put there by the script: a cut, no fade
     const walkedIn = !!after && !after.held && dist(raw[e + 1], raw[Math.max(k, e - 9)]) > 4;
     const placedAway = !!after && dist(after, raw[e]) > 24, gone = !after || placedAway;
     // (a short stretch is a brush with the edge, kept; one the track ends in is an exit however short: scene 7's heroes

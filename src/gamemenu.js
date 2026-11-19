@@ -1,4 +1,5 @@
-// The menu at the top right [the user's call, 2026-11-08]: 選單 folds out 遊戲速度 (the game speed, src/speed.js),
+// The menu at the top right [the user's call, 2026-11-08]: 選單 folds out 遊戲速度 (the game speed, src/speed.js), 畫面品質
+// (the picture quality: 低 / 中 / 高, src/quality.js),
 // 勝利條件 (the battle's name and conditions, as its brief words them; only in a battle or its camp, not a story scene) and
 // 控制按鍵 (the controls page, as a first visit shows it). Folded, the button shows the speed when it is not ×1 (speed.js). A click
 // outside, O or Esc folds it again (that click or key does nothing else). A page opened from it pauses the game (speed.js

@@ -163,7 +163,7 @@ function setFor(key) {
     E.world.updaters.push((dt, t) => windTick(t));
     if (v.snow) {   // footprints in the snow where anyone walks [the user's call; as battle 10's splashes]
       const fp = footprints(S, (x, z) => walk(Math.floor(x), Math.floor(z)), (x, z) => land.at(x, z)); fp.vfx = E.vfx;
-      E.world.updaters.push(fp); if (window.__remake) window.__remake.footprints = fp;
+      E.world.updaters.push(fp); E.world.footprints = fp;   // (a probe; on the world, which drops it when the world changes: on window it held the snowy world after it, src/world.js reset)
     }
   }
   function openChest(x, y) {

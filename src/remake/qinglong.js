@@ -5,7 +5,8 @@
 //   the gate plaza  rows 18-22 (x 0-24; from row 19 east of x 14.75): the heroes deploy here
 //   the terraces    rows 12-15 west and 12-16 east, up the west stair (x 5.75-9.25, rows 15-18) or the east one (16.5-19.5,
 //                   16-19); between them the walled inner yard (x 9.75-14.25, rows 10-14), up its own stair (10.75-13.25,
-//                   14-18) between two stone cheeks
+//                   14-18) between two stone cheeks; its back wall (row 9) is whole, as drawn, but in scene 32's opening
+//                   (map 0f3374), where 張桂芳 walks from his hall straight down through it, a short flight (FLIGHT)
 //   the forecourt   rows 6-9 right across, up the stairs of rows 9-12 (x 6.75-9.25 and 14.75-18.25), on to the hall's
 //                   front (x 8-15, rows 3-6) between four pines on stone rings
 //   the hall        張桂芳's (x 8.2-14.8, rows 0-3): red brick, red lattice windows, a four-leaf door, a brown hip roof
@@ -35,9 +36,13 @@ const DECKS = [
 const STAIRS = [
   [2.75, 3, 5.25, 6, T2, T3, 9], [17.75, 3, 20.25, 6, T2, T3, 9],
   [6.75, 9, 9.25, 12, T1, T2, 9], [14.75, 9, 18.25, 12, T1, T2, 9],
-  [5.75, 15, 9.25, 18, T0, T1, 9], [10.75, 14, 13.25, 18, T0, INNER, 13], [10.75, 9, 12.25, 10, INNER, T2, 3],   // (the flight in the inner yard's back wall: blocked in battle, as on the original) [16.5, 16, 19.5, 19, T0, T1, 9],
+  [5.75, 15, 9.25, 18, T0, T1, 9], [10.75, 14, 13.25, 18, T0, INNER, 13], [16.5, 16, 19.5, 19, T0, T1, 9],
 ];
-function levels() {
+// the inner yard's back wall where the flight is not (the battle, the scene after it): a deck as the rest of the wall; and
+// the flight itself, scene 32's opening only (no unit may enter it in battle; the original draws a wall there [the user's
+// report, 2026-11-15: battle 16 showed this flight, and a wall where the east stair is])
+const BACK = [10.75, 9, 12.25, 10, T2 + CAP], FLIGHT = [10.75, 9, 12.25, 10, INNER, T2, 3];
+function levels(DECKS, STAIRS) {
   const L = new Levels(MW, MH, 4);
   L.set(0, 18, MW, MH, T0).set(0, 12, MW, 18, T1).set(9.75, 10, 14.25, 14, INNER)   // the gate plaza, the terraces, the inner yard
     .set(0, 3, MW, 9, T2).set(8, 0, 15, 3, T2).set(0, 0, 8, 3, T3).set(15, 0, MW, 3, T3);   // the forecourt and the hall's floor, the yards
@@ -45,8 +50,13 @@ function levels() {
   for (const [x0, z0, x1, z1, a, b, n] of STAIRS) L.stairs(x0, z0, x1, z1, a, b, n, 's');
   return L;
 }
-const LV = levels();
-const STAIR_CELLS = STAIRS.flatMap(([x0, z0, x1, z1]) => { const out = []; for (let z = z0; z < z1; z++) for (let x = Math.ceil(x0); x + 1 <= x1; x++) out.push([x, z]); return out; });
+// a plan of the pass: with the flight (scene 32's opening) or the wall whole
+function plan(flight) {
+  const decks = flight ? DECKS : DECKS.concat([BACK]), stairs = flight ? STAIRS.concat([FLIGHT]) : STAIRS;
+  return { DECKS: decks, STAIRS: stairs, LV: levels(decks, stairs),
+    STAIR_CELLS: stairs.flatMap(([x0, z0, x1, z1]) => { const out = []; for (let z = z0; z < z1; z++) for (let x = Math.ceil(x0); x + 1 <= x1; x++) out.push([x, z]); return out; }) };
+}
+let LV = null;   // the plan's levels of the set built last (a chest found)
 const TREES = [[8.95, 4.45], [8.95, 6.4], [14.0, 4.45], [14.0, 6.4]];
 const CHESTS = [[1, 1], [22, 1]];
 let M = null, world = null, chestG = new Map();
@@ -71,7 +81,8 @@ function slope(x0, x1, z0, z1, mat) {
 }
 
 // ---------------------------------------------------------------- the pass
-async function build(E, FX) {
+async function build(E, FX, P) {
+  const { DECKS, STAIRS, STAIR_CELLS } = P; LV = P.LV;
   const S = E.world.scene; M = mats(); world = E.world; chestG = new Map();
   const lay = await readLayout('assets/maps/0f3374.png', MW, MH, PALETTE, { [CL.grass]: 1.6 });
   const earth = new THREE.MeshStandardMaterial({ map: groundTex(lay, MW, MH), roughness: 0.95 });
@@ -180,6 +191,7 @@ function hall() {
   const tri = new THREE.Shape(); tri.moveTo(-0.9, 0); tri.lineTo(0.9, 0); tri.lineTo(0, 0.62); tri.closePath();
   const gab = new THREE.Mesh(new THREE.ShapeGeometry(tri), T.material(T.plaster(0xf2eee4), { side: THREE.DoubleSide }, [0.6, 0.6])); gab.position.set(11.5, y + H + 0.62, 1.95); g.add(gab);
   g.add(box(timber, 10.9, y + H + 0.7, 1.96, 12.1, y + H + 0.92, 1.99, 2));
+  g.userData.building = true;   // (a flier over it: on the forecourt's level, its own, drawn over the roof, never cut: battle.js roofed)
   return shade(g);
 }
 
@@ -198,7 +210,7 @@ function found(x, y) {
   world.updaters.push(grow);
 }
 // the solid tops: the floors and decks, the north wall and posts, the hall, the gate wall and the gatehouse's eaves
-function ground(x, z) {
+function ground(LV, x, z) {
   if (x >= 9 && x < 15 && z >= 21.1 && z < 22.45) return PLINTH;
   if (x >= 8.55 && x < 15.45 && z >= 22.45) return EAVE;
   if (z >= 23.3 && z < 24) return GATE;
@@ -208,13 +220,15 @@ function ground(x, z) {
   return LV.at(x, z);
 }
 const TREE_CELLS = [[8, 3], [9, 3], [8, 4], [9, 4], [8, 5], [9, 5], [8, 6], [9, 6], [13, 3], [14, 3], [13, 4], [14, 4], [13, 5], [14, 5], [13, 6], [14, 6]];
-export default {
-  build, openChest, ground, slopes: STAIR_CELLS, props: TREE_CELLS.concat(CHESTS, [[8, 22], [15, 22]]),
+const pass = flight => { const P = plan(flight); return {
+  build: (E, FX) => build(E, FX, P), openChest, ground: (x, z) => ground(P.LV, x, z), slopes: P.STAIR_CELLS, props: TREE_CELLS.concat(CHESTS, [[8, 22], [15, 22]]),
   // a clear mountain afternoon: the sun from the south-west, a cool sky
   mood: { bg: 0xa8c0d8, voidCol: false, fog: 0xb4c4d4, fogD: 0.012, sky: 0xd8e6f4, under: 0x4a4a3a, hemi: 1.0,
     sun: 0xfff0d8, sunI: 2.6, sunDir: [-0.45, 0.8, 0.5], sat: 1.02, exposure: 1.0, bloom: 0.25, aoR: 0.8,
     env: { top: 0xb8cce0, mid: 0x8a8c7a, low: 0x3a3a2c, lights: [[-6, 8, 4, 0xfff0d8, 3]] } },
-};
+}; };
+export default pass(false);                  // battle 16, scene 32 after it (map 0f33cc)
+export const qinglongWalk = pass(true);      // scene 32's opening (map 0f3374): 張桂芳 down through the back wall
 
 // ---------------------------------------------------------------- 鄂順's council room (map 0f3a2c, 16 x 15)
 // Measured on tools/qa/grid.py 0f3a2c: the floor x 3-12 from the back wall (z 1.75) to the front, brown tiles inlaid with

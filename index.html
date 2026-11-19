@@ -21,6 +21,7 @@
     <button class="gm-open" title="選單"><i></i><span>選單</span><b class="gm-speed"></b></button>
     <div class="gm-panel hidden">
       <div id="speed" class="gm-row"><span>遊戲速度</span><button data-d="-1">−</button><b>×1</b><button data-d="1">＋</button></div>
+      <div id="quality" class="gm-row"><span>畫面品質</span><button data-q="0">低</button><button data-q="1">中</button><button data-q="2">高</button></div>
       <button class="gm-row gm-cond">勝利條件</button>
       <button class="gm-row gm-keys">控制按鍵</button>
     </div>
@@ -57,7 +58,6 @@
   <div id="dialog" class="hidden"><div id="d-name"></div><div id="d-text"></div><div class="d-next">▼</div></div>
   <div id="toast" class="hidden"></div>
   <div id="flash"></div>
-  <div id="fps" style="position:absolute;right:12px;top:10px;font:12px monospace;color:#9f9;pointer-events:none"></div>
 
   <!-- screens -->
   <div id="title" class="screen">
@@ -132,7 +132,7 @@
   <div id="end" class="screen hidden"><div id="end-title"></div><div id="end-sub"></div><div class="press">點擊重新開始</div></div>
   <div id="card-screen" class="screen hidden"></div>
   <div id="fade"></div>
-  <div id="scene-at" class="hidden"></div>
+  <div id="dev"><div id="fps" class="hidden"></div><div id="scene-at" class="hidden"></div></div>   <!-- the dev readouts, top left: frame cost (battle.js devTick), where a scene is (scene.js) -->
   <div id="loading" class="screen"><div class="l-text">載入中</div><div class="l-bar"><div id="l-fill"></div></div></div>
 </div>
 <script src="data/common.js"></script>

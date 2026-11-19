@@ -4,7 +4,7 @@
 // grass tufts, stones, shrubs and trees. The map runs on past its edges (mirrored layout) under the fog.
 import * as THREE from 'three';
 import * as T from './tex.js';
-import { loadImg } from '../world.js';
+import { loadImg, preRender } from '../world.js';
 import { shade } from './parts.js';
 
 const R = 4;   // layout samples per cell
@@ -311,12 +311,12 @@ export function grass(pts, o = {}) {
   const tufts = pts.map(([x, y, z]) => {
     const s = (o.size ?? 0.45) * (0.6 + Math.random() * 0.7); d.position.set(x, y - 0.02, z); d.rotation.set(0, Math.random() * 6.3, 0); d.scale.set(s * 1.25, s * 0.7, s * 1.25); d.updateMatrix();   // 30% shorter [the user's request]
     const t = (0.8 + Math.random() * 0.4) * 0.7, warm = Math.random() * 0.06;   // 30% darker [the user's request]
-    return { x, z, m: d.matrix.clone(), c: new THREE.Color(t + warm, t, t * (0.88 - warm)) };
+    return { x, y, z, m: d.matrix.clone(), c: new THREE.Color(t + warm, t, t * (0.88 - warm)) };
   });
   const BAND = 4, out = new THREE.Group(), dir = new THREE.Vector3();
-  let quarter = -1, queued = false;
+  let quarter = -1, queued = false, cut = [];
   const build = q => {   // q: the way the camera looks, 0 north (-z), 1 east (+x), 2 south (+z), 3 west (-x)
-    quarter = q; for (const m of out.children.slice()) { out.remove(m); m.dispose(); }
+    quarter = q; cut = []; for (const m of out.children.slice()) { out.remove(m); m.dispose(); }
     const far = q === 0 ? t => t.z : q === 2 ? t => -t.z : q === 1 ? t => -t.x : t => t.x;   // smaller: farther off
     const C = o.core, side = !C ? () => 1 : q === 0 || q === 2 ? t => t.x < C[0] ? 0 : t.x > C[2] ? 2 : 1 : t => t.z < C[1] ? 0 : t.z > C[3] ? 2 : 1;
     const bands = new Map();
@@ -333,11 +333,51 @@ export function grass(pts, o = {}) {
         if (nq !== quarter && !queued) { queued = true; requestAnimationFrame(() => { queued = false; build(nq); }); }   // (not inside the render)
       };
       m.receiveShadow = true; m.userData.noAO = true; out.add(m);
+      // the band in blocks of CUT x CUT across the map, each block's bounds (the tufts' roots, out by their reach) and
+      // its tufts' places in the band's far-to-near order: only the blocks the camera can see are sent (cull)
+      const n = list.length, ids = new Map(), of = new Int32Array(n), box = [], per = [];
+      list.forEach((t, i) => { const key = Math.floor(t.x / CUT) * 4096 + Math.floor(t.z / CUT); let c = ids.get(key);
+        if (c == null) { c = box.length; ids.set(key, c); box.push(new THREE.Box3()); per.push(0); } of[i] = c; per[c]++; box[c].expandByPoint(new THREE.Vector3(t.x, t.y, t.z)); });
+      const near = box.map(b => b.clone().expandByVector(REACH)), wide = box.map(b => b.clone().expandByVector(REACH).expandByScalar(SLACK));
+      m.userData.cullAll = { n, mat: m.instanceMatrix.array.slice(), col: m.instanceColor.array.slice() };   // (every tuft: src/downcast.js reads these, not the ones sent)
+      cut.push({ m, of, near, wide, per, sent: new Uint8Array(box.length).fill(1), want: new Uint8Array(box.length) });
     });
   };
   build(0);
+  // before each frame, for its camera (World.render's preRender; battle.js measureGround's view from above too): each
+  // band sends the tufts of the blocks in view, kept in its order (a filtered list stays sorted: the picture is the
+  // same as with every tuft sent, tools/qa/grasscull.js). Battles 12 and 18 sent 108-125k tufts a frame for 6-7% in
+  // view, two thirds of the GPU's frame (tools/qa/perf.js). A band is sent again only when a block it needs is missing,
+  // or when over twice what it needs is sent (the blocks taken with SLACK to spare: a camera's glide re-sends seldom).
+  // window.__grassAll: every tuft (the check's reference)
+  const fr = new THREE.Frustum(), pm = new THREE.Matrix4(), seen = new Float64Array(33);
+  let away = 0, seenCut = null;
+  const cull = (camera, scene) => {
+    let root = out; while (root.parent) root = root.parent;
+    if (root !== scene) { if (++away > 600) preRender.delete(cull); return; }   // (not in this scene: gone with its world, or not yet added)
+    away = 0; const all = !!(typeof window !== 'undefined' && window.__grassAll);
+    out.updateWorldMatrix(true, true); camera.updateMatrixWorld();
+    // the same view as last time (the battle's camera at rest): nothing to do (the tests cost 0.36 ms a frame in battle 18)
+    const e = camera.matrixWorld.elements, p = camera.projectionMatrix.elements; let same = seenCut === cut && seen[32] === (all ? 1 : 0);
+    for (let i = 0; i < 16; i++) { if (seen[i] !== e[i] || seen[16 + i] !== p[i]) same = false; seen[i] = e[i]; seen[16 + i] = p[i]; }
+    seen[32] = all ? 1 : 0; seenCut = cut; if (same) return;
+    for (const b of cut) {
+      const m = b.m, { n, mat, col } = m.userData.cullAll;
+      pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(m.matrixWorld); fr.setFromProjectionMatrix(pm);
+      let need = false, wantN = 0, sentN = 0;
+      for (let c = 0; c < b.near.length; c++) { const w = all || fr.intersectsBox(b.near[c]); b.want[c] = w ? 1 : 0; if (w) { wantN += b.per[c]; if (!b.sent[c]) need = true; } if (b.sent[c]) sentN += b.per[c]; }
+      if (!need && sentN <= wantN * 2 + 500) continue;
+      for (let c = 0; c < b.wide.length; c++) b.sent[c] = all || b.want[c] || fr.intersectsBox(b.wide[c]) ? 1 : 0;
+      const A = m.instanceMatrix.array, C = m.instanceColor.array; let k = 0;
+      for (let i = 0; i < n; i++) if (b.sent[b.of[i]]) { A.set(mat.subarray(i * 16, i * 16 + 16), k * 16); C.set(col.subarray(i * 3, i * 3 + 3), k * 3); k++; }
+      m.count = k;
+      for (const [at, w] of [[m.instanceMatrix, 16], [m.instanceColor, 3]]) { at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(1, k) * w); at.needsUpdate = true; }
+    }
+  };
+  preRender.add(cull);
   out.userData.noAO = true; return out;
 }
+const CUT = 1, REACH = new THREE.Vector3(0.7, 0.8, 0.7), SLACK = 1;   // the blocks' size; how far a tuft reaches past its root (its blades, the wind, the trodden lean); spare round the view
 // stones: lumpy displaced icosahedra in rock material. None stands taller than o.maxH over the ground it lies on (0.18:
 // ankle-high, stood among; a random turn could stand the largest on end, into a body's height: tools/qa/sets.js)
 export function stones(pts, mat, o = {}) {

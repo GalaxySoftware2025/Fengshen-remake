@@ -8,6 +8,8 @@ import * as E from './battle.js';
 import * as K from './campaign.js';
 import * as Save from './save.js';
 import { mountSpeed } from './speed.js';
+import { mountQuality } from './quality.js';
+import './uiscale.js';   // (the overlay's size follows the window's: --ui, at once and on every resize)
 import { mountMenu, showControls } from './gamemenu.js';
 import { defaultParty, autoPick } from './party.js';
 import { rulesOf, fxOf } from './battles/index.js';
@@ -298,7 +300,7 @@ async function single() {
 }
 
 async function main() {
-  mountSpeed(); mountMenu();   // the menu, top right: the game speed and the controls page (src/speed.js, src/gamemenu.js)
+  mountSpeed(); mountQuality(); mountMenu();   // the menu, top right: the game speed, the picture quality and the controls page (src/speed.js, src/quality.js, src/gamemenu.js)
   E.boot(); Audio.attach();
   if (/qa/.test(location.hash)) (await import('./qa.js')).install(E);   // QA probes for tools/qa/tour.js
   await document.fonts.ready;

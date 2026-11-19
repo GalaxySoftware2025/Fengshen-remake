@@ -2,13 +2,16 @@
 // battle rules.js has loaded. A battle's own presentation comes in as FX (src/battles/NN-*-fx.js), called with this
 // module (E) so it can use the same camera, effects and animations.
 import * as THREE from 'three';
-import { World, groundH, rand, setLook, setEffectGround } from './world.js';
+import { World, groundH, rand, setLook, setEffectGround, preDraw } from './world.js';
 import { SpriteBank, Actor, VIEW } from './actors.js';
 import { LEVEL_POSE } from './levelup.js';
 import { speed } from './speed.js';
+import { quality, onQuality, frameGate } from './quality.js';
+import { toUI } from './uiscale.js';
 import * as Keys from './keys.js';
 import { VFX } from './vfx.js';
-import { playSpell, playItem, arrowMesh, scripted } from './spells.js';
+import { playSpell, playItem, arrowMesh, scripted, beastGain } from './spells.js';
+export { beastGain };   // (src/scene.js: a summon gained, E.beastGain; the scene player imports none of the spells)
 import { spriteKey } from './sprites.js';
 import { UI, spellDesc, itemDesc } from './ui.js';
 import * as R from './rules.js';
@@ -83,21 +86,23 @@ export class Cam {
 // dark ground (white move squares): under 0.16, or under 0.6 of the map's median where the whole battle is lit low (an
 // evening battle's sand still takes the dark squares)
 let groundLum = null, groundRaw = null, LUM_DARK = 0.16;   // (groundRaw: unsmoothed, for a flier's square over the void or water)
-export const groundLight = () => ({ lum: groundLum, dark: LUM_DARK });   // (tools/qa/tiles.js)
+export const groundLight = () => ({ lum: groundLum, raw: groundRaw, dark: LUM_DARK });   // (tools/qa/tiles.js)
 // QA (the downward-ray index against the Raycaster it replaced): the highest hit under five points of every cell
 export function downCheck() {
   const ray = new THREE.Raycaster(), bad = []; let n = 0;
+  window.__grassAll = true; preDraw(world.camera, world.scene);   // (every tuft for the Raycaster too: the grass's cull leaves the instances in view; the index keeps them all)
   for (let y = 0; y < R.MAP_H; y++) for (let x = 0; x < R.MAP_W; x++) for (const [dx, dz] of [[0.5, 0.5], [0.2, 0.2], [0.8, 0.8]]) {
     const g = groundH(x + 0.5, y + 0.5) + 6; ray.set(new THREE.Vector3(x + dx, g, y + dz), DOWN);
     const a = ray.intersectObjects(RANGE_SOLID, false)[0], b = rangeIdx().cast(x + dx, y + dz, g)[0]; n++;
     if (!!a !== !!b || (a && (Math.abs(a.point.y - b.y) > 2e-3 || a.object !== b.object))) bad.push((x + dx) + ',' + (y + dz) + ' ray ' + (a ? a.point.y.toFixed(3) : '-') + ' idx ' + (b ? b.y.toFixed(3) : '-'));
   }
+  window.__grassAll = false; preDraw(world.camera, world.scene);
   return { n, bad: bad.length, first: bad.slice(0, 5) };   // (a point exactly on an edge may go either way: battle 4 has one)
 }
 // QA (tools/qa/battlecheck.js): the first move squares drawn again from cold (their scenery looked up afresh), in ms
 export function squaresCold() { RANGE_CELLS.clear(); RANGE_VOID.clear(); const t0 = performance.now(); tiles.set(tiles.last || []); return performance.now() - t0; }
 export function measureLight() {
-  SURF = null; RANGE_IDX = null; RANGE_CELLS.clear(); RANGE_VOID.clear(); FLOOR.clear(); NEAR.clear(); LANDED.clear(); OPEN = null; WATER = null;   // the set or the room changed: the flier surfaces and the cells' scenery are measured again
+  SURF = null; RANGE_IDX = null; RANGE_CELLS.clear(); RANGE_VOID.clear(); FLOOR.clear(); NEAR.clear(); LANDED.clear(); OPEN = null; WATER = null; LEVELS = null;   // the set or the room changed: the flier surfaces and the cells' scenery are measured again
   if (tiles) { tiles.ground(); tintScenery(); rangeIdx(); }   // and the ground the squares lie on; the scenery takes the range (its downward-ray index made now, under the loading screen)
   try {
     // the map's run of light from high up; each cell the darker of that and its ground under any canopy (battle 13's bamboo
@@ -106,7 +111,10 @@ export function measureLight() {
     groundRaw = above.map((v, i) => Math.min(v, under[i])); groundLum = smoothLum(groundRaw);
     const med = a[a.length >> 1] || 1;
     RU.uRangeLite.value = FX.moveLite || 0.4;   // the white squares' strength (fx moveLite to change it): 0.4 everywhere, as first set for battles 5 and 6; at full strength they read as odd, shiny slabs [the user's calls]
-    LUM_DARK = FX.moveFill === 'dark' ? 0 : med < 0.05 ? 0.16 : Math.min(0.16, med * 0.6) * 0.8;   // (FX.moveFill 'dark': the battle's own call, battle 3)   // a map too dark for dark squares to show on at all takes white ones: the dark interiors (median under 0.05; battle 3 asks for dark ones, FX.moveFill), not battle 2's night sand (0.057; tools/qa/tiles.js)   // (0.8: only ground clearly darker than the map's run; on battle 7's evenly dark night court a wall's shadow, 0.04 against 0.05 round it, turned two cells white: the user's report)
+    // and on a map lit enough for dark squares, white ones only on ground near black (0.035): grass in a pine's shade,
+    // a cliff's foot, a ditch took white squares among the dark ones (battles 4, 14, 16, 21, 22, 30) [the user's call,
+    // 2026-11-15, as for battles 3, 11 and 28 before: dark squares wherever they can be]
+    LUM_DARK = FX.moveFill === 'dark' ? 0 : med < 0.05 ? 0.16 : Math.min(0.035, Math.min(0.16, med * 0.6) * 0.8);   // (FX.moveFill 'dark': the battle's own call, battle 3)   // a map too dark for dark squares to show on at all takes white ones: the dark interiors (median under 0.05; battle 3 asks for dark ones, FX.moveFill), not battle 2's night sand (0.057; tools/qa/tiles.js)   // (0.8: only ground clearly darker than the map's run; on battle 7's evenly dark night court a wall's shadow, 0.04 against 0.05 round it, turned two cells white: the user's report)
   }
   catch (e) { groundLum = null; }
   warmUp();
@@ -147,7 +155,7 @@ function measureGround(under) {
   // 0.2 from one load to the next, so the squares came out light or dark by chance (tools/qa/tiles.js)
   const hid = []; S.traverse(o => { const m = o.material; if (o.visible && (o.isPoints || (m && !Array.isArray(m) && (m.blending === THREE.AdditiveBlending || (m.transparent && !m.depthWrite))))) { o.visible = false; hid.push(o); } });
   const fog = S.fog; S.fog = null; const r = world.renderer, prev = r.getRenderTarget();
-  r.setRenderTarget(rt); r.render(S, cam); r.setRenderTarget(prev); S.fog = fog; for (const o of hid) o.visible = true;
+  preDraw(cam, S); r.setRenderTarget(rt); r.render(S, cam); r.setRenderTarget(prev); S.fog = fog; for (const o of hid) o.visible = true;   // (preDraw: the grass for this camera, the whole map)
   const px = new Uint8Array(W * K * H * K * 4); r.readRenderTargetPixels(rt, 0, 0, W * K, H * K, px); rt.dispose();
   const out = new Float32Array(W * H);
   for (let py = 0; py < H * K; py++) for (let qx = 0; qx < W * K; qx++) {
@@ -201,31 +209,62 @@ function openReach() {
 // a body of open water (blocked cells over water in its own shader, joined side by side; not a chasm's void) lies at one level:
 // the lowest walkable shore round it, the beach [the user's report: battle 21's squares over the sea stepped where
 // some cells took the beach's level and others the temple terrace's, the highest within three, and fliers stood at
-// either]; null with no shore one can walk to
+// either]; null with no shore one can walk to.
+// The body runs on over the blocked land in it no higher than the lowest floor (a shoal showing through the water, a
+// spit of sand with a chest on it), and a body with no shore of its own takes the lowest shore of any other body of the
+// same water (the sea is one sea) [the user's report, 2026-11-17: battle 21's north channel, cut in pieces where the
+// seabed showed, stood fliers at the beach's level in some cells and the terrace's, 2.2 up, in the next, and on the
+// chest's spit; the sea north-east of the gate, with no beach of its own, at the terrace's] (tools/qa/sets.js level)
 let WATER = null;
 function waterLevel(x, y) {
   if (!WATER) {
-    WATER = new Map(); const W = R.MAP_W, H = R.MAP_H, wet = (i, j) => R.inMap(i, j) && blocked(i, j) && overWater(i, j);
+    WATER = new Map(); const W = R.MAP_W, H = R.MAP_H, wetIn = (i, j) => R.inMap(i, j) && blocked(i, j) && overWater(i, j) ? rangeIdx().cast(i + 0.5, j + 0.5, 50)[0] : null;
+    let floor = null; for (const k of openReach()) { const [i, j] = k.split(',').map(Number); if (G.terrain[j][i] === 0) floor = Math.min(floor ?? 99, tileY(i, j)); }
+    const shoal = (i, j) => floor != null && R.inMap(i, j) && blocked(i, j) && groundTop(i, j) <= floor;
+    const bodies = [];
     for (let j0 = 0; j0 < H; j0++) for (let i0 = 0; i0 < W; i0++) {
-      if (WATER.has(i0 + ',' + j0) || !wet(i0, j0)) continue;
-      const body = [], q = [[i0, j0]], seen = new Set([i0 + ',' + j0]); let lo = null;
-      while (q.length) { const [i, j] = q.pop(); body.push(i + ',' + j);
+      if (WATER.has(i0 + ',' + j0) || !wetIn(i0, j0)) continue;
+      const body = [], q = [[i0, j0]], seen = new Set([i0 + ',' + j0]), sheets = new Set(); let lo = null;
+      while (q.length) { const [i, j] = q.pop(), w = wetIn(i, j); body.push(i + ',' + j); if (w) sheets.add(w.object);
         for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ni = i + di, nj = j + dj, nk = ni + ',' + nj; if (!R.inMap(ni, nj) || seen.has(nk)) continue;
-          if (wet(ni, nj)) { seen.add(nk); q.push([ni, nj]); }
+          if (wetIn(ni, nj) || shoal(ni, nj)) { seen.add(nk); q.push([ni, nj]); }
           else if (!blocked(ni, nj) && G.terrain[nj][ni] === 0 && openReach().has(nk)) lo = Math.min(lo ?? 99, tileY(ni, nj)); } }
-      for (const c of body) WATER.set(c, lo);
+      for (const c of body) WATER.set(c, lo); bodies.push({ body, sheets, lo });
+    }
+    for (const b of bodies) if (b.lo == null) {
+      let lo = null; for (const o of bodies) if (o.lo != null && [...o.sheets].some(s => b.sheets.has(s))) lo = Math.min(lo ?? 99, o.lo);
+      for (const c of b.body) WATER.set(c, lo);
     }
   }
   return WATER.has(x + ',' + y) ? WATER.get(x + ',' + y) : undefined;
 }
+// the ground levels of the map: the levels of the open cells one walks to (else of every open cell). A flier, and its
+// square, on a cell only a flier reaches is always at one of them, the nearest to what the rules below find: never a
+// cell's own land or what stands there, higher or lower [the user's call, 2026-11-17: battle 27's squares stepped down
+// beside a wall and fliers dropped onto them; "for fliers, no matter the target cell is higher or lower, always ground
+// level", on every map] (tools/qa/sets.js level: every flier-only cell at a ground level)
+let LEVELS = null;
+function groundLevels() {
+  if (LEVELS) return LEVELS;
+  const s = new Set(), add = (i, j) => s.add(Math.round(tileY(i, j) * 100) / 100);
+  for (const k of openReach()) { const [i, j] = k.split(',').map(Number); if (G.terrain[j][i] === 0) add(i, j); }
+  if (!s.size) for (let j = 0; j < R.MAP_H; j++) for (let i = 0; i < R.MAP_W; i++) if (R.inMap(i, j) && !blocked(i, j) && G.terrain[j][i] === 0) add(i, j);
+  return (LEVELS = [...s].sort((a, b) => a - b));
+}
+const toGround = h => { const L = groundLevels(); return h == null || !L.length ? h : L.reduce((b, l) => Math.abs(l - h) <= Math.abs(b - h) + 1e-6 ? l : b); };   // (a tie: the higher, as the floor takes the highest near: battle 17's pond between 0.3 and 0.5 beside 0.5)
 function floorY(x, y) {
   const k = x + ',' + y; if (FLOOR.has(k)) return FLOOR.get(k);
-  const wl = waterLevel(x, y); if (wl != null) { FLOOR.set(k, wl); return wl; }
-  let best = null;
-  for (let r = 1; r <= 3 && best == null; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+  const wl = waterLevel(x, y); if (wl != null) { const w = toGround(wl); FLOOR.set(k, w); return w; }
+  let best = null; const base = blocked(x, y) ? buildingBase(x, y) : null;   // (a building's cell: the floors near it at its own level first)
+  for (const atBase of base != null ? [true, false] : [false]) for (let r = 1; r <= 3 && best == null; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
     if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const nx = x + dx, ny = y + dy;
-    if (R.inMap(nx, ny) && !blocked(nx, ny) && G.terrain[ny][nx] === 0 && openReach().has(nx + ',' + ny)) best = Math.max(best ?? -99, tileY(nx, ny));
+    if (R.inMap(nx, ny) && !blocked(nx, ny) && G.terrain[ny][nx] === 0 && openReach().has(nx + ',' + ny) && (!atBase || tileY(nx, ny) <= base + 0.35)) best = Math.max(best ?? -99, tileY(nx, ny));
   }
+  // with no floor within three cells: the nearest floor's level, where standAt puts a flier, so its cursor and square are
+  // there too: over the void far below the play [the user's report: battle 27's corners drew them in the abyss], and deep
+  // in a wood or on a cliff [the user's report: battle 13's forest far from the paths stood 哪吒 on the canes, 0.7-4 up]
+  // @qa battles
+  const far = best == null; if (far) best = nearFloor(x, y);
   // where the cell's own land rises over that level, nothing drawn at the floor level under it (a cliff, a raised rock):
   // the level stays the ground's, the land is kept whole (no cut: it once cut battle 19's rock through to the sky), the
   // unit drawn over it and its square seen through it, as on a roof (whole) [the user's call: units and squares on the
@@ -235,12 +274,12 @@ function floorY(x, y) {
   // nor over it where the cell's own land lies well below the level found (a sand islet, a strip of shore beside a raised
   // terrace: battle 21's squares round its chest floated at the terrace's height [the user's report]): its own ground
   // (only where the top of the cell's middle is that land itself: not a kerb over the water beside battle 23's bridge)
-  if (best != null) { const h = rangeIdx().cast(x + 0.5, y + 0.5, 50)[0], g = groundTop(x, y); if (h && h.material && h.material.userData.rangeTint && h.y <= g + 0.05 && g < best - 0.3) best = tileY(x, y); }
-  // with no floor within three cells, over the void far below the play: the nearest floor's level, where standAt puts a
-  // flier, so its cursor and square are there too [the user's report: battle 27's corners drew them in the abyss]
-  // @qa battles
-  if (best == null) { const n = nearFloor(x, y); if (n != null && groundTop(x, y) < n - 1) best = n; }
-  FLOOR.set(k, best); return best;
+  // (with no floor near, not over the void: battle 27's corners, their land more than 1 under the floor's level)
+  // (nor over water, which is no land to stand on: water with no shore one walks to takes the floor level round it, not
+  // its surface: battle 17's pond by a grass corner no one reaches, battle 2's sea under the cliffs, 0.3-2 under the walk
+  // [the user's report, 2026-11-16: fliers over the ponds stood lower than the ground])
+  if (best != null && !(far && groundTop(x, y) < best - 1) && !overWater(x, y)) { const h = rangeIdx().cast(x + 0.5, y + 0.5, 50)[0], g = groundTop(x, y); if (h && h.material && h.material.userData.rangeTint && h.y <= g + 0.05 && g < best - 0.3) best = tileY(x, y); }
+  best = toGround(best); FLOOR.set(k, best); return best;
 }
 // is something drawn at level L in cell (x, y) under what stands there: at three of five points a surface within 0.3
 // under it (rays down through the set's solid pieces, surfaceY's index)
@@ -251,8 +290,13 @@ function floorUnder(x, y, L) {
 }
 // nothing of the set's own land under a cell's middle: no surface, or only water in its own shader (not tinted by the range)
 function overNothing(x, y) { const h = rangeIdx().cast(x + 0.5, y + 0.5, 50)[0]; return !h || !(h.material && h.material.userData.rangeTint); }
+// a surface that glows under a cell's middle (a set marks its material userData.glows: battle 14's lava): its molten reds
+// measure dim but shine on screen, and the white fill washed them pink: the dark fill there [the user's call]
+function glowUnder(x, y) { const h = rangeIdx().cast(x + 0.5, y + 0.5, 50)[0]; return !!h && !!h.material && !!h.material.userData.glows; }
 // water under a cell's middle: the sets' water (src/sets.js water), not the void of a chasm nor rock left untinted
-function overWater(x, y) { const h = rangeIdx().cast(x + 0.5, y + 0.5, 50)[0]; return !!h && !!h.material && !!h.material.userData.water; }   // (by its mark: an untinted rock is not water, battle 19)
+// (by its mark: an untinted rock is not water, battle 19), what floats on it too (a lily pad within 0.06 over it: battle
+// 17's pads made their cells land, and a flier stood on the pond [the user's report, 2026-11-16])
+function overWater(x, y) { const [h, w] = rangeIdx().cast(x + 0.5, y + 0.5, 50), wet = k => !!k && !!k.material && !!k.material.userData.water; return wet(h) || (!!h && wet(w) && h.y - w.y < 0.06); }
 // the ground's height under the squares, DRAPE samples a cell (at the cells' corners and every 1/DRAPE between): a square
 // on open ground follows it, sloped, stepped or lumpy (a flat plate at the cell's highest point floated over a ledge's
 // slope and let the ground's lumps through: battle 10's ledges, battle 8's grass, the user's report); built again with
@@ -312,8 +356,11 @@ const RANGE_GLSL = `
       }
     }
 `;
+// see-through pieces too (a decal on the floor, a sheen, ice, scorch marks): they lie over the tinted ground and hid the
+// range there (battle 12's yin-yang: the user's report, the range shows over everything; tools/qa/tiles.js covered);
+// blended over the tinted ground, a tinted layer gives the one tint, never twice
 function rangeMaterial(m) {
-  if (!m || m.userData.rangeTint || m.transparent || m.blending !== THREE.NormalBlending || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial)) return;
+  if (!m || m.userData.rangeTint || m.blending !== THREE.NormalBlending || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial)) return;
   const prev = m.onBeforeCompile, key = m.customProgramCacheKey.bind(m);
   m.onBeforeCompile = function (sh, r) {
     if (prev) prev.call(this, sh, r);
@@ -434,7 +481,7 @@ class Tiles {
       // a flier's square on the floor level of a cell with nothing drawn at that level (the void, water far below): against what
       // is seen under it, unsmoothed (battle 26's crystal beside it lifted the smoothed light over the void past the cutoff)
       const open = low && overNothing(t.x, t.y), rawL = groundRaw && groundRaw[t.y * R.MAP_W + t.x];
-      c.setRGB(...(move && FX.moveFill !== 'dark' && (over ? backdropLum() < 0.4 : open && rawL != null ? rawL < 0.4 : groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK) ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);   // (over the void: the fill against what is seen beyond, a cloud sea or the dark; FX.moveFill 'dark': dark everywhere, over the void too [the user's call, battle 11's rock])
+      c.setRGB(...(move && FX.moveFill !== 'dark' && (over ? backdropLum() < 0.4 : open && rawL != null ? rawL < 0.4 && !glowUnder(t.x, t.y) : groundLum && groundLum[t.y * R.MAP_W + t.x] < LUM_DARK) ? C.moveLite : t.c)); this.mesh.setColorAt(i, c);   // (over the void: the fill against what is seen beyond, a cloud sea or the dark; FX.moveFill 'dark': dark everywhere, over the void too [the user's call, battle 11's rock])
       this.edge.array[i] = move ? 1 : 0;
       this.decal.array[i] = info ? 1 : 0; this.hi.array[i] = info ? info.hi : -1e3;
       if (info) { const o = (t.y * W + t.x) * 4; cd[o] = c.r; cd[o + 1] = c.g; cd[o + 2] = c.b; cd[o + 3] = move ? 2 : 1; bd[o] = info.lo; bd[o + 1] = info.hi; bd[o + 2] = info.g; }
@@ -743,11 +790,14 @@ const roomArt = k => 'assets/battles/' + String(D.n).padStart(2, '0') + (k ? '/r
 // instead, a roof, a wall or a cliff (battle 9's 雷震子 was drawn inside the temple hall, hidden under its roof)
 export const isFlier = u => { const c = D.costs && D.costs[u.moveType]; return !!(c && c[2] < 127); };
 // where a unit stands on a cell: its ground; a flier over a blocked cell on the floor level round it (floorY: what is there
-// fades, OBSTRUCT), or where none is near on top of what is there
-export const standAt = (u, x, y) => { const p = tileCenter(x, y); if (isFlier(u)) { const f = blocked(x, y) ? floorY(x, y) : null; p.y = f != null ? f : Math.max(p.y, surfaceY(x, y), blocked(x, y) ? groundTop(x, y) : -99);
+// fades, OBSTRUCT), or where none is near on top of what is there. On a cell one walks, a flier stands where the walkers
+// do, its square and cursor there: never on what overhangs it [the user's report, 2026-11-16: 哪吒 beside 張桂芳 in
+// battle 16 stood on the hall's eave, 1.6 over the yard; eaves, gates, crowns and rocks over open cells did the same in
+// 22 other battles, up to 4 up]
+export const standAt = (u, x, y) => { const p = tileCenter(x, y); if (isFlier(u) && blocked(x, y)) { const f = floorY(x, y); p.y = f != null ? f : Math.max(p.y, surfaceY(x, y), groundTop(x, y));
   // nor over the void far below the play where no floor is within three cells (behind 西岐's hall wall, battle 28's 飛兵 at
   // (20,2) stood 1.6 under the floor: the camera dived after it): the nearest floor's level
-  if (f == null && blocked(x, y)) { const n = nearFloor(x, y); if (n != null && p.y < n - 1) p.y = n; } } return p; };
+  if (f == null && blocked(x, y)) { const n = nearFloor(x, y); if (n != null && p.y < n - 1) p.y = n; p.y = toGround(p.y); } } return p; };
 const NEAR = new Map();
 function nearFloor(x, y) {
   const k = x + ',' + y; if (NEAR.has(k)) return NEAR.get(k);
@@ -812,12 +862,28 @@ function surfaceY(x, y) {
 // through the roof (the squares' see-through pass; the cursor drawn over it) [the user's report: on the roof's top
 // they stood above him on the screen]
 export const whole = (x, y) => blocked(x, y) && (roofed(x, y) || (floorY(x, y) != null && LANDED.has(x + ',' + y)));   // kept whole over a unit at its floor level: a roof, a cliff, a raised rock
+// Not only what a set tags: anything more than BIG_SPAN cells across is kept whole too (a hall, a gatehouse, a house, a
+// wall): what is cut is a column, a tree or a rock, at most a cell or two across [the user's report, 2026-11-15: battle
+// 16's hall, built without the tag, opened onto its inside under a flier's squares; 姜子牙's hut, 孟津's houses, the gates
+// of battles 7, 23 and 30 and the walls of battles 3, 5, 6 and 20 did the same]. (An instanced mesh's instances are
+// props, trees or tufts: never measured whole.)
+const BIG_SPAN = 3.2, SPAN = new WeakMap(), _box = new THREE.Box3();
+const spanOf = o => { if (!SPAN.has(o)) { _box.setFromObject(o); SPAN.set(o, Math.max(_box.max.x - _box.min.x, _box.max.z - _box.min.z)); } return SPAN.get(o); };
+const buildingOf = o => { for (; o; o = o.parent) if (o.userData.building) return o; return null; };
 export function roofed(x, y) {
   if (!blocked(x, y)) return false;
   surfaceY(x, y); const k = x + ',' + y; if (SURF.roof.has(k)) return SURF.roof.get(k);
-  const hit = SURF.idx.cast(x + 0.5, y + 0.5, groundH(x + 0.5, y + 0.5) + 6)[0]; let b = false;
-  for (let o = hit && hit.object; o && !b; o = o.parent) b = !!o.userData.building;
+  const hit = SURF.idx.cast(x + 0.5, y + 0.5, groundH(x + 0.5, y + 0.5) + 6)[0], o = hit && hit.object;
+  const b = !!o && (!!buildingOf(o) || (!o.isInstancedMesh && spanOf(o) > BIG_SPAN));
   SURF.roof.set(k, b); return b;
+}
+// the level a tagged building stands at (the bottom of the whole of it), or null: its cells' floor level is its own, not a
+// higher floor beside it [the user's report: battle 16's hall, between two yards a storey up, put the squares and fliers
+// at its ends at the yards' level, at its middle at the forecourt's]
+const BASE = new WeakMap();
+function buildingBase(x, y) {
+  surfaceY(x, y); const hit = SURF.idx.cast(x + 0.5, y + 0.5, groundH(x + 0.5, y + 0.5) + 6)[0], b = hit && buildingOf(hit.object);
+  if (!b) return null; if (!BASE.has(b)) BASE.set(b, new THREE.Box3().setFromObject(b).min.y); return BASE.get(b);
 }
 const FV = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 
@@ -915,7 +981,9 @@ const BEAM_FS = `uniform float uA, uTip, uT; varying vec2 vUv;
     gl_FragColor = vec4(col * a, a);
   }`;
 // @qa job:hud job:sounds   (a hero's fall: tools/qa/hud.js checks it; it runs once a job, which best-effort coverage misses)
-export async function allyDeath(u) {
+export const allyDeath = u => { const a = actorOf(u); return inFront(a, a.pos, () => allyFall(u)); };
+// @qa job:hud job:sounds   (the same)
+async function allyFall(u) {
   const own = !opts.classicfall && deathOf(u); if (own) return own(u);   // each hero's and guest's own fall (src/deaths.js); #...&classicfall: the original's
   const a = actorOf(u), P = a.pos.clone(), face = u.facing, S = world.scene, cm = world.camera, hudOn = !document.getElementById('hud').classList.contains('hidden');
   cam.shot(P.clone().setY(P.y + 0.6), { speed: 3 });
@@ -1105,7 +1173,11 @@ export function spellCtx(u, at, targets, results, cells) {
   };
   ctx.cam.camera = world.camera; return ctx;
 }
-export async function levelUpAnim(u, ch) {
+// a hero's level-up and fall are drawn over the scenery, the hero and all they bring (world.front: a wall of 聖靈山's
+// second room hid a level-up, the user's report)
+const inFront = async (a, P, run) => { const close = world.front([a.mesh, a.big], [a.root], P, 3); try { return await run(); } finally { close(); } };
+export const levelUpAnim = (u, ch) => { const a = actorOf(u); return inFront(a, a.pos, () => levelUpPlay(u, ch)); };
+async function levelUpPlay(u, ch) {
   const a = actorOf(u), P = a.pos.clone(), face = u.facing;
   cam.focus(P);
   sfx(SND.levelUp);   // where the original plays its own (0x805A at ROM 0x12B30, as the level-up box opens)
@@ -1258,8 +1330,10 @@ const ITEM_SND = { 6: [[0x8042, 0], [0x8042, 41]], 10: [[0x8089, 0]], 11: [[0x80
   17: Array.from({ length: 9 }, (_, k) => [0x807f, k * 10]) };
 function itemSounds(id, harmful) {
   const at = harmful ? 0 : 450;
-  for (const [snd, f] of ITEM_SND[id] || RESTORE) later(() => sfx(snd), at + f * 1000 / 60);
+  for (const [snd, f] of ITEM_SND[id] || RESTORE) later(() => sfx(snd, { ch: chOf(snd) }), at + f * 1000 / 60);
 }
+// the channels effect snd plays on in the original (data/spellsound.js SFX_CH): one cuts off what still plays on them
+const chOf = snd => (globalThis.SFX_CH || {})[snd];
 // a spell script's own clock [the user's report: 楊戩's summons ran short of the original and its sound track]: t0 the
 // cast's start, until(s) waits to s seconds after it, track the offsets (s) of the spell's own sounds from its cue
 // (data/spellsound.js, the original's): the original's beats are its sounds, so a script lays its strikes on track
@@ -1267,9 +1341,14 @@ function itemSounds(id, harmful) {
 function timeSpell(c, id, t0) { c.t0 = t0; c.track = ((globalThis.SPELL_SND || {})[id] || []).map(([, f]) => f / 60); return c; }
 // fn after ms of game time (not setTimeout: it keeps to the fast-forward and to tools/qa/video.js's stepped frames)
 function later(fn, ms) { if (ms <= 0) fn(); else wait(ms).then(fn); }
-// a spell's own sounds (data/spellsound.js), the first as it lands, the rest the original's spacing apart
+// a spell's own sounds (data/spellsound.js), the first as it lands, the rest the original's spacing apart, each cutting
+// off what still plays on its channels; one held (the original asking for it every frame) sounds its first frame for
+// that long, then plays out
 function spellSounds(id) {
-  for (const [snd, f] of (globalThis.SPELL_SND || {})[id] || []) later(() => sfx(snd), f * 1000 / 60);
+  for (const [snd, f, hold] of (globalThis.SPELL_SND || {})[id] || []) {
+    if (hold) later(() => sfx(snd, { ch: chOf(snd), hold: hold / 60 }), f * 1000 / 60);
+    later(() => sfx(snd, { ch: chOf(snd) }), (f + (hold || 0)) * 1000 / 60);
+  }
 }
 export async function useItem(u, idx, at) {
   const id = u.items[idx], it = D.items[id], eff = R.itemEffect(u, it);
@@ -1502,7 +1581,11 @@ export async function pickRing(a, rows) {
 // the order the target cursor steps through: who the cast is for first (for help the caster himself before the other
 // allies [the user's call], for harm a foe), top left to bottom right
 const targetScore = (u, [x, y], prefer) => { const t = R.unitAt(x, y); if (!t) return 0; return prefer === 'ally' ? (t === u ? 3 : t.side === u.side ? 2 : 0) : (R.foes(u).includes(t) ? 2 : 0); };
-export const targetOrder = (u, cells, prefer) => cells.slice().sort((a, b) => targetScore(u, b, prefer) - targetScore(u, a, prefer) || a[1] - b[1] || a[0] - b[0]);
+// the picker's order, its first the cursor's start: the caster for help, else a foe; then the nearest to the caster
+// (steps on the grid, then straight), then row by row [the user's report, 2026-11-17: a harmful cast started on a
+// further foe, the top row's first] (tools/qa/target.js)
+const stepsTo = (u, [x, y]) => Math.abs(x - u.x) + Math.abs(y - u.y), crowTo = (u, [x, y]) => Math.hypot(x - u.x, y - u.y);
+export const targetOrder = (u, cells, prefer) => cells.slice().sort((a, b) => targetScore(u, b, prefer) - targetScore(u, a, prefer) || stepsTo(u, a) - stepsTo(u, b) || crowTo(u, a) - crowTo(u, b) || a[1] - b[1] || a[0] - b[0]);
 // an arrow moves the cursor that way (d, on the map: the view's turn already in it), to the nearest cell there, one in
 // line before one off it; none that way, it stays. (It stepped through the order instead: from 燕蓉, down went up to
 // 林雲, the next in it [the user's report]; tools/qa/target.js)
@@ -1635,12 +1718,31 @@ let last = performance.now();
 // budget, changes in 0.05 steps only, never right after a change (each one reallocates the post chain: a hitch), and a
 // scale that proved too slow becomes a ceiling, so it settles instead of see-sawing. Frames over 120 ms (loading a world,
 // compiling shaders) are not counted. #fps shows it; #noscale turns it off.
-const perf = { acc: 0, n: 0, scale: 0, max: Math.min(1.5, window.devicePixelRatio || 1), min: 0.6, cool: 0, fps: 0, gpu: 0, good: 0, ceil: 9, ceilAt: 0, floor: 0, miss: 0, before: 0, show: /fps/.test(location.hash) };
-const BUDGET = 12, PIXELS = 2.6e6;   // GPU ms aimed at when there is room to grow (60 Hz leaves 16.7); start at most this many pixels
+// At its smallest scale (or where shrinking stopped helping) a machine still late gives up the costly passes one at a
+// time (QUALITY: World.setQuality), and takes them back, the last given up first, before it grows again; a pass that
+// proved too slow when taken back is not tried again for 30 s. A new world (another battle, scene or room) starts with
+// the scale and passes where they were but without the old set's limits: a light set after a heavy one climbs back in
+// seconds, not 5% every 30 s (tools/qa/governor.js)
+const QUALITY = ['', ' · no AO', ' · no AO, MSAA', ' · no AO, MSAA, bloom'];
+// The player's 畫面品質 (src/quality.js) bounds it: the largest scale (max), the GPU ms aimed at (budget) and the passes
+// left off however much room there is (off: the level never taken back below it). 高 is the governor as it was.
+const perf = { acc: 0, n: 0, scale: 0, max: Math.min(quality().max, window.devicePixelRatio || 1), min: 0.6, cool: 0, fps: 0, gpu: 0, good: 0, ceil: 9, ceilAt: 0, floor: 0, miss: 0, before: 0, level: quality().off, lock: 0, lockAt: 0, tried: 0, scene: null };
+let BUDGET = quality().budget;   // GPU ms aimed at when there is room to grow (60 Hz leaves 16.7)
+const PIXELS = 2.6e6;   // start at most this many pixels
 const step = k => Math.round(Math.min(perf.max, Math.max(perf.min, k)) * 20) / 20;
+// a new pick: its bounds at once (a lower one shrinks the scale and turns its passes off now; a higher one lets the
+// passes back and the scale climb with the headroom, from where it is)
+onQuality(q => {
+  BUDGET = q.budget; perf.max = Math.min(q.max, window.devicePixelRatio || 1); perf.level = q.off;
+  perf.ceil = 9; perf.floor = 0; perf.before = 0; perf.lock = 0; perf.tried = 0; perf.good = 0; perf.cool = 2;
+  if (!world) return; world.setQuality(perf.level);
+  if (perf.scale) { const k = step(perf.scale); if (k !== perf.scale) { perf.scale = k; world.setScale(k); } }
+});
+// @qa job:governor   (tools/qa/governor.js feeds it made-up machines; tools/qa/scope.mjs)
 export function governor(ms) {
   if (/noscale/.test(location.hash)) return;
   if (!perf.scale) { perf.scale = step(Math.min(perf.max, Math.sqrt(PIXELS / (window.innerWidth * window.innerHeight)))); world.setScale(perf.scale); perf.cool = 1; }
+  if (perf.scene !== world.scene) { perf.scene = world.scene; perf.ceil = 9; perf.floor = 0; perf.before = 0; perf.lock = 0; world.setQuality(perf.level); }   // (a new world: its own limits)
   if (ms > 120) { perf.acc = perf.n = perf.miss = 0; world.takeGpu(); return; }
   perf.acc += ms; perf.n++; if (ms > 21) perf.miss++;
   if (perf.n < 30) return;
@@ -1648,22 +1750,55 @@ export function governor(ms) {
   if (perf.cool > 0) { perf.cool--; return; }
   let k = perf.scale;
   if (perf.before && gpu != null) { if (gpu > perf.before.gpu * 0.85) perf.floor = perf.before.scale; perf.before = 0; }   // a drop that saved little: the cost is not in the pixels, stop shrinking
+  const now = performance.now(), least = Math.max(perf.min, perf.floor);
+  if (perf.lock && now - perf.lockAt > 30000) perf.lock = 0;
+  if (missed && perf.scale <= least + 1e-6 && perf.level < QUALITY.length - 1) {   // late at the smallest scale: give up the next pass
+    if (perf.tried && now - perf.tried < 10000) { perf.lock = perf.level + 1; perf.lockAt = now; }   // (one just taken back: too slow, leave it off a while)
+    perf.tried = 0; world.setQuality(++perf.level); perf.good = 0; perf.cool = 2; return;
+  }
+  if (!missed && perf.level > Math.max(perf.lock, quality().off) && (gpu != null ? gpu < BUDGET * 0.7 : avg < 17.6 && ++perf.good >= 6)) {   // room again: the last pass given up back first
+    perf.good = 0; perf.tried = now; world.setQuality(--perf.level); perf.cool = 2; return;
+  }
   if (missed) k *= gpu != null && gpu > BUDGET ? Math.max(0.75, Math.sqrt(BUDGET / gpu)) : avg > 28 ? 0.8 : 0.9;   // frames missed
-  else if (gpu != null ? gpu < BUDGET * 0.8 : avg < 17.6 && ++perf.good >= 4) { perf.good = 0; k = gpu != null ? Math.min(k * 1.15, k * Math.sqrt(BUDGET / gpu)) : k * 1.08; }   // clear headroom
-  if (k < perf.scale) { perf.ceil = Math.min(perf.ceil, perf.scale - 0.05); perf.ceilAt = performance.now(); perf.good = 0; }
+  else if (gpu != null ? gpu < BUDGET * 0.8 : avg < 17.6 && ++perf.good >= 4) { perf.good = 0; k = gpu != null ? Math.min(k * 1.15, k * Math.sqrt(BUDGET / gpu)) : k * 1.08;   // clear headroom
+    if (gpu != null && gpu < BUDGET * 0.5) perf.ceil = 9; }   // (under half the budget: a ceiling from a heavier stretch is stale)
+  if (k < perf.scale) { perf.ceil = Math.max(least, Math.min(perf.ceil, perf.scale - 0.05)); perf.ceilAt = performance.now(); perf.good = 0; }   // (never under the floor: late at the floor, it sank to 55% and held a light stretch after for minutes)
   else if (perf.ceil < 9 && performance.now() - perf.ceilAt > 30000) { perf.ceil += 0.05; perf.ceilAt = performance.now(); }   // a heavy stretch (a big spell) does not cap it for good
   k = step(Math.max(Math.min(k, perf.ceil), perf.floor));
   if (Math.abs(k - perf.scale) >= 0.05) { if (k < perf.scale && gpu != null) perf.before = { gpu, scale: perf.scale }; perf.scale = k; world.setScale(k); perf.cool = 2; }
-  if (perf.show) $('fps').textContent = perf.fps.toFixed(0) + ' fps · ' + (gpu != null ? gpu.toFixed(1) + ' ms GPU · ' : '') + (perf.scale * 100 | 0) + '%';
 }
-export const perfState = () => ({ fps: perf.fps, gpu: perf.gpu, scale: perf.scale, ceil: perf.ceil, floor: perf.floor });
+// the dev readout (index.html #fps, top left above the scene readout), twice a second: the frame rate, the CPU ms a frame
+// (this loop's own work, the render's calls included), the GPU ms (the governor's timer: - where there is none), the
+// render scale, the JS heap (Chrome only: - elsewhere), the textures held and the draw calls a frame (every pass); in a
+// battle below the turn order where they would meet. On
+// when playing locally; the public build hides it (from-rom, index.html), the QA browsers too (cdp.js sets __qaQuiet:
+// their pictures and pixel checks stay as they were); #fps shows it anywhere [the user's call]. (tools/qa/devinfo.js)
+const dev = { show: /fps/.test(location.hash) || (!document.documentElement.classList.contains('from-rom') && !window.__qaQuiet), t: 0, n: 0, ms: 0, cpu: 0, calls: 0 };
+// @qa job:devinfo   (the dev readout: hidden in the other QA browsers; tools/qa/scope.mjs)
+function devTick(now, ms, cpu) {
+  const info = world && world.renderer.info; if (info && info.autoReset) info.autoReset = false;   // (the calls of every pass in a frame, reset here)
+  dev.n++; dev.ms += Math.min(ms, 250); dev.cpu += cpu; if (info) { dev.calls += info.render.calls; info.reset(); }
+  if (now - dev.t < 500) return;
+  const el = $('fps'), heap = performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + ' MB' : '-';
+  el.textContent = (1000 / (dev.ms / dev.n)).toFixed(0) + ' fps · CPU ' + (dev.cpu / dev.n).toFixed(1) + ' ms · GPU ' + (perf.gpu ? perf.gpu.toFixed(1) + ' ms' : '-') + ' · ' + ((perf.scale || 1) * 100 | 0) + '%' + QUALITY[perf.level] + ' · JS ' + heap + ' · ' + (info ? info.memory.textures : 0) + ' tex · ' + Math.round(dev.calls / dev.n) + ' draws';
+  el.classList.remove('hidden'); dev.t = now; dev.n = dev.ms = dev.cpu = dev.calls = 0;
+  // below the battle's turn order where they would meet (12 portraits, centred: it reaches the left in a narrower window)
+  const o = $('order'), box = $('dev'), r = o && o.offsetParent && o.children.length ? o.getBoundingClientRect() : null;
+  box.style.top = (r && r.left < el.getBoundingClientRect().right + 8 ? Math.round(r.bottom + 6) : 6) + 'px';
+}
+// the frame's own CPU ms, the mean since the last call (tools/qa/perf.js)
+const cpuAcc = { s: 0, n: 0 };
+export const cpuMs = () => { const v = cpuAcc.n ? cpuAcc.s / cpuAcc.n : null; cpuAcc.s = cpuAcc.n = 0; return v; };
+export const perfState = () => ({ fps: perf.fps, gpu: perf.gpu, scale: perf.scale, ceil: perf.ceil, floor: perf.floor, level: perf.level });
 // one frame that throws must not stop the game: the loop asks for its next frame only at its end, so an exception used to end
 // it for good (the view frozen, the camera still, every wait() hung, while a scene's own clock ran on: the user's report,
 // scenes 20-22). Each part of a frame is guarded; each distinct error is reported once (console.error: a page error to QA)
 const frameErrs = new Set();
 function frameError(e) { const m = String((e && e.stack) || e); if (frameErrs.has(m)) return; frameErrs.add(m); console.error('frame:', e); }
+const gate = frameGate(60);
 export function frame(now) {
-  const ms = now - last; if (cam && ready && !frozen) governor(ms);
+  if (!gate(now)) { requestAnimationFrame(frame); return; }   // at most 60 frames a second, whatever the screen's rate (src/quality.js)
+  const t0 = performance.now(), ms = now - last; if (cam && ready && !frozen) governor(ms);
   const rdt = frozen ? stepDt : Math.max(0, Math.min(0.05, ms / 1000)); last = Math.max(last, now); stepDt = 0;   // a frame stamped before the last one counts as no time
   let dt = rdt * timeScale * speed();   // (speed: the player's pick, top right, src/speed.js)
   if (vfx && vfx.hitstop > 0) { vfx.hitstop -= rdt; dt *= 0.04; }
@@ -1682,13 +1817,16 @@ export function frame(now) {
     obstruct(dt);
     tiles.update(gameT); activeMark.update(gameT, G.active ? actorOf(G.active) : null); targetMark.update(gameT);
     ui.layout(project, [...actors.values()], dt, !$('hud').classList.contains('hidden'));
-    if (menuAnchor) { const [x, y] = menuPos(); for (const m of [$('menu'), $('ring')]) if (m) { m.style.left = x + 'px'; m.style.top = y + 'px'; } }
+    if (menuAnchor) { const [x, y] = menuPos(); for (const m of [$('menu'), $('ring')]) if (m) { m.style.left = toUI(x) + 'px'; m.style.top = toUI(y) + 'px'; } }   // (inside the overlay's zoom)
     if (PG.frame) PG.frame();
     } catch (e) { frameError(e); }
     try { world.render(); } catch (e) { frameError(e); }
     if (window.__qaFrame) window.__qaFrame();   // #qa probes read the frame just drawn (src/qa.js)
   }
   if (stepDone) { const f = stepDone; stepDone = null; f(); }
+  const cpu = performance.now() - t0; cpuAcc.s += cpu; cpuAcc.n++;
+  // @qa job:devinfo   (the dev readout: hidden in the other QA browsers; tools/qa/scope.mjs)
+  if (dev.show) try { devTick(now, ms, cpu); } catch (e) { frameError(e); }
   requestAnimationFrame(frame);
 }
 export function resize() { world.resize(window.innerWidth, window.innerHeight); }
@@ -1720,7 +1858,7 @@ export function boot() {
   window.addEventListener('resize', resize); resize();
   bank = new SpriteBank(); ui = new UI(bank); cam = new Cam(world.camera);
   setupInput();
-  window.__remake = { G, R, actors, cam, tiles, C, cellInfo, roofed, whole, pick: (x, y) => pick({ clientX: x, clientY: y }), cellLevel: levelY, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState, downCheck, squaresCold };
+  window.__remake = { G, R, actors, cam, tiles, C, cellInfo, roofed, whole, pick: (x, y) => pick({ clientX: x, clientY: y }), cellLevel: levelY, vfx, world, W: world, push, opts, castSpell, scripted, syncActors, placeActor, walkActor, standAt, isFlier, groundLevels: () => groundLevels(), levelUpAnim, enterRoom, set: () => FX.look && FX.look.set, clock: () => gameT, levelPose: LEVEL_POSE, groundLight, measureLight, freeze: on => { frozen = !!on; }, step: dt => new Promise(res => { frozen = true; stepDt = dt; stepDone = res; }), bank, doAttack, useItem, openChest, strikeChest, swingAt, popChest, tileCenter, actorOf, perfState, downCheck, squaresCold };
   requestAnimationFrame(frame);
 }
 // build the world for the loaded battle (R.loadBattle first) and load its sprites; again for every new battle

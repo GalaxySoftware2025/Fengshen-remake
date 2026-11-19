@@ -8,6 +8,7 @@
 //    and fight back. No win or loss. Its own board and set (src/battles/arena.js, src/remake/arena.js).
 // Toolbar actions queue up and run at safe points, so they never cut an animation.
 import * as R from './rules.js';
+import { toUI } from './uiscale.js';
 import { PG, ui, world, vfx, bank, cam, actors, actorOf, syncActors, placeActor, killAnim, flinch, levelUpAnim, anim,
   tileCenter, project, input, push, playerTurn, aiTurn, opts } from './battle.js';
 import * as E from './battle.js';
@@ -130,7 +131,7 @@ function pgPop() {
     PG.key = key; el.innerHTML = `<div class="pg-nm"><b>${u.name}</b><small>Lv ${u.lv}　${u.hp}/${u.mhp}${u.done ? '　已行動' : ''}</small></div>`;
     for (const [label, cls, fn] of PG_ACTS) { const b = document.createElement('button'); b.textContent = label; b.className = cls; b.onclick = e => { e.stopPropagation(); pgRun(() => fn(u)); }; el.appendChild(b); }
   }
-  const p = project(actorOf(u).head()); el.style.left = (p.x + 34) + 'px'; el.style.top = (p.y - 18) + 'px';
+  const p = project(actorOf(u).head()); el.style.left = (toUI(p.x) + 34) + 'px'; el.style.top = (toUI(p.y) - 18) + 'px';   // (inside the overlay's zoom)
 }
 // the toolbar and popup, over a battle or the arena (after the battle's world is built)
 export function pgSetup() {

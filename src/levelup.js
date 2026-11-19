@@ -903,7 +903,7 @@ async function tuLevel(a, P) {
   vfx.burst(P.clone().setY(P.y + 0.2), { n: 30, speed: 3.5, cols: [DIRT, [0.65, 0.55, 0.4], [1, 0.8, 0.45]], size: 0.06, life: 0.8, g: 10, up: 0.8, shape: 0 });
   await anim(0.35, k => { a.fade = 1; a.lift = -0.9 + Math.sin(k * Math.PI * 0.75) * 1.5; });
   await anim(0.3, k => { a.lift = 0.6 * (1 - k * k); }); a.lift = 0;
-  ui.floater(a.head().add(V(0, 0.35, 0)), '＃％＄！', 'dmg text', 1.4);
+  ui.floater(a.head().add(V(0, 0.35, 0)), '＃％＄！', 'dmg text chatter', 1.4);   // (white: style.css .dmg.text.chatter)
   const ht = once('heart', heartTex);
   for (let i = 0; i < 5; i++) later(() => { const m = card(ht, 0.24, 0.24), q0 = a.head().addScaledVector(right, rand(-0.35, 0.35)), ph = rand(0, 6);
     anim(1.1, k => { m.position.copy(q0).add(V(Math.sin(k * 5 + ph) * 0.08, k * 0.8, 0)); face(m); m.material.opacity = Math.min(1, k * 6) * (1 - k); }).then(() => drop(m)); }, i * 120);

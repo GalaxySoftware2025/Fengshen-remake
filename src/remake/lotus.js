@@ -340,6 +340,7 @@ export function lotus(src) {
     for (const r of LV.ramps) S.add(stairs(r, stone, riser, 1));
     // the water over every pond, and on past the map
     const water = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40).rotateX(-Math.PI / 2), pondWater()); water.position.set(MW / 2, WATER, MH / 2); S.add(water);   // (no shadows on it: the walkways' fell black on the ponds)
+    water.material.userData.water = true;   // (src/battle.js overWater: a pond lies at one level, its shore's: a flier over it stood on the water, under the walk [the user's report, 2026-11-16])
     const bed = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x0c1410, roughness: 1 })); bed.position.set(MW / 2, BED - 0.42, MH / 2); S.add(bed);
     // balustrades on the blocked flagstone-and-post cells: a turned post at each, a carved panel under a rounded rail to
     // each neighbour at the same height

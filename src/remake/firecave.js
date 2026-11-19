@@ -74,6 +74,7 @@ function lavaPool(E, S, r, y) {
         gl_FragColor = vec4(col * 0.75, 1.0);   // (kept under the tone mapping's shoulder: brighter, the reds washed out to cream)
         #include <colorspace_fragment>
       }` }));
+  m.name = 'lava'; m.material.userData.glows = true;   // (glows: a flier's squares over it take the dark fill, battle.js glowUnder; the name: tools/qa/tiles.js)
   m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2); S.add(m);
   E.world.updaters.push((dt, tt) => { U.uTime.value = tt; });   // (game time: keeps to the fast-forward)
   return m;

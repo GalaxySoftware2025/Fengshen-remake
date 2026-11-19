@@ -37,7 +37,7 @@ const flat = (map, w, h, order = 6) => { const m = new THREE.Mesh(new THREE.Plan
 const feetOf = a => (a.big.visible ? a.big : a.mesh).position.clone();
 
 // ---------------------------------------------------------------- the kit: one gesture, one signature effect
-const during = (sec, fn) => vfx.timed(new THREE.Object3D(), sec, fn);   // an effect that runs beside the gesture
+const during = (sec, fn, onEnd) => vfx.timed(new THREE.Object3D(), sec, fn, onEnd);   // an effect that runs beside the gesture (onEnd: when it is over)
 const raise = (a, f = 0) => pose.cast(a, f);                           // the cast frame held: a hand or staff raised
 async function strike(a, P, col, power = 1, o) {                       // the attack's wind-up held, then the blow into the ground
   pose.atk(a, 0); await anim(0.3, k => { a.lift = Math.sin(k * Math.PI / 2) * 0.1; });
@@ -248,7 +248,7 @@ export const CASTS = {
     await wait(300);
     for (let s = 0; s < 4; s++) {   // a strum: each string's note goes out as a wave of wind with embers in it
       const r = vfx.ribbon({ col: s % 2 ? [0.7, 1, 0.85] : FIRE, width: 0.05, n: 20, fade: 0.3 }), t0 = s * 1.57 + 0.4;
-      during(0.6, k => { const t = t0 + k * 2.6, rr = 0.3 + k * 1.1; r.push(V(P.x + Math.cos(t) * rr, P.y + 0.5 + s * 0.12, P.z + Math.sin(t) * rr)); if (Math.random() < 0.4) spark(V(P.x + Math.cos(t) * rr, P.y + 0.5, P.z + Math.sin(t) * rr), FIRE, { vy: rand(0.4, 1), life: 0.4 }); });
+      during(0.6, k => { const t = t0 + k * 2.6, rr = 0.3 + k * 1.1; r.push(V(P.x + Math.cos(t) * rr, P.y + 0.5 + s * 0.12, P.z + Math.sin(t) * rr)); if (Math.random() < 0.4) spark(V(P.x + Math.cos(t) * rr, P.y + 0.5, P.z + Math.sin(t) * rr), FIRE, { vy: rand(0.4, 1), life: 0.4 }); }, () => r.end());   // (ended when the wave is over: left alone, it stayed on screen)
       await wait(70);
     }
     vfx.light(a.chest(), FIRE, 6, 0.5, 5);
@@ -284,6 +284,7 @@ export const CASTS = {
     vfx.timed(beast, 0.85, k => { const t = k * 6.28 * 1.05 - 1.57, r = 0.85 * Math.sin(Math.min(1, k * 1.4) * Math.PI / 2) * (k > 0.85 ? (1 - k) / 0.15 : 1), y = 0.35 + Math.abs(Math.sin(k * 6.28 * 3)) * 0.25;
       beast.position.set(P.x + Math.cos(t) * r, P.y + y, P.z + Math.sin(t) * r); face(beast); beast.scale.x = Math.cos(t + 1.57) > 0 ? -1 : 1; trail.push(beast.position.clone()); });
     await wait(850);
+    trail.end();   // (its trail fades as it springs back: never ended, it stayed looped round him after the cast [the user's report, 2026-11-17]; tools/qa/casts.js)
     vfx.burst(a.chest(), { n: 16, speed: 2, cols: [[1, 1, 1], WHITE], size: 0.04, life: 0.3, g: 0, shape: 5 });
     await wait(200);
   },

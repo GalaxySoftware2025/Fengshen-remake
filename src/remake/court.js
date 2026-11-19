@@ -136,7 +136,7 @@ async function build(E, FX) {
   S.add(curtain(M, 4.1, 5.4, 5.78, TOP - 0.5, 3.4, 'l', 5), curtain(M, 17.6, 18.9, 5.78, TOP - 0.5, 3.4, 'r', 5));
 
   // ---- the columns: two flanking the alcove on the upper tier, two at the wall's step, up to the frieze
-  for (const [x, z, y, r] of [[9.5, 3.75, Y.tier2, 0.4], [13.5, 3.75, Y.tier2, 0.4], [6.5, 5.5, Y.hall, 0.42], [16.5, 5.5, Y.hall, 0.42]]) {   // (the outer two with their feet at row 5.9, as drawn: row 6 is walked, battle 31)
+  for (const [x, z, y, r] of [[9.5, 3.45, Y.tier2, 0.4], [13.5, 3.45, Y.tier2, 0.4], [6.5, 5.5, Y.hall, 0.42], [16.5, 5.5, Y.hall, 0.42]]) {   // (the outer two with their feet at row 5.9, as drawn: row 6 is walked, battle 31; the inner two set into the wall's line, their drums ending at row 4.1, clear of the sprites leaning back from row 4, as the original draws them behind 聞太師 and 妲己: scene 28)
     S.add(pillar(Mcol, x, z, y, TOP - y, r));
   }
 

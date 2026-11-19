@@ -46,6 +46,11 @@ function staticOps(R, base, chapter) {
     if (w >= 0xfffd) break;
     const n = SIZE[w], arg = R.bytes(base + o + 2, n - 2), op = { op: w };
     if (w === 19) counters[R.W(base + o + 2)] = R.W(base + o + 4);
+    if (w === 38 && R.L(base + o + 2) === 0x5130) {   // the court's cheer runs a line of its own: op 4's arguments (speaker, actor, count) as immediates at 0x51B4, the speaker's counter on by one
+      const spk = R.B(0x51b4), cnt = R.W(0x51b6), idx = cnt >= 0x8000 ? cnt & 0x7fff : counters[spk] || 0;
+      if (cnt < 0x8000) counters[spk] = idx + cnt;
+      try { op.text = message(R, chapter, spk, idx); } catch (e) { if (!(e instanceof RangeError)) throw e; op.text = '?'; }
+    }
     if (w === 4 || w === 55) {
       const spk = arg[0], cnt = arg[2] << 8 | arg[3]; let idx;
       if (cnt >= 0x8000) idx = cnt & 0x7fff; else { idx = counters[spk] || 0; counters[spk] = idx + cnt; }
@@ -150,22 +155,24 @@ function materialise(tr, slot, events, ghosts, gap = 14, raw = tr) {   // (raw: 
     }
     out.push([f, k]); i++;
   }
-  const on = p => p[1] !== null, flick = new Set(); let run = 0;
-  for (let q = 2; q < raw.length; q++) { run = on(raw[q]) !== on(raw[q - 1]) && on(raw[q - 1]) !== on(raw[q - 2]) && raw[q][0] - raw[q - 1][0] === 1 ? run + 1 : 0; if (run >= 6) flick.add((on(raw[q]) ? raw[q] : raw[q - 1])[1][2]); }
-  for (const g of flick) ghosts.push(slot + ':' + g);
+  // (with the frame its flicker starts, '@f': shown before that, the original draws it solid [the user's report: scene
+  // 36's 守護靈 stood see-through from f70, the original's solid until f192])
+  const on = p => p[1] !== null, flick = new Map(); let run = 0;
+  for (let q = 2; q < raw.length; q++) { run = on(raw[q]) !== on(raw[q - 1]) && on(raw[q - 1]) !== on(raw[q - 2]) && raw[q][0] - raw[q - 1][0] === 1 ? run + 1 : 0; if (run >= 6) { const g = (on(raw[q]) ? raw[q] : raw[q - 1])[1][2]; if (!flick.has(g)) flick.set(g, raw[q - run][0]); } }
+  for (const [g, f] of flick) ghosts.push(slot + ':' + g + '@' + f);
   return out;
 }
 // where the hardware draws a unit's sheet (unique on screen, worn by this unit alone) 8 px or more from its track for
 // 12 frames or more, the track follows the hardware (scene 8: 紂王 pacing before his throne)
 const RAW_CUTS = [[0x0ee120, '0edf20', '30', 18]];   // native cut, the sheet of its sprite (extract/natives.js), the slot it takes, frames of growth
-function follow(pts0, drawn, sole, near = 128, off = 8, run = 12) {   // (near: a stale record can trail a slow walk by 95 px, scene 16 f1060)
+function follow(pts0, drawn, sole, near = 128, off = 8, run = 12, alone = () => false) {   // alone(g, f0, f1): no other unit wears sheet g over the frames (tools/rom/export_scenes.py follow: scene 43's 文王)   // (near: a stale record can trail a slow walk by 95 px, scene 16 f1060)
   let pts = [];
   pts0.forEach((p, k) => { pts.push(p); if (k + 1 < pts0.length) for (let f = p[0] + 1; f < pts0[k + 1][0]; f++) { const q = p.slice(); q[0] = f; pts.push(q); } });
   const vis = []; pts.forEach((p, k) => { if (p[1] !== null) vis.push(k); });
   const fill = new Map();
   for (let v = 0; v + 1 < vis.length; v++) {
     const a = vis[v], b = vis[v + 1];
-    if (b - a < 2 || pts[a][3] !== pts[b][3] || !sole.has(pts[a][3])) continue;
+    if (b - a < 2 || pts[a][3] !== pts[b][3] || !(sole.has(pts[a][3]) || alone(pts[a][3], pts[a][0], pts[b][0]))) continue;
     const g = pts[a][3]; let seen = [];
     for (let j = a + 1; j < b; j++) {
       const on = (drawn(pts[j][0]) || []).filter(d => d[2] === g);
@@ -410,6 +417,9 @@ export function exportScenes(R, rom, recs, battles, natives = {}, files = {}, sh
         // (0x118, 0x100)) over the heroes till the script clears them (op 14)
         const [cx, cy] = camAt(f), nx = rec.ops.find(x => x.at > o.at && x.f > f);
         events.push({ f, kind: 'native', name: 'cheer', end: nx ? nx.f : f + 120, frame: 11, at: [[0xd8, 0xe0], [0x118, 0xe0], [0xd8, 0x100], [0x118, 0x100]].map(([X, Y]) => [X - 0x80 + cx * 8 + 12, Y - 0x80 + cy * 8 + 12]) });
+        // and its line, the court's cheer (no name, no face), in a box that opens 2 frames in and stays till the press that
+        // ends the cut (op 14 clears the balloons): the clock goes on from there once it is read ('until')
+        if (so.text) events.push({ f: f + 2, kind: 'say', who: '', text: so.text, speaker: null, actor: null, until: nx ? nx.f : f + 120 });
       }
       else if (w === 35 || w === 42) events.push({ f, kind: 'join', cid: H(0) });
       else if (w === 41) events.push({ f, kind: 'summon', spell: R.B(0xedd7a + H(0)) });   // a summon gained (native 0x0EDD80: its spell, from the table at 0x0EDD7A, into the first free slot of 楊戩's record, ff1050; scenes 19, 27, 30, 39, 57)
@@ -525,8 +535,11 @@ export function exportScenes(R, rom, recs, battles, natives = {}, files = {}, sh
     const seenBy = new Map();   // sheet -> the units that wear it in this scene
     for (const [i, tr] of Object.entries(rec.units)) for (const [, k] of tr) if (k !== null) { if (!seenBy.has(k[2])) seenBy.set(k[2], new Set()); seenBy.get(k[2]).add(i); }
     const sole = new Set([...seenBy].filter(([, us]) => us.size === 1).map(([g]) => g));
+    const spans = new Map();   // sheet -> [unit, from, to]: the frames each unit is shown wearing it
+    for (const [i, tr] of Object.entries(rec.units)) tr.forEach(([f, k], j) => { if (k === null) return; if (!spans.has(k[2])) spans.set(k[2], []); spans.get(k[2]).push([i, f, j + 1 < tr.length ? tr[j + 1][0] : rec.frames]); });
     const dAt = drawnAt(rec);
     for (const [i, tr0] of Object.entries(rec.units)) {
+      const alone = (g, f0, f1) => !(spans.get(g) || []).some(([u, a, b]) => u !== i && a < f1 && b > f0);
       const tr = materialise(walks(tr0, 90, dAt), i, events, ghosts, 14, tr0);
       let pts = [], lastDir = 'down', lastFrame = 0;
       for (const [f, k] of tr) {
@@ -537,7 +550,7 @@ export function exportScenes(R, rom, recs, battles, natives = {}, files = {}, sh
         lastFrame = frame >= 0 ? frame : 0;
         pts.push([f, x, y, gfx, d, STILL.has(gfx) ? frame : null]);
       }
-      pts = pinned(follow(pts, dAt, sole), camAt);
+      pts = pinned(follow(pts, dAt, sole, 128, 8, 12, alone), camAt);
       pts = simplify(holds(hops(pts)), [3, 4, 5]);
       actors[i] = pts.map(p => p[1] === null ? [p[0]] : p[5] === null ? p.slice(0, 5) : p);
       for (const p of pts) if (p[3]) sheets.add(parseInt(p[3], 16));

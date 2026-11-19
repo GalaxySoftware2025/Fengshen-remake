@@ -148,12 +148,7 @@ export function take(state, cid, slot) {
   r.items.splice(slot, 1); state.bag[id] = (state.bag[id] || 0) + 1; equipBonus(r, it, -1);
   return null;
 }
-// items that work outside battle: the permanent boosts (ids 29-32, as in battle)
-export const usableInCamp = id => id >= 29 && id <= 32;   // the stat herbs; 舍利子 (33, a level) is used in battle only: no 用 in the camp [the user's call]
-export function useInCamp(state, cid, slot) {
-  const r = heroRec(state, cid), id = r.items[slot];
-  if (!usableInCamp(id)) return '此處無法使用';
-  if (id === 29) r.atk += 3; else if (id === 30) r.df += 3; else if (id === 31) r.move += 1; else r.spd += 5;
-  r.items.splice(slot, 1); r.hp = r.mhp; r.mp = r.mmp;
-  return null;
-}
+// no item is used outside battle: the camp's pages only give and take them (the stat herbs, 29-32, had a 用 there; 舍利子
+// never did) [the user's call, 2026-11-14]
+export const usableInCamp = () => false;
+export function useInCamp() { return '此處無法使用'; }

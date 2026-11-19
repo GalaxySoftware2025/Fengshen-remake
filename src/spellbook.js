@@ -156,7 +156,7 @@ function dustBurst(v, p, s, tint) {
 }
 // ice: faceted crystal material and a cluster of crystals that bursts up out of the ground and shatters at `hold`
 const ICE = () => iceMaterial();   // (src/elements.js: ice that looks through itself, facets, cracks; not a flat-shaded blue)
-const ICE_COLS = [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]];
+const ICE_COLS = [[1, 1, 1], [0.92, 0.97, 1], [0.78, 0.88, 1]];
 function crystals(v, P, n, scale, hold, mat) {
   mat = mat || ICE();
   for (let i = 0; i < n; i++) {
@@ -172,7 +172,7 @@ function crystals(v, P, n, scale, hold, mat) {
     });
   }
   v.burst(P.clone().setY(P.y + 0.2), { n: 16, speed: 3.5, cols: ICE_COLS, size: 0.045, life: 0.6, g: 8, shape: 7 }); frost(v, P, 0.9 * scale + 0.3, hold + 1.2);
-  for (let i = 0; i < 6; i++) { const a = rand(0, 6.28), s = rand(1, 2); v.smokePuff(P.x, P.y + 0.08, P.z, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.4, life: rand(1, 1.5), size: 0.25, size1: 0.8, tint: [0.62, 0.78, 0.95] }); }
+  for (let i = 0; i < 6; i++) { const a = rand(0, 6.28), s = rand(1, 2); v.smokePuff(P.x, P.y + 0.08, P.z, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.4, life: rand(1, 1.5), size: 0.25, size1: 0.8, tint: [0.86, 0.91, 0.97] }); }
 }
 // lightning: a strike from the sky onto p, with its splash
 function strike(v, p, col, o) {
@@ -1291,13 +1291,13 @@ async function skyFire(ctx) {
 }
 
 // ---------------------------------------------------------------- ice
-const ICEC = [0.55, 0.85, 1];
+const ICEC = [0.82, 0.93, 1];
 // 裂冰術: [ROM fx 27] with the original's first sound (1.45 s after the cast begins) sparkles gather into an orb of ice
 // over the target; it splits, flies to each cell of the cross and bursts into crystals on its second (3.15 s); over at 4.4 s
 async function iceSplit(ctx) {
   const v = ctx.vfx, cells = cellsOf(ctx), at = cells[0], mat = ICE(), F = 1.45, E = 4.42;
   await intro(ctx, ICEC, { dur: 700, dist: 10.5, pitch: 0.46 });
-  DARK(ctx, 0.35, 0.9, 0.5, 0.2);
+  DARK(ctx, 0.3, 0.9, 0.8, 0.6);   // (near neutral, a cool hint: a blue night turned the white ice blue [the user's call, 2026-11-17: whiter ice])
   await ctx.until(F); ctx.cue();
   const hub = at.clone().setY(at.y + 2.2), S = F + (ctx.track[1] || 1.7) - 0.45, G = Math.max(1, S - ctx.now());   // (S: it splits, 0.45 s before the crystals burst on the second sound)
   for (let i = 0; i < 40 + G * 20; i++) later(i * 15, () => { const p = hub.clone().add(V(rand(-1.5, 1.5), rand(-1, 1.5), rand(-1.5, 1.5))); v.spark(p.x, p.y, p.z, { seek: { x: hub.x, y: hub.y, z: hub.z, k: 5 }, life: 0.6, size: rand(0.06, 0.12), r: 0.85, gg: 0.95, b: 1, shape: 7, flicker: 1, ph: rand(0, 9) }); });
@@ -1319,7 +1319,7 @@ async function blizzard(ctx) {
   const v = ctx.vfx, cells = cellsOf(ctx), c0 = mid(cells), mat = ICE(), F = 1.43, E = 5.9, tr = ctx.track.length > 2 ? ctx.track : [0, 1.68, 3.37];
   await intro(ctx, ICEC, { dur: 700, dist: 13, pitch: 0.48 });
   await ctx.until(F); ctx.cue();
-  DARK(ctx, 0.7, 1, 0.7, 0.35);
+  DARK(ctx, 0.5, 0.95, 0.85, 0.7);   // (near neutral, a cool hint: a blue night turned the white ice blue [the user's call, 2026-11-17: whiter ice])
   const B = basis(ctx), wind = B.right.clone().multiplyScalar(-5);
   ticker(v, F + tr[2] + 0.2 - ctx.now(), (k) => {
     for (let i = 0; i < 14; i++) v.spark(c0.x + rand(-6, 6) - wind.x * 0.4, c0.y + rand(0.2, 5), c0.z + rand(-6, 6) - wind.z * 0.4, { vx: wind.x * rand(0.8, 1.3), vy: -rand(0.8, 1.6), vz: wind.z * rand(0.8, 1.3) + rand(-0.5, 0.5), life: rand(0.8, 1.4), size: rand(0.05, 0.11), r: 0.92, gg: 0.96, b: 1, a: 0.9, shape: 7, wob: 1.5, ph: rand(0, 6) });
@@ -1327,7 +1327,7 @@ async function blizzard(ctx) {
   });
   await ctx.until(F + tr[1]);
   const H = F + tr[2] - ctx.now();   // (the crystals stand until the third sound, then burst)
-  cells.forEach((c, i) => later(i * 50, () => { v.decal(c, [0.5, 0.75, 1], 0.7, H + 0.8, { intensity: 0.7 }); crystals(v, c, 5, 0.65, H - i * 0.05, mat); }));
+  cells.forEach((c, i) => later(i * 50, () => { v.decal(c, [0.8, 0.9, 1], 0.7, H + 0.8, { intensity: 0.7 }); crystals(v, c, 5, 0.65, H - i * 0.05, mat); }));
   await ctx.wait(cells.length * 50 + 300);
   glowTargets(ctx, 0.8, 0.9); ctx.hit();
   await ctx.until(F + tr[2]);
@@ -1343,7 +1343,7 @@ async function blizzard(ctx) {
 async function iceAvalanche(ctx) {
   const v = ctx.vfx, at = ctx.at.clone(), mat = ICE(), F = 2.32, E = 6.93, hang = at.clone().setY(at.y + 4.2);
   await intro(ctx, ICEC, { dur: 800, dist: 10.5, pitch: 0.38 });
-  DARK(ctx, 0.7, 1, 0.72, 0.38);
+  DARK(ctx, 0.5, 0.95, 0.85, 0.7);   // (near neutral, a cool hint: a blue night turned the white ice blue [the user's call, 2026-11-17: whiter ice])
   shotAt(ctx, ctx.now() + 0.05, at.clone().add(V(0, 2.2, 0)), { dist: 11, pitch: 0.25, yaw: 0.5, speed: 1.3 });   // up at the glacier forming
   shotAt(ctx, F + 0.3, at.clone().add(V(0, 1, 0)), { dist: 10, pitch: 0.45, yaw: -0.35, speed: 0.7 });   // a slow sweep through the avalanche
   shotAt(ctx, F + 2.7, at.clone().add(V(0, 0.8, 0)), { dist: 8, pitch: 0.35, yaw: 0.25, speed: 1.8 });   // close for the crystal
@@ -1384,49 +1384,99 @@ async function iceAvalanche(ctx) {
       shatter(v, at.clone().setY(at.y + 0.9), 18, mat, { size: 0.32, speed: 3.6 }); v.ring(at, ICEC, 5, 0.8, { intensity: 1.6 }); v.ring(at, [1, 1, 1], 2.4, 0.4);
       for (const s2 of spikes) { s2.spike.userData.gone = true; shatter(v, s2.sp.clone().setY(s2.sp.y + s2.h * 0.5), 4, mat, { size: 0.16, speed: 2.2 }); }
     });
-  v.decal(at, [0.5, 0.75, 1], 1.6, 2, { intensity: 0.8 });
+  v.decal(at, [0.8, 0.9, 1], 1.6, 2, { intensity: 0.8 });
   ticker(v, 1.1, () => { for (const a of tgts(ctx)) a.flash = 0.35; }, () => { for (const a of tgts(ctx)) a.flash = 0; });
   await ctx.wait(1150); ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
 
 // ---------------------------------------------------------------- thunder (雷震子)
 const BOLT = [0.7, 0.8, 1];
-// 五雷咒: [ROM fx 31] balls of lightning hang over the cells of the cross; bolts strike them one by one, one on each of the
-// original's twelve sounds (the first 1.43 s after the cast begins, 0.35 s apart), round the cross again and again, the
-// middle last; over at 6 s
+// a stepped leader: faint jagged steps feeling down out of the cloud towards p over dur seconds, branching, before the
+// strike lands there
+function leader(v, p, col, dur) {
+  let y = p.y + 7, x = p.x + rand(-0.6, 0.6), z = p.z + rand(-0.6, 0.6);
+  ticker(v, dur, (k, dt) => {
+    if (Math.random() > dt * 30) return;
+    const ny = Math.max(p.y + 1.2, y - rand(0.5, 1)), nx = x + (p.x - x) * 0.25 + rand(-0.3, 0.3), nz = z + (p.z - z) * 0.25 + rand(-0.3, 0.3), a = V(x, y, z), b = V(nx, ny, nz);
+    v.bolt(a, b, col, 0.14, { width: 0.022, jag: 0.15 });
+    if (Math.random() < 0.5) v.bolt(b, b.clone().add(V(rand(-0.8, 0.8), -rand(0.4, 0.9), rand(-0.8, 0.8))), col, 0.1, { width: 0.014, jag: 0.15 });
+    x = nx; y = ny; z = nz;
+  });
+}
+// charge crawling over whoever stands at p for dur seconds: short arcs round the body
+function crawl(v, p, col, dur) {
+  ticker(v, dur, (k, dt) => { if (Math.random() < dt * 22) { const a = V(p.x + rand(-0.3, 0.3), p.y + rand(0.2, 1.3), p.z + rand(-0.3, 0.3)); v.bolt(a, a.clone().add(V(rand(-0.35, 0.35), rand(-0.3, 0.3), rand(-0.35, 0.35))), col, 0.07, { width: 0.016, jag: 0.2 }); } });
+}
+// 五雷咒: [ROM fx 31] bolts strike the cells of the cross one by one, one on each of the original's twelve sounds (the
+// first 1.43 s after the cast begins, 0.35 s apart), round the cross again and again, the middle last; over at 6 s. The
+// original hangs a ball of lightning over each cell; here [the user's call, 2026-11-17: neither the five balls nor a
+// circle on the ground] lightning as it falls: a leader steps down out of the cloud before each strike, the bolt lands,
+// charge crawls over who it hit; on the last all five cells are struck at once, arcs running along the ground to the middle
 async function fiveThunder(ctx) {
   const v = ctx.vfx, cells = cellsOf(ctx), at = cells[0], F = 1.43, E = 6.02, tr = ctx.track.length ? ctx.track : [...Array(12).keys()].map(i => i * 0.35);
   await intro(ctx, BOLT, { dur: 700, dist: 11, pitch: 0.4 });
   await ctx.until(F - 0.6);
   const L = F + tr[tr.length - 1] - ctx.now();   // (to the last strike)
-  DARK(ctx, 0.62, 0.9, 0.85, 0.6); STORM(v, at, 20, 3, 6.5, null, L + 0.8);
-  const order = cells.slice(1).concat([at]);
-  for (const c of order) plasma(v, c.clone().setY(c.y + 2.2), BOLT, L + 0.1, 0.32);
+  DARK(ctx, 0.62, 0.9, 0.85, 0.6); STORM(v, at, 24, 3, 6.5, null, L + 0.8);
+  ticker(v, L, (k, dt) => { if (Math.random() < dt * 5) v.light(at.clone().add(V(rand(-2.5, 2.5), 7, rand(-2.5, 2.5))), BOLT, rand(15, 30), 0.08, 10); });   // the cloud lit from inside
+  const order = cells.slice(1).concat([at]), lowArc = (a, b, life, w) => v.bolt(a.clone().setY(a.y + 0.06), b.clone().setY(b.y + 0.06), BOLT, life, { width: w, jag: 0.3 });
   for (let i = 0; i < tr.length; i++) {
-    await ctx.until(F + tr[i]); if (i === 0) ctx.cue();
-    const last = i === tr.length - 1, c = last ? at : order[i % order.length];
-    strike(v, c, BOLT, { width: last ? 0.16 : 0.09, ring: last ? 2 : 1.2 }); v.flash([0.85, 0.9, 1], last ? 0.3 : 0.12); v.shake(last ? 0.16 : 0.07, 0.2);
-    if (last) { v.impact(c, BOLT, 1.3); plasma(v, c.clone().setY(c.y + 0.5), BOLT, 0.9, 0.5); glowTargets(ctx, 0.9); ctx.hit(); }
+    const last = i === tr.length - 1, c = last ? at : order[i % order.length], T = F + tr[i];
+    await ctx.until(T - 0.28); if (last) for (const q of cells) leader(v, q, BOLT, 0.26); else leader(v, c, BOLT, 0.26);
+    await ctx.until(T); if (i === 0) ctx.cue();
+    strike(v, c, BOLT, { width: last ? 0.16 : 0.09, ring: last ? 2 : 1.2 }); v.flash([0.85, 0.9, 1], last ? 0.22 : 0.12); v.shake(last ? 0.18 : 0.07, 0.2);
+    crawl(v, c, BOLT, last ? 0.9 : 0.4);
+    if (last) {
+      for (const q of cells) if (q !== at) { strike(v, q, BOLT, { width: 0.1, ring: 1.2 }); crawl(v, q, BOLT, 0.8); lowArc(q, at, 0.45, 0.05); }
+      v.impact(c, BOLT, 1.3); glowTargets(ctx, 0.9); ctx.hit();
+      v.burst(c.clone().setY(c.y + 0.3), { shape: 5, n: 60, speed: 6, cols: [[1, 1, 1], BOLT], size: 0.05, life: 0.7, g: 4 });
+    }
   }
   await ctx.until(E - 0.1); outro(ctx);
 }
-// 天雷破: [ROM fx 32] a storm cloud drifts over the area, bolts raining onto its cells, two or three on each of the
-// original's sixteen sounds (the first 1.37 s after the cast begins, 0.35 s apart), then all strike at once on the last;
-// over at 7.3 s
+// 天雷破: [ROM fx 32] a storm cloud over the area, lightning on each of the original's sixteen sounds (the first 1.37 s
+// after the cast begins, 0.35 s apart), all at once on the last; over at 7.3 s. In rounds [the user's call, 2026-11-17:
+// one bolt a sound looked weak], each its own pattern and more than one bolt: bolts round the edge of the area (its far
+// side: not on the caster), more each sound; lightning leaping from target to target; a wall of bolts sweeping across the area; a ring of bolts
+// closing in on its middle; then every cell at once, a column of light in the middle, arcs running out along the ground
 async function thunderStorm(ctx) {
-  const v = ctx.vfx, cells = cellsOf(ctx), c0 = mid(cells), R = spreadOf(cells) + 1, F = 1.37, E = 7.3, tr = ctx.track.length ? ctx.track : [...Array(16).keys()].map(i => i * 0.35);
+  const v = ctx.vfx, cells = cellsOf(ctx), c0 = mid(cells), R = spreadOf(cells) + 1, B = basis(ctx), F = 1.37, E = 7.3, tr = ctx.track.length ? ctx.track : [...Array(16).keys()].map(i => i * 0.35);
   await intro(ctx, BOLT, { dur: 700, dist: 13, pitch: 0.42 });
   await ctx.until(F - 0.5);
   const L = F + tr[tr.length - 1] - ctx.now();
   DARK(ctx, 0.72, 0.85, 0.85, 0.65); STORM(v, c0, 40, R + 1, 6.5, null, L + 1);
   v.rain(c0, L + 0.6, { n: 400 });
-  for (let i = 0; i < tr.length - 1; i++) {
+  ticker(v, L, (k, dt) => { if (Math.random() < dt * 6) v.light(c0.clone().add(V(rand(-R, R), 7, rand(-R, R))), BOLT, rand(15, 35), 0.08, 12); });   // the cloud lit from inside
+  const ground = (x, z) => V(x, effectH(x, z), z), around = (r, a) => ground(c0.x + Math.cos(a) * r, c0.z + Math.sin(a) * r);
+  const hop = (a, b, life) => v.bolt(a.clone().setY(a.y + 0.5), b.clone().setY(b.y + 0.5), BOLT, life, { width: 0.05, jag: 0.5 });
+  const n = tr.length - 1, toMe = Math.atan2(ctx.caster.pos.z - c0.z, ctx.caster.pos.x - c0.x), rim = () => toMe + rand(1.1, 5.18);   // (round the far side of the area: never the caster's)
+  for (let i = 0; i < n; i++) {
     await ctx.until(F + tr[i]); if (i === 0) ctx.cue();
-    for (let j = 0; j < 1 + (i % 2) + (i % 5 === 0 ? 1 : 0); j++) later(j * 70, () => { const c = cells[(Math.random() * cells.length) | 0]; strike(v, c.clone().add(V(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))), BOLT, { n: 14, ring: 0.9 }); });
-    if (i % 3 === 0) v.flash([0.85, 0.9, 1], 0.1); v.shake(0.05, 0.1);
+    const round = Math.min(3, Math.floor(i / 4)), j = i % 4;
+    if (j === 0) { v.flash([0.85, 0.9, 1], 0.2); if (i) look(ctx, c0.clone().add(V(0, 0.5, 0)), { cine: true, dist: [13, 11, 12, 10][round], pitch: [0.42, 0.34, 0.5, 0.4][round], yaw: [-0.25, 0.35, -0.5, 0.1][round], speed: 1.5 }); }
+    if (round === 0) {   // round the edge of the area, two bolts, then three, four, five
+      for (let k = 0; k < 2 + j; k++) later(k * 45, () => strike(v, around(R + rand(0.2, 0.9), rim()), BOLT, { n: 12, ring: 0.8, width: 0.07 }));
+    } else if (round === 1) {   // a bolt on a target, leaping on to the others
+      const path = cells.slice().sort(() => Math.random() - 0.5).slice(0, Math.min(4, cells.length));
+      if (path.length < 3) for (let k = path.length; k < 3; k++) path.push(around(rand(0.6, R), rim()));
+      strike(v, path[0], BOLT, { width: 0.11, ring: 1.3 }); glowTargets(ctx, 0.4, 0.2);
+      path.slice(1).forEach((c, k) => later(50 + k * 55, () => { hop(path[k], c, 0.2); v.burst(c.clone().setY(c.y + 0.5), { n: 14, speed: 3, cols: [[1, 1, 1], BOLT], size: 0.04, life: 0.4, shape: 1 }); v.ring(c, BOLT, 0.9, 0.3); }));
+    } else if (round === 2) {   // a wall of bolts across the area, sweeping on from one side to the other
+      const along = -R + (j / 3) * 2 * R;
+      for (let k = 0; k < 4; k++) { const p = c0.clone().addScaledVector(B.right, along + rand(-0.2, 0.2)).addScaledVector(B.toCam, (k / 3 - 0.5) * 2 * R); later(k * 25, () => strike(v, ground(p.x, p.z), BOLT, { n: 14, ring: 1, width: 0.09 })); }
+      v.shake(0.08, 0.15);
+    } else {   // a ring of bolts closing in on the middle, turning
+      const r = R * (1.1 - j * 0.35), a0 = j * 0.5;
+      for (let k = 0; k < 6; k++) later(k * 20, () => strike(v, around(r, a0 + k / 6 * 6.28), BOLT, { n: 12, ring: 0.9, width: 0.08 }));
+      v.ring(c0, BOLT, r + 0.6, 0.35, { intensity: 1.2 }); v.shake(0.1, 0.15);
+    }
+    v.shake(0.05, 0.1);
   }
-  await ctx.until(F + tr[tr.length - 1]);
+  await ctx.until(F + tr[n]);
   for (const c of cells) strike(v, c, BOLT, { width: 0.12, n: 18, ring: 1.4 });
+  v.pillar(c0, [0.7, 0.8, 1], 0.6, 12, 0.7, { intensity: 1.6 }); v.bolt(c0.clone().setY(c0.y + 12), c0.clone().setY(c0.y + 0.1), [1, 1, 1], 0.5, { width: 0.22 });
+  for (let k = 0; k < 10; k++) { const e = around(R + rand(0.5, 1.5), k / 10 * 6.28 + rand(-0.2, 0.2)); v.bolt(c0.clone().setY(c0.y + 0.05), e.setY(e.y + 0.05), BOLT, 0.45, { width: 0.05, jag: 0.35 }); }
+  v.ring(c0, BOLT, R + 2.5, 0.7, { intensity: 1.6 });
   v.flash([0.95, 0.97, 1], 0.55); v.shake(0.22, 0.4); v.hitstop = 0.1; glowTargets(ctx, 1);
   ctx.hit(); await ctx.until(E - 0.1); outro(ctx);
 }
@@ -1883,6 +1933,28 @@ function curtain(v, p, col, life) {
 // a summoned beast: the original's own sprite (assets/fx/hd/summon_NN.png) as a spirit in its palette
 function beast(v, id, h, pal) { return spirit(v, tex('assets/fx/hd/summon_' + id + '.png'), h, pal || PAL.gold); }
 export const beastSprite = beast;   // (龍王's, in spells.js)
+// a summon gained in a story scene (src/scene.js 'summon', the original's 0x0EDD80: a box and its sound 0x8061, which the
+// scene plays as the box opens): before it, the beast rises over 楊戩 out of its curtain of light, as 龍王 rises in scene
+// 19, holds a moment, then pours down into him: it shrinks onto his chest, a burst and a ring there, his own light
+// [the user's call, 2026-11-15: every gain with a sight and a sound]. a: 楊戩's actor; resolves once it has gone in.
+const GAIN = { 53: ['water', 2.3], 54: ['gold', 1.8], 55: ['fire', 2.1], 56: ['jade', 1.9], 57: ['gold', 1.9] };   // each beast's palette (as its spell's) and height
+export async function beastGain(v, spell, a) {
+  const [pk, h] = GAIN[spell] || ['gold', 1.9], pal = PAL[pk], col = pal[2], P = a.pos.clone();
+  const top = P.clone().setY(P.y + 0.9 + h * 0.55), IN = 1.7, LIFE = 2.5;
+  curtain(v, P, col, 1.3); v.ring(P, col, 1.4, 0.7, { intensity: 0.8 });
+  const g = beast(v, spell, h, pal); g.position.copy(top);
+  v.timed(g, LIFE, (k, dt, t) => {
+    const U = g.userData, chest = a.chest(), q = Math.min(1, Math.max(0, (t - IN) / (LIFE - IN))), e = q * q;
+    U.fit(); U.face(); U.set('uT', t); U.set('uK', Math.min(1, Math.max(0, (t - 0.25) / 0.7)) * (1 - Math.max(0, (q - 0.75) / 0.25)));
+    g.position.lerpVectors(top.clone().setY(top.y + Math.sin(t * 2.2) * 0.06), chest, e); g.scale.setScalar(1 - 0.85 * e);
+  });
+  await wait(LIFE * 1000 - 80);
+  const C = a.chest();
+  v.burst(C, { n: 34, speed: 2.2, cols: [[1, 1, 0.9], col, pal[1]], size: 0.05, life: 0.8, g: -0.4, up: 0.2, shape: 5 });
+  v.ring(P, col, 1.2, 0.6, { intensity: 1 }); v.light(C, col, 10, 0.5, 5);
+  a.flash = 0.6; ticker(v, 0.6, k => { a.flash = 0.6 * (1 - k); }, () => { a.flash = 0; });
+  await wait(450);
+}
 // it rises out of a curtain of light, materialising from the noise over 0.7 s, and dissolves away at the end of its life
 async function beastIn(ctx, id, h, p, col, o) {
   const v = ctx.vfx; o = o || {}; const life = o.life || 3.2, pal = o.pal || PAL.gold;
@@ -2034,8 +2106,8 @@ function fireBird(v, scene) {
   const wings = [-1, 1].map((side, i) => add(fireSheet(28, 10, 0, 1.7 + i * 5.3))), body = add(fireSheet(16, 8, 1, 9.1)), bodyX = add(fireSheet(16, 6, 1, 12.4));
   const tails = [-1, 0, 1].map((k, i) => add(fireSheet(24, 6, 1, 20 + i * 4.1))), crest = [-1, 0, 1].map((k, i) => add(fireSheet(8, 4, 1, 40 + i)));
   const head = add(fireSheet(10, 6, 1, 50.3));
-  const halo = glowCard(v, [1, 0.45, 0.12], 1), core = glowCard(v, [1, 0.85, 0.5], 1), eye = glowCard(v, [1, 0.97, 0.8], 1), light = new THREE.PointLight(0xff7a30, 0, 16, 1.6);
-  scene.add(root, halo, core, eye, light); halo.renderOrder = 4; core.renderOrder = 7; eye.renderOrder = 8;
+  const halo = glowCard(v, [1, 0.45, 0.12], 1), core = glowCard(v, [1, 0.85, 0.5], 1), eye = glowCard(v, [1, 0.97, 0.8], 1), light = v.holdLight();   // (one of the pool's: vfx.js holdLight)
+  scene.add(root, halo, core, eye); halo.renderOrder = 4; core.renderOrder = 7; eye.renderOrder = 8;
   const bez = (a, b, c, t, out) => out.set((1 - t) * (1 - t) * a[0] + 2 * (1 - t) * t * b[0] + t * t * c[0], (1 - t) * (1 - t) * a[1] + 2 * (1 - t) * t * b[1] + t * t * c[1], (1 - t) * (1 - t) * a[2] + 2 * (1 - t) * t * b[2] + t * t * c[2]);
   const up = V(0, 1, 0), M = new THREE.Matrix4(), L = V(0, 0, 0); let T = 0, acc = 0;
   return {
@@ -2066,7 +2138,7 @@ function fireBird(v, scene) {
       halo.position.copy(o.p); halo.scale.setScalar(7 * s * (0.92 + 0.08 * Math.sin(T * 9))); halo.material.opacity = 0.28 * heat; halo.quaternion.copy(cq);
       core.position.copy(o.p.clone().addScaledVector(f, 0.2 * s)); core.scale.setScalar(1.5 * s); core.material.opacity = 0.6 * heat; core.quaternion.copy(cq);
       eye.position.copy(headAt); eye.scale.setScalar(0.55 * s); eye.material.opacity = heat; eye.quaternion.copy(cq);
-      light.position.copy(o.p).addScaledVector(u, 0.6 * s); light.intensity = 30 * heat * s;
+      light.set(o.p.clone().addScaledVector(u, 0.6 * s), [1, 0.48, 0.19], 30 * heat * s, 16);
       // embers off the trailing edges and the tail
       acc += dt * 90 * heat * s;
       for (; acc > 1; acc -= 1) { const side = Math.random() < 0.5 ? -1 : 1, wu = Math.random(), tail = Math.random() < 0.35;
@@ -2074,7 +2146,7 @@ function fireBird(v, scene) {
         const q = o.p.clone().addScaledVector(r, lp.x * s).addScaledVector(u, lp.y * s).addScaledVector(f, lp.z * s);
         v.spark(q.x, q.y, q.z, { vx: -f.x * 1.5 + rand(-0.5, 0.5), vy: rand(0.3, 1.4), vz: -f.z * 1.5 + rand(-0.5, 0.5), life: rand(0.5, 1), size: rand(0.03, 0.06) * Math.max(0.6, s), r: 1, gg: rand(0.45, 0.8), b: 0.2, shape: 6 }); }
     },
-    dispose() { for (const m of [root, halo, core, eye, light]) m.parent && m.parent.remove(m); for (const m of parts) { m.geometry.dispose(); m.material.dispose(); } },
+    dispose() { light.release(); for (const m of [root, halo, core, eye]) m.parent && m.parent.remove(m); for (const m of parts) { m.geometry.dispose(); m.material.dispose(); } },
   };
 }
 // a fire bird's flight for its life: path(k) gives the pose for k 0-1 of the time; done then
@@ -2148,9 +2220,11 @@ async function summonPhoenix(ctx) {
   await ctx.until(END); outro(ctx);
 }
 // 麒麟獸 [ROM fx 56; remade next-gen, 2026-10-23]: the qilin materialises in jade fire and gallops in an arc across the
-// field, green flames rising from its hoofprints; then the sky answers it: with each of the original's eleven sounds (the
-// first 3.9 s after the cast begins) a column of golden lightning strikes a cell of the area, splitting the ground and
-// throwing a ring of plasma, the last three whiting out the screen, the last striking every cell (over at 10.7 s)
+// field, green flames rising from its hoofprints, then leaps up and holds in the air beside the area, flaring as it
+// calls down the sky: with each of the original's eleven sounds (the first 3.9 s after the cast begins) columns of golden
+// lightning, in rounds [the user's call, 2026-11-17: one column a sound looked weak]: one on a target with a ring of jade
+// fire running out over the ground; two at once with an arc between them; three in a turning triangle round the area,
+// jade fire bursting up; a ring of six round it; the last on every cell, whiting out the screen (over at 10.7 s)
 async function summonQilin(ctx) {
   const v = ctx.vfx, S = v.world.scene, cells = cellsOf(ctx), c0 = mid(cells), B = basis(ctx), gold = [1, 0.9, 0.35], FIRST = 3.9, END = 10.7;
   await intro(ctx, gold, { dur: 600, dist: 13.5, pitch: 0.38 });
@@ -2163,57 +2237,102 @@ async function summonQilin(ctx) {
     const p = bezier(a, mid2, b, k); g.position.copy(p).setY(effectH(p.x, p.z) + 1.25 + Math.abs(Math.sin(k * 26)) * 0.12);
     if (t - lastStep > 0.09) { lastStep = t; const q = p.clone(); q.y = effectH(q.x, q.z); v.decal(q, [0.1, 0.9, 0.35], 0.25, 2.2, {}); for (let i = 0; i < 3; i++) v.flame(q.x + rand(-0.2, 0.2), q.y, q.z + rand(-0.2, 0.2), { size: rand(0.25, 0.4), asp: 2, life: 0.8, vy: 1, tint: [0.45, 1.3, 0.45] }); }
     v.light(g.position, [0.4, 1, 0.5], 10, 0.05, 6); });
-  // the strikes
+  // then it leaps up beside the area and holds there, flaring with each strike it calls
+  const perch = c0.clone().addScaledVector(B.toCam, -1.2).addScaledVector(B.right, -2.8); perch.y = effectH(perch.x, perch.z) + 2.3;   // (beside the area, in frame: over it, it was cut off at the top)
+  let fl = 0;
+  ctx.until(RUN + 0.5).then(() => { const q = beast(v, 56, 2.6, PAL.jade); S.add(q); const L2 = END - ctx.now() - 0.3;
+    v.timed(q, L2, (k, dt, t) => { const U = q.userData; U.fit(); U.face(); U.set('uT', t); U.flip(true); fl = Math.max(0, fl - dt * 3); U.set('uFlash', fl);
+      U.set('uK', Math.min(1, t / 0.5) * Math.min(1, (L2 - t) / 0.5)); q.position.copy(perch).setY(perch.y - (1 - Math.min(1, t / 0.6)) * 2 + Math.sin(t * 2.2) * 0.12);
+      if (Math.random() < dt * 20) v.flame(q.position.x + rand(-0.8, 0.8), q.position.y - 1.1, q.position.z + rand(-0.3, 0.3), { size: rand(0.25, 0.4), asp: 2, life: 0.6, vy: 0.6, tint: [0.45, 1.3, 0.45] }); });
+    v.ring(perch.clone().setY(effectH(perch.x, perch.z)), [0.4, 1, 0.5], 2.4, 0.6, { intensity: 1.4 }); });
+  const ground = (x, z) => V(x, effectH(x, z), z), R = spreadOf(cells) + 1;
+  // a column of golden lightning on c, W its half width
+  const column = (c, W, k) => {
+    const top = c.clone().setY(c.y + 12), col = energySheet(4, 6, 1, PAL.gold, k * 1.7 + c.x + c.z);
+    S.add(col); col.shape((u, vv, t) => { t.copy(c).addScaledVector(B.right, (vv - 0.5) * 2 * W * (1 - u * 0.4)); t.y = c.y + u * 12; });   // (across the camera's view)
+    let T = 0; v.timed(col, 0.9, (q, dt) => { T += dt; col.tick(T, (1 - q) * (1 - q)); });
+    for (let j = 0; j < 3; j++) later(j * 60, () => { v.bolt(top.clone().add(V(rand(-0.5, 0.5), 0, rand(-0.4, 0.4))), c.clone().setY(c.y + 0.1), [1, 0.9, 0.35], 0.35, { width: 0.13 * W / 0.85 });
+      const fork = c.clone().setY(c.y + rand(3, 7)); v.bolt(fork, fork.clone().add(V(rand(-1.8, 1.8), -rand(1.5, 3), rand(-1, 1))), [1, 0.95, 0.7], 0.25, { width: 0.06 }); });
+    v.pillar(c, gold, W * 0.5, 9, 0.6, { intensity: 2 });
+    v.decal(c, [0.04, 0.02, 0.0], 0.9 * W / 0.85, END, {}); v.ring(c, [1, 0.95, 0.6], 1.8 * W / 0.85, 0.4, { intensity: 1.8 }); v.light(c.clone().setY(c.y + 1), gold, 16, 0.3, 7);
+    v.burst(c.clone().setY(c.y + 0.2), { shape: 5, n: 14, speed: 3.5, cols: [[1, 1, 0.85], gold], size: 0.05, life: 0.5 });
+  };
+  const jadeRing = (c, r, life) => {   // jade fire running out over the ground from c
+    v.ring(c, [0.4, 1, 0.5], r, life, { intensity: 1.6 });
+    ticker(v, life, k => { const rr = 0.3 + r * (1 - Math.pow(1 - k, 2)); for (let i = 0; i < 3; i++) { const a = rand(0, 6.28), q = ground(c.x + Math.cos(a) * rr, c.z + Math.sin(a) * rr); v.flame(q.x, q.y, q.z, { size: rand(0.2, 0.35), asp: 2, life: 0.5, vy: 0.8, tint: [0.45, 1.3, 0.45] }); } });
+  };
+  const geyser = c => { for (let i = 0; i < 10; i++) later(i * 30, () => v.flame(c.x + rand(-0.25, 0.25), c.y + 0.1, c.z + rand(-0.25, 0.25), { size: rand(0.35, 0.6), asp: 2.4, life: 0.8, vy: rand(2.5, 4), tint: [0.45, 1.3, 0.45] })); v.light(c.clone().setY(c.y + 1), [0.4, 1, 0.5], 14, 0.4, 6); };
   const last = ctx.track.length - 1;
-  const strike = k => {
-    const big = k === last, pick = big ? cells : [cells[k % cells.length]];
-    for (const c of pick) {
-      const top = c.clone().setY(c.y + 12), col = energySheet(4, 6, 1, PAL.gold, k * 1.7 + c.x), W = big ? 1.1 : 0.85;
-      S.add(col); col.shape((u, vv, t) => { t.copy(c).addScaledVector(B.right, (vv - 0.5) * 2 * W * (1 - u * 0.4)); t.y = c.y + u * 12; });   // (across the camera's view)
-      let T = 0; v.timed(col, 0.9, (q, dt) => { T += dt; col.tick(T, (1 - q) * (1 - q)); });
-      // the bolts: a trunk and branches forking off it, flickering a moment (they were thin and gone in an instant)
-      for (let j = 0; j < 3; j++) later(j * 60, () => { v.bolt(top.clone().add(V(rand(-0.5, 0.5), 0, rand(-0.4, 0.4))), c.clone().setY(c.y + 0.1), gold, 0.35, { width: 0.13 });
-        const fork = c.clone().setY(c.y + rand(3, 7)); v.bolt(fork, fork.clone().add(V(rand(-1.8, 1.8), -rand(1.5, 3), rand(-1, 1))), [1, 0.95, 0.7], 0.25, { width: 0.06 }); });
-      v.pillar(c, gold, W * 0.5, 9, 0.6, { intensity: 2 });
-      v.decal(c, [0.04, 0.02, 0.0], 0.9, END, {}); v.ring(c, [1, 0.95, 0.6], big ? 2.6 : 1.8, 0.4, { intensity: 1.8 }); v.light(c.clone().setY(c.y + 1), gold, big ? 30 : 16, 0.3, 7);
-      v.burst(c.clone().setY(c.y + 0.2), { shape: 5, n: 14, speed: 3.5, cols: [[1, 1, 0.85], gold], size: 0.05, life: 0.5 });
-    }
-    v.flash([1, 0.97, 0.8], k >= last - 2 ? 0.42 : 0.18); v.shake(big ? 0.3 : 0.12, 0.25); glowTargets(ctx, big ? 1 : 0.5, 0.25);
+  const round = k => {
+    fl = 0.45; const big = k === last;   // (1 turned it ghost white with every strike)
+    if (big) { for (const c of cells) column(c, 1.1, k); for (const c of cells) jadeRing(c, 2.2, 0.8); }
+    else if (k < 3) { const c = cells[k % cells.length]; column(c, 0.85, k); jadeRing(c, 2.4, 0.7); }
+    else if (k < 6) { const c1 = cells[k % cells.length], c2 = cells.length > 1 ? cells[(k + 1 + Math.floor(cells.length / 2)) % cells.length] : ground(c1.x + B.right.x * 1.6, c1.z + B.right.z * 1.6);
+      column(c1, 0.75, k); column(c2, 0.75, k + 0.5); v.bolt(c1.clone().setY(c1.y + 1.6), c2.clone().setY(c2.y + 1.6), gold, 0.4, { width: 0.07, jag: 0.6 }); }
+    else if (k < 9) { const a0 = (k - 6) * 1.05; for (let i = 0; i < 3; i++) { const c = ground(c0.x + Math.cos(a0 + i * 2.094) * R * 0.8, c0.z + Math.sin(a0 + i * 2.094) * R * 0.8); later(i * 40, () => { column(c, 0.6, k + i); geyser(c); }); } }
+    else { for (let i = 0; i < 6; i++) { const c = ground(c0.x + Math.cos(i * 1.047) * (R + 0.6), c0.z + Math.sin(i * 1.047) * (R + 0.6)); later(i * 30, () => column(c, 0.5, k + i)); } jadeRing(c0, R + 1, 0.8); }
+    v.flash([1, 0.97, 0.8], k >= last - 2 ? 0.42 : 0.18); v.shake(big ? 0.3 : k >= 6 ? 0.16 : 0.12, 0.25); glowTargets(ctx, big ? 1 : 0.5, 0.25);
+    if (k === 3 || k === 9) look(ctx, c0.clone().add(V(0, 0.8, 0)), { cine: true, dist: k === 3 ? 11 : 13, pitch: k === 3 ? 0.34 : 0.48, yaw: k === 3 ? 0.3 : -0.4, speed: 1.6 });
     if (big) { v.hitstop = 0.12; ctx.hit(); } };
-  for (let k = 0; k <= last; k++) { await ctx.until(FIRST + ctx.track[k]); if (!k) ctx.cue(); strike(k); }
+  for (let k = 0; k <= last; k++) { await ctx.until(FIRST + ctx.track[k]); if (!k) ctx.cue(); round(k); }
   await ctx.until(END); outro(ctx);
 }
 // 四不像 [ROM fx 57; remade next-gen, 2026-10-23]: streaks of gold light zigzag across the field, the beast materialises
 // out of them and rises; with the original's first sound (3.5 s after the cast begins) it sends out crescent waves of ice
-// light that sweep across the area, then orbs of spirit light burst over it, one with each of its forty more sounds,
-// each a star of light with a shockwave, a white flash on every fifth (the effect over at 13.3 s)
+// light that sweep across the area, then attacks with each of its forty more sounds, in rounds [the user's call,
+// 2026-11-17: one orb a sound looked weak], the beast flaring with each: comets of spirit light it throws down onto the
+// area; bursts walking round the area two at a time, opposite each other; lances of light from it onto the targets;
+// bursts in threes on a ring closing in on the middle; then a burst over the middle, a column of light on every cell
+// and a white flash (the effect over at 13.3 s)
 async function summonSibuxiang(ctx) {
   const v = ctx.vfx, S = v.world.scene, cells = cellsOf(ctx), c0 = mid(cells), B = basis(ctx), col = [0.8, 0.7, 1], gold = [1, 0.9, 0.4], FIRST = 3.5, END = 13.3;
   await intro(ctx, gold, { dur: 600, dist: 13.5, pitch: 0.38 });
   DARK(ctx, 0.9, 0.8, 0.85, 0.7);   // (a violet night)
-  const home = c0.clone().add(B.right.clone().multiplyScalar(-2.6)).add(B.toCam.clone().multiplyScalar(-0.6)); home.y = effectH(home.x, home.z) + 1.6;
+  const headAt = V(0, 0, 0), home = c0.clone().add(B.right.clone().multiplyScalar(-2.6)).add(B.toCam.clone().multiplyScalar(-0.6)); home.y = effectH(home.x, home.z) + 1.6;
   ctx.cam.shot(home.clone().lerp(c0, 0.5).add(V(0, 1.4, 0)), { cine: true, dist: 12.5, pitch: 0.42, yaw: 0.25, speed: 1.8 });   // (the beast's head in frame)
   // the gold streaks: zigzags of light weaving across the view
   for (let i = 0; i < 5; i++) later(i * 140, () => { const st = energyStreak(v, PAL.gold, 22, 0.14, i * 2.3, { taper: 0.9 }), y = home.y + rand(-0.5, 2), z0 = rand(-2, 2);
     ticker(v, 0.9, k => st.push(home.clone().addScaledVector(B.right, -6 + k * 12).addScaledVector(B.toCam, z0 + Math.sin(k * 14 + i) * 1.2).setY(y + Math.sin(k * 9 + i * 2) * 0.6)), () => later(300, () => st.end())); });
-  beastIn(ctx, 57, 3.1, home, gold, { life: END - 1.8, pal: PAL.gold, move: (g, t) => { g.position.y = home.y + Math.min(1, Math.max(0, t - 1.6)) * 1.2 + Math.sin(t * 2) * 0.1; } });
+  let fl = 0;
+  beastIn(ctx, 57, 3.1, home, gold, { life: END - 1.8, pal: PAL.gold, move: (g, t, dt) => { g.position.y = home.y + Math.min(1, Math.max(0, t - 1.6)) * 1.2 + Math.sin(t * 2) * 0.1; fl = Math.max(0, fl - (dt || 0) * 4); g.userData.set('uFlash', fl); headAt.copy(g.position).add(V(0, 0.9, 0)); } });
   // the crescent waves of ice light
   await ctx.until(FIRST); ctx.cue();
   ctx.cam.shot(c0.clone().add(V(0, 0.6, 0)), { cine: true, dist: 12.5, pitch: 0.42, yaw: 0.3, speed: 1.6 });
   const R = spreadOf(cells) + 2;
   for (let w = 0; w < 3; w++) later(w * 160, () => { const sh = energySheet(24, 4, 1, PAL.water, w * 4.4); S.add(sh); let T = 0;
     v.timed(sh, 1.0, (k, dt) => { T += dt; sh.tick(T, 1 - k * k); const r0 = 0.8 + k * (R + 2) * 1.4; sh.shape((u, vv, t) => { const a = (u - 0.5) * 2.4 + 0.0, r = r0 + (vv - 0.5) * 1.3; const d = B.toCam.clone().multiplyScalar(Math.cos(a)).addScaledVector(B.right, Math.sin(a)); t.copy(home).setY(c0.y + 0.6 + (vv - 0.5) * 0.9).addScaledVector(d, r).addScaledVector(B.right, k * 2); }); }); });
-  // the orbs of spirit light, one with each sound after the waves'
-  const last = ctx.track.length - 1, orbAt = (i, c) => {
-    // (all over the field round the area, as the original's burst all over the screen; a few on the targets themselves)
-    const a = rand(0, 6.28), rr = i % 4 === 0 ? rand(0, 0.5) : rand(0.8, 3.2), q = c.clone().addScaledVector(B.right, Math.cos(a) * rr).addScaledVector(B.toCam, Math.sin(a) * rr * 0.7); q.y = effectH(q.x, q.z);
-    const p = q.clone().add(V(0, rand(0.6, 1.6), 0)), g = orb(v, col, 0.8); g.position.copy(p);
+  const ground = (x, z) => V(x, effectH(x, z), z), around = (r, a) => ground(c0.x + Math.cos(a) * r, c0.z + Math.sin(a) * r);
+  // a burst of spirit light at p (in the air) over q (the ground under it)
+  const pop = (p, q, s) => {
+    const g = orb(v, col, 0.8 * s); g.position.copy(p);
     v.timed(g, 0.55, k => { g.scale.setScalar(0.5 + k * 2.4); g.userData.halo.material.opacity = 1 - k; g.userData.core.material.opacity = 1 - k; });
-    star(v, p, [0.95, 0.9, 1], 1.6, 0.4);
-    v.ring(q, col, 2.2, 0.45, { intensity: 1.4 }); v.light(p, col, 9, 0.25, 5); if (i % 5 === 0) v.flash([0.92, 0.88, 1], 0.15); v.shake(0.05, 0.1);   // (lights and flashes kept low: forty of them overlap)
+    star(v, p, [0.95, 0.9, 1], 1.6 * s, 0.4);
+    v.ring(q, col, 2.2 * s, 0.45, { intensity: 1.4 }); v.light(p, col, 9, 0.25, 5);   // (lights kept low: forty of them overlap)
     for (let j = 0; j < 8; j++) { const a = rand(0, 6.28), sp = rand(1.5, 3); v.spark(p.x, p.y, p.z, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(-1, 1), life: 0.4, size: 0.04, r: 0.85, gg: 0.85, b: 1, shape: 5 }); } };
-  for (let i = 1; i <= last; i++) { await ctx.until(FIRST + ctx.track[i]); orbAt(i, cells[Math.floor(rand(0, cells.length))]); }
+  // a streak of light flying from a to b in dur seconds, then done(b)
+  const fly = (a, b, dur, pal, w, done) => { const st = energyStreak(v, pal, 14, w, rand(0, 9), { taper: 0.9 }), c = a.clone().add(b).multiplyScalar(0.5).add(V(0, 1.2, 0));
+    ticker(v, dur, k => st.push(bezier(a, c, b, k)), () => { done && done(b); later(150, () => st.end()); }); };
+  const last = ctx.track.length - 1, pick = () => cells[Math.floor(rand(0, cells.length))];
+  const attack = i => {
+    fl = 0.4;   // (0.8 washed it out pale through the forty)
+    if (i <= 10) {   // comets thrown down onto the area
+      const q = i % 3 === 0 ? pick() : around(rand(0.5, R), rand(0, 6.28));
+      fly(headAt.clone(), q.clone().setY(q.y + 0.3), 0.18, PAL.gold, 0.16, b => { pop(b.clone().setY(b.y + 0.4), q, 1); v.shake(0.05, 0.1); });
+    } else if (i <= 20) {   // bursts walking round the area, two at a time, opposite
+      const a = (i - 11) * 0.63; for (const d of [0, Math.PI]) { const q = around(R * 0.75, a + d); pop(q.clone().setY(q.y + rand(0.6, 1.2)), q, 0.9); }
+      if (i % 5 === 0) v.flash([0.92, 0.88, 1], 0.15); v.shake(0.05, 0.1);
+    } else if (i <= 30) {   // lances of light from the beast onto the targets
+      const q = cells[i % cells.length]; fly(headAt.clone(), q.clone().setY(q.y + 0.8), 0.1, PAL.silver, 0.1, b => { pop(b, q, 0.8); glowTargets(ctx, 0.5, 0.15); v.shake(0.06, 0.1); });
+    } else {   // bursts in threes on a ring closing in on the middle
+      const r = Math.max(0.3, R * (1 - (i - 31) / 9)), a0 = i * 0.4;
+      for (let k = 0; k < 3; k++) later(k * 30, () => { const q = around(r, a0 + k * 2.094); pop(q.clone().setY(q.y + 0.8), q, 0.8); });
+      v.ring(c0, col, r + 0.5, 0.3, { intensity: 1 }); if (i % 3 === 0) v.flash([0.92, 0.88, 1], 0.12); v.shake(0.07, 0.1);
+    }
+    if (i === 11 || i === 21 || i === 31) look(ctx, c0.clone().add(V(0, 0.6, 0)), { cine: true, dist: [12, 10.5, 11.5][(i - 11) / 10], pitch: [0.5, 0.36, 0.44][(i - 11) / 10], yaw: [-0.2, 0.55, 0.05][(i - 11) / 10], speed: 1.4 });
+  };
+  for (let i = 1; i <= last; i++) { await ctx.until(FIRST + ctx.track[i]); attack(i); }
   await ctx.wait(200);
+  pop(c0.clone().setY(c0.y + 1.2), c0, 2.2); for (const c of cells) v.pillar(c, col, 0.35, 8, 0.8, { intensity: 1.6 });
   v.flash([1, 1, 1], 0.6); glowTargets(ctx, 1); ctx.hit(); await ctx.until(END); outro(ctx);
 }
 // a four-pointed star of light (a lens glint) at p, size s, for life seconds: two crossed energy streaks, a hot core

@@ -22,10 +22,15 @@ html, body { margin: 0; height: 100%; background: #050605; overflow: hidden; fon
 #speed span { flex: 1; } #speed b { min-width: 46px; text-align: center; color: var(--gold2); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 #speed button { width: 28px; height: 26px; padding: 0; line-height: 1; color: var(--gold2); background: rgba(40,30,16,.9); border: 1px solid rgba(216,178,90,.6); border-radius: 3px; }
 #speed button:hover:not(:disabled) { background: rgba(90,66,28,.95); } #speed button:disabled { opacity: .35; cursor: default; }
+#quality span { flex: 1; } #quality button { width: 30px; height: 26px; padding: 0; line-height: 1; color: var(--paper); background: rgba(40,30,16,.9); border: 1px solid rgba(216,178,90,.35); border-radius: 3px; }
+#quality button:hover { background: rgba(90,66,28,.95); } #quality button.on { color: #1a1208; background: var(--gold2); border-color: var(--gold2); }
 body:has(#title:not(.hidden)) #gmenu, body:has(#controls:not(.hidden)) #gmenu { display: none; }   /* not on the title or the controls page */
 
 /* ---------- floating labels (damage numbers etc) ---------- */
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* the overlay at the window's size (src/uiscale.js --ui: 1 at 1440 x 900, the user's Mac full screen); what is placed at a
+   point on the screen inside these is placed at that point divided by --ui (toUI) */
+#labels, #hud, #gmenu, #dialog, #banner, #toast { zoom: var(--ui, 1); }
 /* heavy sans numerals, outline painted behind the fill so it never eats the glyph; colour says who was hit */
 .dmg { position: absolute; transform: translate(-50%, -100%); font-family: "Noto Sans TC", "PingFang TC", sans-serif; font-weight: 900; font-size: 50px; line-height: 1;
   letter-spacing: -1px; color: #fff; -webkit-text-stroke: 7px #1a0a03; paint-order: stroke fill; filter: drop-shadow(0 4px 0 rgba(0,0,0,.55)) drop-shadow(0 0 10px rgba(0,0,0,.35));
@@ -39,6 +44,7 @@ body:has(#title:not(.hidden)) #gmenu, body:has(#controls:not(.hidden)) #gmenu { 
 .dmg.heal { color: #fff; -webkit-text-stroke-color: #1a0a03; }   /* white (the user's call) */
 .dmg.exp { font-family: "Noto Serif TC", var(--font); font-size: 30px; letter-spacing: 2px; color: #fff; -webkit-text-stroke: 6px #1a0a03; }   /* experience gained (battle.js gainExp): white, the user's call */
 .dmg.miss, .dmg.text { font-family: "Noto Serif TC", var(--font); font-size: 34px; letter-spacing: 4px; color: #bfe4ff; -webkit-text-stroke: 6px #071a30; }
+.dmg.text.chatter { color: #fff; -webkit-text-stroke-color: #1a0a03; }   /* 土行孫's chatter over his head as he levels up (levelup.js tuLevel): white, the user's call (the 無效 / 失效 text's light blue read as a spell's) */
 .dmg.status { font-family: "Noto Serif TC", var(--font); font-size: 44px; -webkit-text-stroke: 7px #10081c; }   /* a status's glyph (封 眠 毒) as the original flashes it by the unit */
 .dmg.status.seal { color: #e2b6ff; } .dmg.status.sleep { color: #a9d8ff; } .dmg.status.poison { color: #9be86a; }
 @keyframes pop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.3); } 12% { opacity: 1; transform: translate(-50%, -115%) scale(1.25); }
@@ -272,7 +278,6 @@ i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; bo
 .islot:not(.empty):hover { border-color: var(--gold2); box-shadow: 0 0 12px rgba(255,200,100,.5); }
 .islot.s0 { left: 135px; top: 0; } .islot.s1 { left: 270px; top: 52px; } .islot.s2 { left: 270px; top: 135px; } .islot.s3 { left: 270px; top: 218px; }
 .islot.s4 { left: 135px; top: 270px; } .islot.s5 { left: 0; top: 218px; } .islot.s6 { left: 0; top: 135px; } .islot.s7 { left: 0; top: 52px; }
-.iuse { position: absolute; right: -6px; bottom: -6px; font-size: 11px !important; padding: 0 5px !important; line-height: 18px; }
 .ibag h4 { margin: 0 0 8px; font-size: 16px; color: var(--gold); letter-spacing: 4px; font-weight: 400; }
 .iside { display: grid; gap: 10px; }
 .ibag { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 2px 18px; align-content: start; max-height: max(340px, calc(100vh - 470px)); overflow-y: auto; }
@@ -296,7 +301,9 @@ i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; bo
 
 /* ---------- story scenes (Phase 3) ---------- */
 #fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 5; }
-#scene-at { position: absolute; left: 8px; top: 6px; z-index: 8; pointer-events: none; font: 13px/1.3 ui-monospace, Menlo, monospace; color: #fff; background: rgba(0,0,0,.5); padding: 2px 7px; border-radius: 3px; }
+#dev { position: absolute; left: 8px; top: 6px; z-index: 8; pointer-events: none; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+#dev > div { font: 13px/1.3 ui-monospace, Menlo, monospace; color: #fff; background: rgba(0,0,0,.5); padding: 2px 7px; border-radius: 3px; white-space: pre; }
+#fps { color: #9f9; }
 .from-rom #scene-at { display: none; }   /* the public build: no position readout (index.html) */
 #card-screen { background: #050403; z-index: 6; cursor: pointer; align-content: center; gap: 14px; text-align: center; }
 #card-screen div { font-size: clamp(22px, 2.6vw, 34px); letter-spacing: .4em; color: #f1e6cc; animation: fadeIn 1.2s both; }

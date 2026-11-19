@@ -30,19 +30,11 @@ export function keynav(root, { items, start, back, prefer, groups = [] }) {
     if (cur && cur.isConnected && els.includes(cur)) return paint();
     cur = null; if (at && els.length) set(nearest(els, at)); else paint();
   };
-  // the best one in direction (dx, dy): ahead of the frame, the least off its line (a row or column it shares counts as on it)
   const step = (dx, dy) => {
     const p = mid(cur), part = dy && groups.find(g => cur.closest(g)), all = list().filter(e => e !== cur);
     const mine = part ? all.filter(e => e.closest(part) && (mid(e).y - p.y) * dy >= 4) : [], els = mine.length ? mine : all;
-    let best = null;
-    for (const e of els) {
-      const q = mid(e), ahead = (q.x - p.x) * dx + (q.y - p.y) * dy;
-      if (ahead < 4) continue;
-      const gap = dx ? Math.max(0, q.r.top - p.r.bottom, p.r.top - q.r.bottom) : Math.max(0, q.r.left - p.r.right, p.r.left - q.r.right);
-      const s = ahead + gap * 3;
-      if (!best || s < best.s) best = { e, s };
-    }
-    if (best) set(best.e);
+    const home = groups.find(g => cur.closest(g)), best = choose(p, els.map(e => Object.assign(mid(e), { e })), dx, dy, q => !home || !!q.e.closest(home));
+    if (best) set(best);
   };
   const key = e => {
     if (!shown(root) || root.classList.contains('hidden')) return;
@@ -64,4 +56,21 @@ export function keynav(root, { items, start, back, prefer, groups = [] }) {
     focus: set,
     stop() { obs.disconnect(); window.removeEventListener('keydown', key, true); root.removeEventListener('pointermove', mouse); kb = false; paint(); },
   };
+}
+
+// the best one in direction (dx, dy) from p ({ x, y, r }: the frame's middle and box) among cands ({ e, x, y, r }): ahead of
+// it; one sharing its row (A / D) or column (W / S) in the frame's own part of the screen (home: the camp's page or its
+// menu) before any other, then the least far ahead and off its line [the user's report, 2026-11-16: A on 裝備物品's 太乙仙丹,
+// the bag's middle column, framed 黃天化's tab, 44 px left and up a row, over 金創藥 on its own row 500 px away: the score
+// alone let a near one off the row win]. (Crossing parts keeps to the score: D from the menu's 裝備物品 frames the first
+// hero's tab, not the item slot level with the button; tools/qa/keys.js)
+export function choose(p, cands, dx, dy, home = () => true) {
+  let best = null;
+  for (const q of cands) {
+    const ahead = (q.x - p.x) * dx + (q.y - p.y) * dy; if (ahead < 4) continue;
+    const gap = dx ? Math.max(0, q.r.top - p.r.bottom, p.r.top - q.r.bottom) : Math.max(0, q.r.left - p.r.right, p.r.left - q.r.right);
+    const off = gap > 0 || !home(q) ? 1 : 0, s = ahead + gap * 3 + 0.01 * Math.abs(dx ? q.y - p.y : q.x - p.x);   // (a tie: the one whose middle is nearer the frame's line, W on 太乙仙丹 framed 姜子牙's tab over 黃天化's, both over its column)
+    if (!best || off < best.off || (off === best.off && s < best.s)) best = { e: q.e, off, s };
+  }
+  return best ? best.e : null;
 }

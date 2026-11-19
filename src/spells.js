@@ -6,7 +6,8 @@ import { rand, effectH } from './world.js';
 import { NOISE } from './vfx.js';
 import { V, ease, basis, swordMesh, pointAlong, bezier, trail, intro, outro, DARK, ticker, cueAt, facing, yawOf, swirl, arrowMesh, flameRing, LEAF, talismanTex, petalGeo } from './spellkit.js';
 import { iceMaterial, shardGeometry, chunkGeometry, shatter, frost } from './elements.js';
-import { SPELLBOOK, PAL, energyStreak, beastSprite } from './spellbook.js';
+import { SPELLBOOK, PAL, energyStreak, beastSprite, beastGain } from './spellbook.js';
+export { beastGain };   // (a summon gained in a story scene: src/scene.js through battle.js, E.beastGain)
 export { arrowMesh };
 // fn after ms on the game clock (ctx.wait: not setTimeout, which runs off the fast-forward and the stepped video)
 const later = (ctx, ms, fn) => { ctx.wait(ms).then(fn); };
@@ -260,24 +261,24 @@ async function fireOrbs(ctx) {
 }
 // 冰晶術: [ROM fx 26] an ice orb falls trailing sparkles, smashes, and a cluster of crystals bursts up and shatters
 async function iceCrystals(ctx) {
-  const col = [0.55, 0.85, 1], v = ctx.vfx, at = ctx.at.clone();
+  const col = [0.82, 0.93, 1], v = ctx.vfx, at = ctx.at.clone();
   cueAt(ctx, 0.98);   // (the original's one sound as the orb forms, 0.98 s after the cast begins; over at 2.3 s)
   await intro(ctx, col, { dur: 800, dist: 10, pitch: 0.45 });
-  DARK(ctx, 0.35, 0.9, 0.5, 0.2);
+  DARK(ctx, 0.3, 0.9, 0.8, 0.6);   // (near neutral, a cool hint: a blue night turned the white ice blue [the user's call, 2026-11-17: whiter ice])
   const iceMat = iceMaterial();   // (src/elements.js)
   const B = basis(ctx), from = at.clone().add(B.right.clone().multiplyScalar(-3.5)).add(V(0, 7, 0)), to = at.clone().setY(at.y + 0.4);
   const orb = new THREE.Mesh(chunkGeometry(), iceMat); orb.scale.setScalar(0.42);
-  const halo = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), new THREE.MeshBasicMaterial({ map: v.glowTex, color: new THREE.Color(0.5, 0.85, 1.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); orb.add(halo);
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), new THREE.MeshBasicMaterial({ map: v.glowTex, color: new THREE.Color(0.85, 0.95, 1.3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); orb.add(halo);
   const rib = v.ribbon({ col, width: 0.3, n: 22 });
   v.timed(orb, 0.75, (k, dt) => {
     const p = from.clone().lerp(to, k * k); orb.position.copy(p); orb.rotation.x += dt * 5; orb.rotation.y += dt * 3; halo.lookAt(ctx.cam.camera.position); rib.push(p);
     for (let i = 0; i < 3; i++) v.spark(p.x + rand(-0.3, 0.3), p.y + rand(-0.3, 0.3), p.z + rand(-0.3, 0.3), { vy: rand(-0.3, 0.3), life: rand(0.4, 0.8), size: rand(0.05, 0.1), r: 0.8, gg: 0.95, b: 1, shape: 7, flicker: 1, ph: rand(0, 9) });
-    if (Math.random() < 0.5) v.smokePuff(p.x, p.y, p.z, { life: 0.7, size: 0.25, size1: 0.6, tint: [0.7, 0.85, 1] });
+    if (Math.random() < 0.5) v.smokePuff(p.x, p.y, p.z, { life: 0.7, size: 0.25, size1: 0.6, tint: [0.88, 0.93, 1] });
   }, () => rib.end());
   await ctx.wait(750);
-  v.flash([0.7, 0.9, 1], 0.12); v.shake(0.14, 0.25); v.ring(at, [0.8, 0.95, 1], 3, 0.6); v.decal(at, [0.4, 0.7, 1], 1.8, 2.2, { intensity: 0.5 }); frost(v, at, 1.6, 2.6);
-  v.burst(to, { n: 60, speed: 6, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 7 });
-  for (let i = 0; i < 12; i++) { const a = rand(0, 6.28), s = rand(1.2, 2.4); v.smokePuff(at.x + Math.cos(a) * 0.5, at.y + 0.08, at.z + Math.sin(a) * 0.5, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.2, life: rand(1.2, 1.8), size: 0.3, size1: 0.9, tint: [0.62, 0.78, 0.95] }); }
+  v.flash([0.92, 0.97, 1], 0.12); v.shake(0.14, 0.25); v.ring(at, [0.8, 0.95, 1], 3, 0.6); v.decal(at, [0.75, 0.87, 1], 1.8, 2.2, { intensity: 0.5 }); frost(v, at, 1.6, 2.6);
+  v.burst(to, { n: 60, speed: 6, cols: [[1, 1, 1], [0.92, 0.97, 1], [0.78, 0.88, 1]], size: 0.07, life: 0.9, g: 9, shape: 7 });
+  for (let i = 0; i < 12; i++) { const a = rand(0, 6.28), s = rand(1.2, 2.4); v.smokePuff(at.x + Math.cos(a) * 0.5, at.y + 0.08, at.z + Math.sin(a) * 0.5, { vx: Math.cos(a) * s, vy: rand(0.02, 0.15), vz: Math.sin(a) * s, drag: 2.2, life: rand(1.2, 1.8), size: 0.3, size1: 0.9, tint: [0.86, 0.91, 0.97] }); }
   for (let i = 0; i < 13; i++) {
     const a = rand(0, 6.28), r = i === 0 ? 0 : rand(0.3, 1.0), h = i === 0 ? 2.0 : rand(0.6, 1.5);
     const m = new THREE.Mesh(shardGeometry(), iceMat); m.scale.set(0.001, 0.001, 0.001);
@@ -287,7 +288,7 @@ async function iceCrystals(ctx) {
       const d = i * 0.03, g = Math.min(1, Math.max(0, (t - d) / 0.14)), w = (i === 0 ? 0.24 : 0.17);
       m.scale.set(w * g + 0.001, h * g + 0.001, w * g + 0.001);
       if (t > 1.05 && !m.userData.b) { m.userData.b = 1; m.visible = false;
-        v.burst(p.clone().setY(p.y + h * 0.5), { n: 20, speed: 4, cols: [[1, 1, 1], [0.7, 0.9, 1], [0.45, 0.75, 1]], size: 0.07, life: 0.9, g: 9, shape: 7 });
+        v.burst(p.clone().setY(p.y + h * 0.5), { n: 20, speed: 4, cols: [[1, 1, 1], [0.92, 0.97, 1], [0.78, 0.88, 1]], size: 0.07, life: 0.9, g: 9, shape: 7 });
         shatter(v, p.clone().setY(p.y + h * 0.5), 5, iceMat, { size: 0.2 }); }
     });
   }

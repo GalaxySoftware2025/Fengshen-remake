@@ -10,6 +10,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 import { MAP_W, MAP_H } from './rules.js';
+import { newWorld } from './kit/tex.js';
 const BLOOM_THRESHOLD = 1.35;   // linear scene luminance
 
 export const MARGIN = 8;                       // decorative border around the playable board
@@ -80,10 +81,33 @@ class SceneMSAAPass extends RenderPass {
   }
   setSize(w, h) { this.ms.setSize(w, h); }
   render(r, writeBuffer, readBuffer, dt, mask) {
+    if (this.useMS === false) { super.render(r, writeBuffer, readBuffer, dt, mask); if (this.front) this.drawFront(r, readBuffer); return; }   // (World.setQuality: straight into the chain, no copy)
     super.render(r, writeBuffer, this.ms, dt, mask);
+    if (this.front) this.drawFront(r, this.ms);
     this.quad.material.uniforms.tDiffuse.value = this.ms.texture; r.setRenderTarget(readBuffer); this.quad.render(r);
   }
+  // the front layer over the finished scene, its depth cleared: nothing of the set can cover it, while what is in it
+  // keeps its own order (a ring round the hero still passes behind him); no background, the shadows not drawn again
+  drawFront(r, target) {
+    const S = this.scene, cam = this.camera, mask = cam.layers.mask, bg = S.background, ac = r.autoClear;
+    r.setRenderTarget(target); r.autoClear = false; r.clearDepth();
+    S.background = null; r.shadowMap.needsUpdate = false; cam.layers.set(FRONT_LAYER);
+    r.render(S, cam);
+    cam.layers.mask = mask; S.background = bg; r.autoClear = ac;
+  }
 }
+
+// ---------------------------------------------------------------- the front
+// A hero's level-up and fall are drawn over the scenery (the user's call: a wall of 聖靈山's second room hid one): while
+// world.front(...) is open, the hero's sprite and everything added to the scene (or to the hero) in that time move to
+// FRONT_LAYER, which the scene pass draws after everything else with the depth cleared (SceneMSAAPass.drawFront); the
+// particles spawned near the hero go to front twins of vfx's systems (vfx.js sys). The lights are on both layers.
+export const FRONT_LAYER = 5;
+
+// what must be done before the scene is drawn, for the camera that draws it (the grass's cull: src/kit/terrain.js);
+// World.render runs them for the play camera, and anything drawing the scene with its own camera calls preDraw first
+export const preRender = new Set();
+export const preDraw = (camera, scene) => { for (const f of preRender) f(camera, scene); };
 
 // ---------------------------------------------------------------- the world
 export class World {
@@ -102,6 +126,12 @@ export class World {
       if (o.geometry) o.geometry.dispose();
       for (const m of [].concat(o.material || [], o.customDepthMaterial || [])) { for (const v of Object.values(m)) if (v && v.isTexture) v.dispose(); m.dispose(); }
     });
+    // and cut loose: anything kept past its world (a module's last-built group, a probe's sprite) held the old scene through
+    // its parent, and with it the whole old world's arrays, ~20-80 MB a world change (the user's report: the Windows app's
+    // memory; tools/qa/memory.js)
+    if (this.scene) this.scene.clear();
+    this.footprints = null;
+    newWorld();   // (the sets' painted textures: the cache keeps the new world's and lets the oldest of the rest go, kit/tex.js)
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(0xb9c7b4, 0.012);
     this.updaters = [];               // per-frame effects of a set (flames, water, particles)
@@ -171,7 +201,7 @@ export class World {
     S.environment = envMap(this.renderer, M.env || {}); this.envSpec = M.env || {}; this.envTurn = 0;
     if (M.shafts) this.shafts(); else this.shaftMeshes = [];
     if (!this.composer) this.post();
-    this.ao.enabled = M.ao !== false; this.ao.blendIntensity = M.aoI ?? 1;
+    this.aoWanted = M.ao !== false; this.ao.enabled = this.aoWanted && !(this.quality >= 1); this.ao.blendIntensity = M.aoI ?? 1;
     this.ao.updateGtaoMaterial({ radius: M.aoR ?? 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 16 });
     this.grade.uniforms.uSat.value = M.sat ?? 1.05; this.renderer.toneMappingExposure = M.exposure ?? 1.0;
     this.bloom.strength = M.bloom ?? 0.4;
@@ -291,6 +321,14 @@ export class World {
     const img = await loadImg(src), tex = this.groundMesh.material.map, g = tex.image.getContext('2d'), PX = 64;
     g.imageSmoothingEnabled = false; g.drawImage(img, k * 32, 0, 32, 32, (cx + MARGIN) * PX, (cy + MARGIN) * PX, PX, PX); tex.needsUpdate = true;
   }
+  // what a machine too slow at the governor's smallest scale gives up (battle.js QUALITY), one step at a time: 1 the
+  // ambient occlusion, 2 the scene's multisampling too, 3 bloom too; 0 everything
+  setQuality(level) {
+    this.quality = level;
+    if (this.ao) this.ao.enabled = !!this.aoWanted && level < 1;
+    if (this.renderPass) this.renderPass.useMS = level < 2;
+    if (this.bloom) this.bloom.enabled = level < 3;
+  }
   setScale(k) { this.scale = k; this.renderer.setPixelRatio(k); if (this.composer) this.composer._pixelRatio = k; if (this.lastSize) this.resize(...this.lastSize); }   // the composer keeps its own ratio: without it every pass stays at the first scale
   resize(w, h) {
     this.lastSize = [w, h];
@@ -302,8 +340,31 @@ export class World {
     for (const f of this.updaters) f(dt, t);
     for (const m of this.shaftMeshes) m.material.opacity = m.userData.base * (0.6 + 0.4 * Math.sin(t * 0.4 + m.userData.ph));
   }
+  // open the front for objs (the hero's sprites) and roots (the hero's group: what is pinned to him) round centre
+  // (particles within r of it, on the ground plane); returns close(), which puts every object back on its own layers
+  front(objs, roots, centre, r = 3.5) {
+    const f = { objs, roots: [this.scene, ...roots], before: new Map(), was: new Map(), centre: centre.clone(), r };
+    for (const root of f.roots) f.before.set(root, new Set(root.children));
+    this.scene.traverse(o => { if (o.isLight && !o.layers.isEnabled(FRONT_LAYER)) { f.was.set(o, o.layers.mask); o.layers.enable(FRONT_LAYER); } });
+    (this.fronts ||= []).push(f); this.frontTick();
+    return () => {
+      const i = this.fronts.indexOf(f); if (i < 0) return; this.fronts.splice(i, 1);
+      for (const [o, m] of f.was) if (!this.fronts.some(g => g.was.has(o))) o.layers.mask = m;   // (another front still open keeps its own)
+    };
+  }
+  frontTick() {
+    for (const f of this.fronts || []) {
+      const tag = o => o.traverse(c => { if (f.was.has(c)) return; f.was.set(c, c.layers.mask); if (c.isLight) c.layers.enable(FRONT_LAYER); else c.layers.set(FRONT_LAYER); });
+      for (const o of f.objs) tag(o);
+      for (const root of f.roots) { const b = f.before.get(root); for (const c of root.children) if (!b.has(c) && !f.was.has(c)) tag(c); }
+    }
+  }
+  // a particle at (x, z) belongs to an open front
+  inFront(x, z) { for (const f of this.fronts || []) if ((x - f.centre.x) ** 2 + (z - f.centre.z) ** 2 < f.r * f.r) return true; return false; }
   render() {
     this.renderer.shadowMap.needsUpdate = this.shadowsLive || (this.frameNo & 1) === 0; this.frameNo++;   // still: every other frame
+    this.frontTick(); this.renderPass.front = !!(this.fronts && this.fronts.length) || !!(this.frontBusy && this.frontBusy());
+    preDraw(this.camera, this.scene);
     const T = this.gpuTimer(), q = T && !T.busy && T.free.pop();
     if (q) { T.gl.beginQuery(T.ext.TIME_ELAPSED_EXT, q); T.busy = true; }
     this.composer.render();

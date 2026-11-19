@@ -12,8 +12,9 @@ import REMADE from './remake/index.js';
 import * as Audio from './audio.js';
 import * as Keys from './keys.js';
 import { speed } from './speed.js';
-import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff, LINE_FACE, LINE_SHOW } from './tracks.js';
+import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff, LINE_FACE, LINE_SHOW, songOf } from './tracks.js';
 import * as CUT from './cutfx.js';
+import { tabletOf, recolor } from './tablets.js';
 registerSets(REMADE);
 const { G } = R;
 const $ = id => document.getElementById(id);
@@ -82,8 +83,12 @@ function emoteSprite(scene) {
 }
 
 // a thrown thing's sprite (assets/units/<name>.png, 16 px: half a cell), lit like the cast
-function tossSprite(scene, name) {
-  const tex = new THREE.TextureLoader().load('assets/units/' + name + '.png'); tex.magFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
+// (tag: the scene's; a 古文書 takes the art or tone of the colour its line names, src/tablets.js)
+function tossSprite(scene, name, tag) {
+  const t = tabletOf(tag, name), tex = new THREE.TextureLoader().load('assets/units/' + t.art + '.png', t.tone ? tx => {
+    const c = document.createElement('canvas'); c.width = tx.image.width; c.height = tx.image.height; const g = c.getContext('2d'); g.drawImage(tx.image, 0, 0);
+    const im = g.getImageData(0, 0, c.width, c.height); recolor(im.data, t.tone); g.putImageData(im, 0, 0); tx.image = c; tx.needsUpdate = true; } : undefined);
+  tex.magFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5, fog: false }));
   s.scale.set(0.5, 0.5, 1); s.renderOrder = 7; scene.add(s); return s;
 }
@@ -229,7 +234,7 @@ export async function play(E, tag, part, hooks) {
       if (moving) { const sp = Math.hypot(q[1] - p[1], q[2] - p[2]) / (q[0] - p[0]);
         if (sp <= 6) act.pace = act.pace == null || !wasWalking ? sp : act.pace * 0.7 + sp * 0.3;   // a new walk starts at its own pace (and follows the ease-in of a softened track within a few frames); a jump (a cut between two spots) is no walking speed
         act.walkMs = paceMs(act.pace ?? 1); }
-      if ((S.ghosts || []).includes(slot + ':' + p[3]) && !act.ghost) {   // the original's flicker-translucency (that sprite in that slot): a steady phantom
+      if ((S.ghosts || []).some(g => { const [k, f] = g.split('@'); return k === slot + ':' + p[3] && t >= (+f || 0); }) && !act.ghost) {   // the original's flicker-translucency (that sprite in that slot, from the frame its flicker starts: solid before it, scene 36's 守護靈): a steady phantom
         act.ghost = true; for (const m of [act.mesh.material, act.big.material]) { m.transparent = true; m.opacity = 0.62; m.depthWrite = false; m.needsUpdate = true; }
       }
       const ap = appearing.get(slot);
@@ -292,7 +297,7 @@ export async function play(E, tag, part, hooks) {
     for (const e of propEvs) {
       const on = worldReady && propsPassed.has(e) && t >= e.f && t < e.until && mapKeyOf(S, e.f) === mapKeyOf(S, t);
       let spr = props.get(e);
-      if (on && !spr) { spr = tossSprite(E.world.scene, e.name); props.set(e, spr); }
+      if (on && !spr) { spr = tossSprite(E.world.scene, e.name, S.tag); props.set(e, spr); }
       if (spr) { if (on) { const q = e.path ? at(e.path.map(p => [p[0], p[1], p[2], '']), t) : null; propAt(spr, q ? q.x : e.x, q ? q.y : e.y); if (e.blink && t >= e.blink[0]) spr.visible = Math.floor(t) % 2 === 0; } else spr.visible = false; }   // (op 45's items: along their unit's record; op 46's blink)
       if (on && window.__remake) window.__remake.propsOn.push(e.f);   // (src/qa.js: none may show under a line of its own frame)
     }
@@ -302,7 +307,7 @@ export async function play(E, tag, part, hooks) {
       const P = tossEv.path, f0 = P[0][0], f1 = P[P.length - 1][0], u = (t - f0) / (f1 - f0);
       if (u >= 1) { if (toss) toss.visible = false; tossEv = null; }
       else if (u >= 0) {
-        if (!toss) toss = tossSprite(E.world.scene, tossEv.sprite);
+        if (!toss) toss = tossSprite(E.world.scene, tossEv.sprite, S.tag);
         const a = P[0], b = P[P.length - 1], A = E.tileCenter((a[1] + 8) / 32 - 0.5, (a[2] + 8) / 32 - 0.5), B = E.tileCenter((b[1] + 8) / 32 - 0.5, (b[2] + 8) / 32 - 0.5);
         const k = u * u * (3 - 2 * u) * 0.25 + u * 0.75;   // a little slow at the ends: thrown, then caught
         const y = A.y + 0.55 + (B.y - A.y) * k + 4 * 1.05 * k * (1 - k);   // hand height, up 1.05 at the top (its lower edge just clears the 1.35 post; higher it left the view)
@@ -322,7 +327,7 @@ export async function play(E, tag, part, hooks) {
         const e = evs[ei++];
         if (e.kind === 'prop') propsPassed.add(e);
         if (seek != null && e.f < seek) {   // seeking (#at=): the state at the seek frame, nothing shown on the way
-          if (e.kind === 'music') { if (e.id < 0x8000) Audio.play(e.id); }
+          if (e.kind === 'music') { if (e.id < 0x8000) Audio.play(songOf(tag, e)); }
           else if (e.kind === 'map') { await setMap(e.map, false, e.white); lit = false; }
           else if (e.kind === 'descent') { await setMap(e.map, true); await fade(1, 0); lit = false; }
           else if (e.kind === 'fadeIn' || e.kind === 'say' || (e.kind === 'native' && e.name === 'vision' && seek > e.show)) lit = true;
@@ -344,7 +349,7 @@ export async function play(E, tag, part, hooks) {
           else if (e.kind === 'battle') { ei--; seek = null; }   // past the first part: the battle comes as usual
           continue;
         }
-        if (e.kind === 'music') { if (!skip || e.id < 0x8000) Audio.play(e.id); continue; }   // a song (skipping: still the right one), an effect
+        if (e.kind === 'music') { if (!skip || e.id < 0x8000) Audio.play(e.id < 0x8000 ? songOf(tag, e) : e.id); continue; }   // a song (skipping: still the right one; tracks.js SCENE_SONG: the user's songs), an effect
         // @qa scene:42 scene:54
         if (skip && !['map', 'join', 'gift', 'cell', 'battle'].includes(e.kind)) continue;
         if (e.kind === 'map') await setMap(e.map, false, e.white);   // stays dark until the original's fade-in (or the first line / card)
@@ -369,13 +374,14 @@ export async function play(E, tag, part, hooks) {
           }
           await fade(0, 0.2);   // pose first: the fade must not reveal the frame before
           if (e.shows && sa && !sa.hidden) {   // [design, the user's call] the speaker holds up the prop for the line
-            const pt = at(sp.tr, t); if (!lineProp) lineProp = tossSprite(E.world.scene, e.shows[0]);
+            const pt = at(sp.tr, t); if (!lineProp) lineProp = tossSprite(E.world.scene, e.shows[0], S.tag);
             if (pt) propAt(lineProp, pt.x + e.shows[1], pt.y + e.shows[2]);
           }
           if (window.__remake) window.__remake.say = { tag, f: e.f, who: e.who, actor: e.actor, n: (window.__remake.say && window.__remake.say.tag === tag ? window.__remake.say.n : 0) + 1 };
           if (window.__qa) window.__qa.shown.push({ t: performance.now(), kind: 'say' });
           await E.ui.say(e.text, e.who || null);
           lineFace = null; if (lineShow) { lineShow = null; pose(); }   // (gone again with the line)
+          if (e.until != null) t = Math.max(t, e.until);   // a line inside a cut, up till the press that ends it (scene 65's cheer): on from there
           if (lineProp) lineProp.visible = false;
           if (!(evs[ei] && evs[ei].kind === 'say' && evs[ei].f === e.f)) frameFix = 0;   // after the last line here, back to the original's framing (a glide)
         }
@@ -395,7 +401,17 @@ export async function play(E, tag, part, hooks) {
         else if (e.kind === 'cell' && worldReady && setFor(mapKeyOf(S, e.f))) { const st = setFor(mapKeyOf(S, e.f)); if (st.cell) st.cell(E, e.x, e.y, e.block); }   // a remade set acts the change out (a door opens)
         else if (e.kind === 'cell' && worldReady && S.atlas[mapKeyOf(S, e.f)]) await E.world.paintCell(e.x, e.y, 'assets/maps/' + mapKeyOf(S, e.f) + '-blocks.png', S.atlas[mapKeyOf(S, e.f)].indexOf(e.block));
         else if (e.kind === 'join' && hooks && hooks.join) hooks.join(e.cid);
-        else if (e.kind === 'summon') { if (hooks && hooks.summon) hooks.summon(e.spell); if (!skip) await E.ui.say('楊戩 得到了召喚獸「' + globalThis.COMMON.spells[e.spell].name + '」！', null, 2400); }   // [0x0EDD80 shows the beast and waits for a button]
+        else if (e.kind === 'summon') {   // [0x0EDD80: a box, its sound 0x8061, then waits for a button]
+          if (hooks && hooks.summon) hooks.summon(e.spell);
+          // the beast rises over 楊戩 (slot 2) and pours into him (spellbook.js beastGain), unless it is on screen already
+          // (scene 19's 龍王, grown in just before: GROWN); then the box with the original's sound [the user's call]
+          if (!skip) {
+            const yang = slotActor(2), shown = Object.values(S.actors).some(tr => { const r = at(tr, e.f); return r && GROWN.has(r.gfx); });
+            if (window.__remake) window.__remake.gaining = e.spell;   // (a probe: tools/qa/capture.js shoots from here)
+            if (worldReady && yang && !shown) await E.beastGain(E.vfx, e.spell, yang);
+            Audio.play(0x8061); await E.ui.say('楊戩 得到了召喚獸「' + globalThis.COMMON.spells[e.spell].name + '」！', null, 2400);
+          }
+        }
         // @qa scene:42 scene:54
         else if (e.kind === 'gift') {   // a story gift into a hero's hands (or the bag), told as a summon is
           const who = hooks && hooks.gift ? hooks.gift(e) : null, C = globalThis.COMMON, name = C.items[e.item].name;
@@ -440,17 +456,40 @@ export async function play(E, tag, part, hooks) {
 // (a line's top at 240 + 16k - (t - f) / 2 on the original's 224 px screen, scaled to the canvas), each line gone once it
 // is off the top; white with a dark outline, as the original's
 let rollEl = null;
+// the remake's own credit in the epilogue's credits, held with them: 1996川普科技 moved up to two blank lines under the
+// name list (the gap between the roles; the original leaves six), the remake's credit four blank lines under it; centred
+// on its drawn width (Latin letters are narrower than the original's 16 px glyphs) [the user's request]
+export const REMAKE_CREDIT = '重制版 b站FzuGalaxy';
+const rollLines = new WeakMap();
+function linesOf(e) {
+  if (!rollLines.has(e)) {
+    const lines = [...e.lines], xs = e.xs ? [...e.xs] : null, k = lines.findIndex(l => /^1996/.test(l));
+    if (k >= 0 && e.hold) {
+      let m = k - 1; while (m > 0 && !lines[m]) m--;
+      const to = m + 3, at = to + 5, co = lines[k], cx = xs && xs[k];
+      lines[k] = ''; lines[to] = co; if (xs) xs[to] = cx;
+      while (lines.length <= at) { lines.push(''); xs && xs.push(cx); }
+      lines[at] = REMAKE_CREDIT; if (xs) xs[at] = null;
+    }
+    rollLines.set(e, { lines, xs });
+  }
+  return rollLines.get(e);
+}
 function drawRoll(E, e, t) {
   if (!rollEl) { rollEl = document.createElement('div'); rollEl.className = 'roll'; const f = document.getElementById('fade'); f.parentNode.insertBefore(rollEl, f); }
   const r = E.canvasRect, s = r.height / 224, u = Math.min(t, e.end ?? Infinity) - e.f;   // (it stops rising at its end: the epilogue's last page held)
+  const { lines, xs } = linesOf(e);
   Object.assign(rollEl.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', fontSize: 16 * s + 'px' });
-  while (rollEl.children.length < e.lines.length) rollEl.appendChild(document.createElement('div'));
-  e.lines.forEach((line, k) => {
+  while (rollEl.children.length < lines.length) rollEl.appendChild(document.createElement('div'));
+  lines.forEach((line, k) => {
     const el = rollEl.children[k], g = [...line], y = 240 + 16 * k - u / 2, n = Math.max(0, Math.min(g.length, Math.floor((u - 3 - 32 * k) / 2) + 1));
     const on = n > 0 && y > -16 && y < 224; el.style.display = on ? '' : 'none'; if (!on) return;
-    if (el.dataset.n !== String(n)) { el.textContent = g.slice(0, n).join(''); el.dataset.n = n; }
-    const x = e.xs ? e.xs[k] : (256 - 16 * g.length) / 2;
-    el.style.transform = `translate(${r.width / 2 + (x - 128) * s}px, ${y * s}px)`;
+    const x = xs ? xs[k] : (256 - 16 * g.length) / 2;
+    if (el.dataset.n !== String(n)) {   // (a centred line is laid out whole, the part not yet typed hidden, so it types in place)
+      el.textContent = g.slice(0, n).join(''); el.dataset.n = n;
+      if (x == null && n < g.length) { const rest = document.createElement('span'); rest.style.visibility = 'hidden'; rest.textContent = g.slice(n).join(''); el.appendChild(rest); }
+    }
+    el.style.transform = x == null ? `translate(calc(${r.width / 2}px - 50%), ${y * s}px)` : `translate(${r.width / 2 + (x - 128) * s}px, ${y * s}px)`;
   });
 }
 function clearRoll() { if (rollEl) { rollEl.remove(); rollEl = null; } }

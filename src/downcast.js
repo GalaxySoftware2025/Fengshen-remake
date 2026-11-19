@@ -12,18 +12,18 @@ import * as THREE from 'three';
 const _m = new THREE.Matrix4(), _i = new THREE.Matrix4();
 // what the mesh's triangles depend on: its place in the world, its instances, its vertices
 const stamp = mesh => { const e = mesh.matrixWorld.elements, g = mesh.geometry;
-  return e[0] + e[1] * 3 + e[2] * 5 + e[5] * 7 + e[10] * 11 + e[12] * 13 + e[13] * 17 + e[14] * 19 + (mesh.isInstancedMesh ? mesh.count * 23 + mesh.instanceMatrix.version * 29 : 0) + (g && g.attributes.position ? g.attributes.position.version * 31 : 0) + (mesh.visible ? 0 : 37); };
+  return e[0] + e[1] * 3 + e[2] * 5 + e[5] * 7 + e[10] * 11 + e[12] * 13 + e[13] * 17 + e[14] * 19 + (mesh.isInstancedMesh && !mesh.userData.cullAll ? mesh.count * 23 + mesh.instanceMatrix.version * 29 : 0) + (g && g.attributes.position ? g.attributes.position.version * 31 : 0) + (mesh.visible ? 0 : 37); };
 // one mesh's triangles into cell buckets over the area
 function part(mesh, X0, Z0, X1, Z1) {
   const W = X1 - X0 + 1, buckets = new Map(), tris = [], mats = [];
   const g = mesh.geometry, pos = g && g.attributes && g.attributes.position;
   if (pos && mesh.visible) {
     const idx = g.index, n = idx ? idx.count : pos.count, groups = g.groups && g.groups.length ? g.groups : [{ start: 0, count: n, materialIndex: 0 }];
-    const ml = [].concat(mesh.material), drawn = g.drawRange || { start: 0, count: Infinity }, inst = mesh.isInstancedMesh ? mesh.count : 1, ix = idx && idx.array;
+    const ml = [].concat(mesh.material), drawn = g.drawRange || { start: 0, count: Infinity }, all = mesh.userData.cullAll, inst = mesh.isInstancedMesh ? (all ? all.n : mesh.count) : 1, ix = idx && idx.array;   // (all: every tuft of a culled grass band, not those sent this frame: src/kit/terrain.js)
     const raw = pos.isInterleavedBufferAttribute ? pos.data.array : pos.array, fast = raw instanceof Float32Array && !pos.normalized;   // (else read through the attribute)
     const P = raw, st = pos.isInterleavedBufferAttribute ? pos.data.stride : pos.itemSize, off = pos.offset || 0, nv = pos.count, Wv = new Float64Array(nv * 3);
     for (let k = 0; k < inst; k++) {
-      _m.copy(mesh.matrixWorld); if (mesh.isInstancedMesh) { mesh.getMatrixAt(k, _i); _m.multiply(_i); }
+      _m.copy(mesh.matrixWorld); if (mesh.isInstancedMesh) { if (all) _i.fromArray(all.mat, k * 16); else mesh.getMatrixAt(k, _i); _m.multiply(_i); }
       const flip = _m.determinant() < 0, e = _m.elements;   // (a mirrored instance turns its faces round)
       for (let v = 0; v < nv; v++) {   // every vertex into the world once (not once per triangle that shares it)
         const o = v * st + off, x = fast ? P[o] : pos.getX(v), y = fast ? P[o + 1] : pos.getY(v), z = fast ? P[o + 2] : pos.getZ(v);

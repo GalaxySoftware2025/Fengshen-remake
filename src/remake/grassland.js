@@ -169,6 +169,7 @@ async function build(E, FX) {
   // laps at the boulder banks, and points of light twinkle (riverWater)
   const water = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40).rotateX(-Math.PI / 2), riverWater(shoreMask(lay, W, outside)));
   water.position.set(MW / 2, WATER, MH / 2); water.receiveShadow = true; S.add(water);
+  water.material.userData.water = true;   // (src/battle.js overWater: the river lies at one level, its shore's, as battle 17's ponds [the user's report, 2026-11-16])
   for (const [x, y] of CHESTS) { const c = chest(M, x + 0.5, y + 0.5, land.at(x + 0.5, y + 0.5), false, 0, 1.4); S.add(c); chestG.set(x + ',' + y, c); }
   // tall golden grass over the plain, shorter at the banks; boulders and pebbles; the wildflowers; scrub on the banks
   const clear = (x, z) => !CHESTS.some(([cx, cy]) => x > cx - 0.2 && x < cx + 1.2 && z > cy - 0.2 && z < cy + 1.2);

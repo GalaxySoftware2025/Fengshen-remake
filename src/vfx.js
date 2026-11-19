@@ -1,6 +1,6 @@
 // Effects engine: particles, rings, pillars, lightning, lights, screen beats, and the fire wall.
 import * as THREE from 'three';
-import { effectH, rand } from './world.js';
+import { effectH, rand, FRONT_LAYER } from './world.js';
 
 // ---------------------------------------------------------------- particles
 const PVS = `attribute vec4 aCol; attribute float aSize; attribute float aShape; uniform float uScale;
@@ -269,6 +269,12 @@ export class VFX {
     this.add = new Particles(S, 9000, THREE.AdditiveBlending);
     this.soft = new Particles(S, 4000, THREE.NormalBlending);
     this.flames = new Flames(S, 2500, false); this.smokes = new Flames(S, 700, true);
+    // their twins on the front layer (world.front: a level-up's or a fall's particles over the scenery), sharing their
+    // materials; a particle goes to a twin when it starts near an open front (sys)
+    const twin = (o, t) => { const m = t.points || t.mesh; m.material.dispose(); m.material = t.mat = o.mat; m.layers.set(FRONT_LAYER); return t; };
+    this.fr = { add: twin(this.add, new Particles(S, 3000, THREE.AdditiveBlending)), soft: twin(this.soft, new Particles(S, 1500, THREE.NormalBlending)),
+      flames: twin(this.flames, new Flames(S, 1000, false)), smokes: twin(this.smokes, new Flames(S, 300, true)) };
+    world.frontBusy = () => this.fr.add.list.length + this.fr.soft.list.length + this.fr.flames.list.length + this.fr.smokes.list.length > 0;
     this.items = [];                 // timed meshes: { mesh, t, life, update(k, dt) }
     this.ringTex = ringTexture(); this.beamTex = beamTexture();
     this.glowTex = ctex(128, 128, (g, W) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, W); });
@@ -278,8 +284,9 @@ export class VFX {
     this.hitstop = 0; this.timeScale = 1;
   }
   // ---- primitives
-  spark(x, y, z, o) { this.add.add(Object.assign({ x, y, z }, o)); }
-  smoke(x, y, z, o) { this.soft.add(Object.assign({ x, y, z }, o)); }
+  sys(k, x, z) { return this.world.fronts && this.world.fronts.length && this.world.inFront(x, z) ? this.fr[k] : this[k]; }
+  spark(x, y, z, o) { this.sys('add', x, z).add(Object.assign({ x, y, z }, o)); }
+  smoke(x, y, z, o) { this.sys('soft', x, z).add(Object.assign({ x, y, z }, o)); }
   burst(p, o) {
     o = Object.assign({ n: 30, speed: 4, col: [1, 0.8, 0.5], size: 0.08, life: 0.7, g: 6, up: 0.4, shape: 1, spread: 1 }, o);
     for (let i = 0; i < o.n; i++) {
@@ -289,10 +296,10 @@ export class VFX {
         size: o.size * rand(0.7, 1.3), r: c[0], gg: c[1], b: c[2], shape: o.shape, floor: effectH(p.x, p.z) + 0.02, ph: rand(0, 9), flicker: o.flicker });
     }
   }
-  flame(x, y, z, o) { this.flames.add(Object.assign({ x, y, z }, o)); }
-  realFire(x, y, z, o) { this.flames.add(Object.assign({ x, y, z, mode: 3 }, o)); }   // real fire: noise-shaped flame bodies (not tongues), mode 3
-  puff(x, y, z, o) { this.flames.add(Object.assign({ x, y, z, mode: 1 }, o)); }
-  smokePuff(x, y, z, o) { this.smokes.add(Object.assign({ x, y, z, mode: 2, tint: [0.16, 0.13, 0.12] }, o)); }
+  flame(x, y, z, o) { this.sys('flames', x, z).add(Object.assign({ x, y, z }, o)); }
+  realFire(x, y, z, o) { this.sys('flames', x, z).add(Object.assign({ x, y, z, mode: 3 }, o)); }   // real fire: noise-shaped flame bodies (not tongues), mode 3
+  puff(x, y, z, o) { this.sys('flames', x, z).add(Object.assign({ x, y, z, mode: 1 }, o)); }
+  smokePuff(x, y, z, o) { this.sys('smokes', x, z).add(Object.assign({ x, y, z, mode: 2, tint: [0.16, 0.13, 0.12] }, o)); }
   ribbon(o) { return new Ribbon(this, o); }
   fireball(radius, o) {
     o = o || {};
@@ -374,9 +381,21 @@ export class VFX {
     return this.timed(group, life, (k, dt) => { acc += dt; if (acc > 0.05) { acc = 0; build(); } mat.opacity = (1 - k) * 1.2 * (0.6 + 0.4 * Math.random()); });
   }
   light(p, col, intensity, life, dist) {
-    const L = this.lights.reduce((a, b) => (a.t / (a.life || 1) > b.t / (b.life || 1) ? a : b));
-    const s = this.lights.find(x => x.life === 0 || x.t >= x.life) || L;
+    const free = this.lights.filter(x => !x.held); if (!free.length) return;
+    const L = free.reduce((a, b) => (a.t / (a.life || 1) > b.t / (b.life || 1) ? a : b));
+    const s = free.find(x => x.life === 0 || x.t >= x.life) || L;
     s.l.position.copy(p); s.l.color.setRGB(...col); s.l.distance = dist || 10; s.t = 0; s.life = life; s.base = intensity * 0.55;   // effect lights stay a tint: bloom carries the glow
+  }
+  // one of the pool's lights held by an effect that moves (a fire bird), driven by it each frame till released. Never a
+  // light of its own: a light added to the scene makes three.js build every lit material's program again (火鳳凰 froze
+  // 0.63 s as the phoenix rose and 0.47 s at its first dive [the user's report, 2026-11-18]; tools/qa/spells.js frames).
+  // With every light held, a stand-in that lights nothing.
+  holdLight() {
+    const s = this.lights.find(x => !x.held && (x.life === 0 || x.t >= x.life)) || this.lights.find(x => !x.held);
+    if (!s) return { set() {}, release() {} };
+    s.held = true; s.life = 0; s.l.intensity = 0;
+    return { set: (p, col, intensity, dist) => { s.l.position.copy(p); if (col) s.l.color.setRGB(...col); s.l.intensity = intensity; s.l.distance = dist || 10; },
+      release: () => { s.held = false; s.l.intensity = 0; s.l.position.set(0, -50, 0); } };
   }
   rain(center, life, o) {
     o = o || {}; const N = o.n || 500, pos = new Float32Array(N * 6), seed = [];
@@ -406,6 +425,7 @@ export class VFX {
   // ---- per frame
   update(dt, t) {
     this.add.update(dt); this.soft.update(dt); this.flames.update(dt, t); this.smokes.update(dt, t);
+    const F = this.fr; F.add.update(dt); F.soft.update(dt); F.flames.update(dt, t); F.smokes.update(dt, t);
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i]; it.t += dt; let k = Math.min(1, it.t / it.life);
       // an effect that throws ends there, and the error is reported off the frame loop: one broken effect must never stop
@@ -413,7 +433,7 @@ export class VFX {
       try { it.update && it.update(k, dt, it.t); } catch (e) { k = 1; setTimeout(() => { throw e; }); }
       if (k >= 1) { this.scene.remove(it.mesh); it.mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.items.splice(i, 1); try { it.onEnd && it.onEnd(); } catch (e) { setTimeout(() => { throw e; }); } }
     }
-    for (const s of this.lights) { if (s.life <= 0) continue; s.t += dt; const k = s.t / s.life; s.l.intensity = k >= 1 ? 0 : s.base * (1 - k) * (1 - k); if (k >= 1) s.life = 0; }
+    for (const s of this.lights) { if (s.held || s.life <= 0) continue; s.t += dt; const k = s.t / s.life; s.l.intensity = k >= 1 ? 0 : s.base * (1 - k) * (1 - k); if (k >= 1) s.life = 0; }
     const sc = this.screen;
     sc.flash *= Math.exp(-dt * 7); sc.chroma *= Math.exp(-dt * 5); sc.shakeT = Math.max(0, sc.shakeT - dt); if (!sc.shakeT) sc.shake = 0;
     sc.dark += (sc.darkTarget - sc.dark) * (1 - Math.exp(-dt * 3)); sc.bars += (sc.barsTarget - sc.bars) * (1 - Math.exp(-dt * 4)); sc.heat += (sc.heatTarget - sc.heat) * (1 - Math.exp(-dt * 4));

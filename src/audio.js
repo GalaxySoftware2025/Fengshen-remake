@@ -6,6 +6,16 @@
 import * as Keys from './keys.js';
 let ctx = null, master = null, musicBus = null, sfxBus = null, table = null, cur = null, want = null;
 const buffers = new Map(), loading = new Map();
+// songs not playing are let go [the user's call: every song heard stayed decoded, ~23 MB a minute of music, up to ~500 MB
+// over a whole game]: only the one playing and the one a jingle goes back to stay (release). Effects stay (short, heard
+// again and again); so do songs synthesized from the ROM's logs (the public build: rendering one again takes seconds).
+// A song heard again is fetched and decoded again, a fraction of a second. (tools/qa/sounds.js)
+const synthed = new Set(); let jing = null;   // jing: { id, back } while a jingle plays
+const isSong = k => /^[0-9a-f]{2}$/.test(k);
+function release(id) {
+  const keep = new Set([key(id)]); if (jing) keep.add(key(jing.back));
+  for (const k of [...buffers.keys()]) if (isSong(k) && !keep.has(k) && !synthed.has(k)) { buffers.delete(k); loading.delete(k); }
+}
 const MUSIC_VOL = 0.55, SFX_VOL = 0.8;
 export const SFX = { cursor: 0x8045, ok: 0x806b, cancel: 0x80ae, hit: 0x8089, saved: 0x8061 };   // saved: the original's on a save (tools/rom: menu.pkl, 儲存記錄 → a slot)   // the menus' and a blow's (tools/rom: menus at 0x140b8 / 0x140e6, the hunt's strike)
 
@@ -42,7 +52,8 @@ function load(id) {
   const k = key(id);
   if (buffers.has(k)) return Promise.resolve(buffers.get(k));
   const logged = window.AUDIO_LOGS && table && table[k];   // (the public build: no rendered files, straight to the log)
-  if (!loading.has(k)) loading.set(k, (logged ? synthesize(k) : fetch('assets/audio/' + k + '.ogg').then(r => r.ok ? r.arrayBuffer().then(b => ctx.decodeAudioData(b)) : synthesize(k)))
+  const rendered = () => { synthed.add(k); return synthesize(k); };
+  if (!loading.has(k)) loading.set(k, (logged ? rendered() : fetch('assets/audio/' + k + '.ogg').then(r => r.ok ? r.arrayBuffer().then(b => ctx.decodeAudioData(b)) : rendered()))
     .then(buf => { buffers.set(k, buf); return buf; }).catch(() => null));
   return loading.get(k);
 }
@@ -61,22 +72,42 @@ export async function music(id, fade = 0.6, restart = false) {
   const lp = loopOf(id, t, buf.duration); if (lp) { src.loop = true; [src.loopStart, src.loopEnd] = lp; }
   gain.gain.value = 1; src.connect(gain); gain.connect(musicBus); src.start();
   cur = { id, src, gain };
+  if (jing && jing.id !== id) jing = null;   // (the jingle over: back, or another song in its place)
+  release(id);
 }
 // play effect id (or a name in SFX) once
-export async function sfx(id, o = {}) {   // o: { vol (0-1), rate (playback speed: pitch) }
+// o: { vol (0-1), rate (playback speed: pitch), ch, hold }. ch: the channels it plays on in the original (data/spellsound.js
+// SFX_CH: 'd' the DAC, '0'-'3' the PSG's): as the driver does, it cuts off any effect asked for before it still playing
+// on a channel it shares, and one asked for after it on one has it never start (the order of the asking, not of the
+// loading). hold: its first frame (1/60 s) sounds over and over until the next on its channels cuts it (the driver
+// starting it over every frame; at most hold seconds and one more) [the user's report: the spells' repeated sounds piled
+// up over each other where the original's each cut the last off, 2026-11-16]
+const voices = new Set(), lastOn = {}; let asked = 0;
+export const running = () => !!ctx && ctx.state === 'running';   // (tools/qa/spells.js: the sound woken)
+export async function sfx(id, o = {}) {
   if (typeof id === 'string' && SFX[id] != null) id = SFX[id];
   if (id == null) return;
   if (window.__qa) (window.__qa.sfx ||= []).push(id);   // what was asked for (tools/qa: sound checks), even with no audio running
   if (window.__qa) (window.__qa.sfxT ||= []).push([id, window.__remake && window.__remake.clock ? window.__remake.clock() : 0]);   // and when, on the game clock (tools/qa/spells.js: a spell's sounds against the original's)
+  const ch = o.ch ? [...o.ch] : [], n = ++asked; for (const c of ch) lastOn[c] = n;
   await init(); if (!ctx || ctx.state !== 'running') return;
-  const buf = await load(id); if (!buf) return;
+  const buf = await load(id); if (!buf || ch.some(c => lastOn[c] > n)) return;
+  const now = () => window.__remake && window.__remake.clock ? window.__remake.clock() : ctx.currentTime;
+  for (const v of [...voices]) if (v.n < n && v.ch.some(c => ch.includes(c))) { voices.delete(v); try { v.src.stop(); } catch (e) {} if (v.qa) v.qa.t1 = now(); }
   const src = ctx.createBufferSource(); src.buffer = buf; if (o.rate) src.playbackRate.value = o.rate;
+  if (o.hold) { src.loop = true; src.loopStart = 0; src.loopEnd = Math.min(buf.duration, 1 / 60); }
   if (o.vol != null) { const g = ctx.createGain(); g.gain.value = o.vol; src.connect(g); g.connect(sfxBus); } else src.connect(sfxBus);
-  src.start();
+  src.start(); if (o.hold) src.stop(ctx.currentTime + o.hold + 1);
+  if (ch.length) {
+    // (tools/qa/spells.js: each voice's span on the game clock, to see none overlaps another on its channels)
+    const v = { n, ch, src, qa: window.__qa ? { id, ch: o.ch, hold: !!o.hold, t0: now(), t1: null } : null }; voices.add(v);
+    if (v.qa) (window.__qa.voices ||= []).push(v.qa);
+    src.onended = () => { voices.delete(v); if (v.qa && v.qa.t1 == null) v.qa.t1 = now(); };
+  }
 }
 // a short song played once over the music (an ally's fall: song 0x0A, ROM 0x10A16), then the song it broke into starts again
 export async function jingle(id) {
-  const back = want; await music(id, 0.3);
+  const back = want; jing = { id, back }; await music(id, 0.3);
   const t = table && table[key(id)];
   setTimeout(() => { if (want === id) music(back, 0.6, true); }, ((t && t[0]) || 8) * 1000);
 }
@@ -88,7 +119,9 @@ export function attach() {
   const wake = () => { init().then(() => { if (ctx && ctx.state !== 'running') ctx.resume().then(() => { if (want != null && !cur) music(want); }); }); };
   for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, wake, { capture: true });
   const pick = el => el && el.closest && el.closest('button, #menu > *, #ring .rb, #c-panel [class*="row"], #camp .tab');
-  document.addEventListener('click', e => { const el = pick(e.target); if (!el || el.disabled) return; sfx(/返回|取消/.test(el.textContent) ? 'cancel' : 'ok'); }, true);
+  // (返回 / 取消: none [the user's call, 2026-11-16: O out of the save and load lists played the original's cancel, 0x80AE,
+  // heard as an error; O is silent in the battle's menus too])
+  document.addEventListener('click', e => { const el = pick(e.target); if (!el || el.disabled || /返回|取消/.test(el.textContent)) return; sfx('ok'); }, true);
   let over = null;
   document.addEventListener('pointerover', e => { const el = pick(e.target); if (el && el !== over && !el.disabled) sfx('cursor'); over = el; }, true);
   window.addEventListener('keydown', e => {

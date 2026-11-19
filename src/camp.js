@@ -133,7 +133,6 @@ function items(E, box, state, refreshParty) {
         c.title = C().items[id].name; c.onmouseenter = () => say(id); c.onmouseleave = () => say(null);
         c.onclick = () => { const from = c.getBoundingClientRect(), err = K.take(state, cur, slot); if (err) return E.ui.toast(err, 900);
           sfx(SFX.ok); refreshParty(); draw(); const row = box.querySelector(`.ibag .it[data-id="${id}"]`); fly(id, from, row && (row.querySelector('.ico') || row)); };
-        if (K.usableInCamp(id)) { const u = h('button', 'iuse', '用'); u.title = '使用'; u.onclick = e => { e.stopPropagation(); const err = K.useInCamp(state, cur, slot); if (err) E.ui.toast(err, 900); else { E.ui.toast(C().heroes[cur].name + '使用了' + C().items[id].name, 900); refreshParty(); } draw(); }; c.appendChild(u); }
       }
       ring.appendChild(c);
     }

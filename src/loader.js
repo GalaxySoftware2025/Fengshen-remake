@@ -1,7 +1,7 @@
 // The first visit to the public build: the game's art, maps, scenes, music and text are not on the site, they are made
 // from the player's own ROM (extract/). The player picks the file; it is unwrapped (a zip, a copier header, an
 // interleave: extract/romfile.js) and checked (size, SHA-256), then read in workers
-// (one for the images and data, the rest for the songs and effects), the results kept in the browser (Cache Storage)
+// (sharing the images and data, the songs and the effects as jobs), the results kept in the browser (Cache Storage)
 // and served by sw.js. Nothing is uploaded. Then the page reloads into the game.
 import { sound, audioTable } from '../extract/index.js';
 import { findRom } from '../extract/romfile.js';
@@ -45,24 +45,44 @@ export function show({ updated = false } = {}) {
   });
 }
 
-// the parts over workers: the data in one, the sounds dealt round the others (songs first: they take longest)
+// the jobs over workers, one a core but one: the data first, then the songs one by one (25-40 s each), then the effects
+// in a few batches (0.1 s each); a worker takes the next job as it finishes one, the data's going on to the songs (dealt
+// out in fixed shares, the data's worker sat idle half the time: tools/qa/romload.js). Fewer workers where the browser
+// says it is short of memory (the data's worker peaks at about 1 GB, a song's at about 0.25 GB); 5 where it does not say.
 async function extract(rom, bars) {
   if ('serviceWorker' in navigator) { await navigator.serviceWorker.register(new URL('sw.js', BASE).href); await navigator.serviceWorker.ready; }
-  const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 2)), groups = Array.from({ length: n }, () => []);
-  const ids = [...sound.IDS].sort((a, b) => (a < 0x8000 ? 0 : 1) - (b < 0x8000 ? 0 : 1)); ids.forEach((id, i) => groups[i % n].push(id));
-  const parts = [{ part: 'data', label: '圖像與資料', steps: 112 }, ...groups.map((g, i) => ({ part: 'sound', sounds: g, label: '音樂與音效 ' + (i + 1), steps: g.length }))];
-  const tables = await Promise.all(parts.map(p => new Promise((res, rej) => {
-    bars.insertAdjacentHTML('beforeend', '<div class="lab"><span>' + p.label + '</span><span></span></div><div class="bar"><i></i></div>');
-    const bar = bars.lastElementChild.firstElementChild, lab = bars.lastElementChild.previousElementSibling.lastElementChild;
-    const w = new Worker(new URL('extract/worker.js', BASE), { type: 'module' });
-    w.onmessage = e => {
-      const d = e.data;
-      if (d.error) { w.terminate(); rej(d.error); return; }
-      if (d.done) { bar.style.width = '100%'; lab.textContent = '✓'; w.terminate(); res(d.table || null); return; }
-      bar.style.width = Math.min(99, d.n / p.steps * 100) + '%'; lab.textContent = d.step;
-    };
-    w.postMessage({ rom: rom.buffer.slice(0), part: p.part, sounds: p.sounds });
-  })));
+  const mem = navigator.deviceMemory, n = Math.max(2, Math.min((navigator.hardwareConcurrency || 4) - 1, mem == null ? 5 : mem >= 8 ? 8 : mem >= 4 ? 4 : 2));
+  const songs = sound.IDS.filter(id => id < 0x8000), fx = sound.IDS.filter(id => id >= 0x8000), FX_JOBS = 6;
+  const jobs = [{ part: 'data' }, ...songs.map(id => ({ part: 'sound', sounds: [id] })), ...Array.from({ length: FX_JOBS }, (_, i) => ({ part: 'sound', sounds: fx.filter((_, j) => j % FX_JOBS === i) }))];
+  const bar = label => { bars.insertAdjacentHTML('beforeend', '<div class="lab"><span>' + label + '</span><span></span></div><div class="bar"><i></i></div>');
+    return { i: bars.lastElementChild.firstElementChild, lab: bars.lastElementChild.previousElementSibling.lastElementChild }; };
+  const dataBar = bar('圖像與資料'), soundBar = bar('音樂與音效'), tables = [], all = [];
+  // the sounds' bar by the work, not the count (counting sounds done, it stood at 1 / 200 for the first half minute: the
+  // first songs end together): a song about 30 s, an effect 0.1 s, and a song being made counts as it goes (slowing as it
+  // nears its share, never past it); the bar moves every half second
+  const SONG = 30, FX = 0.1, total = songs.length * SONG + fx.length * FX;
+  let next = 0, sounds = 0, doneW = 0;
+  const tick = setInterval(() => {
+    if (sounds >= sound.IDS.length) return;
+    const now = performance.now(), live = all.reduce((a, w) => a + (w.song ? SONG * 0.95 * (1 - Math.exp(-1.5 * (now - w.since) / 1000 / SONG)) : 0), 0), p = (doneW + live) / total;
+    soundBar.i.style.width = Math.min(99, p * 100) + '%'; soundBar.lab.textContent = Math.min(99, Math.floor(p * 100)) + '%';
+  }, 500);
+  await new Promise((res, rej) => {
+    let running = 0, failed = false;
+    const give = w => { w.song = false; if (failed) return; if (next >= jobs.length) { w.terminate(); if (--running === 0) res(); return; }
+      w.postMessage(w.job = jobs[next++]); w.song = w.job.part === 'sound' && w.job.sounds[0] < 0x8000; w.since = performance.now(); };
+    for (let k = 0; k < n; k++) {
+      const w = new Worker(new URL('extract/worker.js', BASE), { type: 'module' }); all.push(w); running++;
+      w.onmessage = e => {
+        const d = e.data;
+        if (d.error) { failed = true; all.forEach(x => x.terminate()); rej(d.error); return; }
+        if (d.done) { if (d.table) tables.push(d.table); if (w.job.part === 'data') { dataBar.i.style.width = '100%'; dataBar.lab.textContent = '✓'; } give(w); return; }
+        if (w.job.part === 'data') { dataBar.i.style.width = Math.min(99, d.n / 112 * 100) + '%'; dataBar.lab.textContent = d.step; }
+        else { sounds++; doneW += w.song ? SONG : FX; w.song = false; if (sounds >= sound.IDS.length) { soundBar.i.style.width = '100%'; soundBar.lab.textContent = '✓'; } }
+      };
+      w.postMessage({ rom: rom.buffer.slice(0) }); give(w);
+    }
+  }).finally(() => clearInterval(tick));
   const cache = await caches.open('fengshen-rom');
   await cache.put(new URL('data/audio.js', BASE).href, new Response(audioTable(tables.filter(Boolean)), { headers: { 'content-type': 'text/javascript; charset=utf-8' } }));
   // the stamp, last of all: only a whole extraction has it (index.html compares it with extract/version.js)

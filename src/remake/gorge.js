@@ -94,6 +94,7 @@ async function build(E, FX) {
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(MW + 40, MH + 40, 1, 1).rotateX(-Math.PI / 2),
     new THREE.MeshStandardMaterial({ color: 0x1c5470, roughness: 0.55, metalness: 0, envMapIntensity: 0.2 }));
   sea.position.set(MW / 2, SEA, MH / 2); sea.receiveShadow = true; S.add(sea);
+  sea.material.userData.water = true;   // (src/battle.js overWater: the sea lies at one level, the shore's where one can walk to it, as battle 17's ponds [the user's report, 2026-11-16])
   S.add(bridge(M));
   chestG = chest(M, CHEST[0] + 0.5, CHEST[1] + 0.5, land.at(CHEST[0] + 0.5, CHEST[1] + 0.5), false, 0, 1.4); S.add(chestG);
   // plants and stones, as the valley: tall turf on the grass, tufts at the foot of the ridges, scrub and trees on them

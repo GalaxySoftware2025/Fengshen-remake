@@ -1,6 +1,6 @@
 // Ice for the spells (冰晶術, 裂冰術, 風雪冰天, 崩冰術) made to read as ice [the user's call: "simple squares and triangles",
 // make it real]: crystals grown as hexagonal prisms with pyramid tips, each face its own facet; a material that looks
-// through itself (deep blue in the thick, pale at the edges, a bright rim where it turns from the light), frozen cracks
+// through itself at its edges, white as packed frost elsewhere [the user's call, 2026-11-17: whiter], frozen cracks
 // and trapped bubbles inside, a cold glint on the facets; chunks of rough ice; shards that break off, tumble, bounce and
 // melt away; frost that spreads over the ground in feathered lines.
 import * as THREE from 'three';
@@ -23,11 +23,18 @@ const ICE_FS = `uniform float uA, uGlow; varying vec3 vW, vO;
     vec3 q = vO * 3.0 + vW * 0.7;
     float crack = 1.0 - smoothstep(0.0, 0.035, abs(n3(q * 2.3) - 0.5)), crack2 = 1.0 - smoothstep(0.0, 0.025, abs(n3(q * 5.1 + 9.0) - 0.5));
     float bub = smoothstep(0.93, 0.97, n3(q * 9.0));
-    vec3 deep = vec3(0.05, 0.28, 0.62), pale = vec3(0.72, 0.92, 1.0);
-    vec3 col = mix(deep, pale, 0.35 + 0.65 * fr) * diff;
-    col += vec3(0.75, 0.92, 1.0) * (crack * 0.35 + crack2 * 0.2 + bub * 0.4);
-    col += vec3(1.0) * spec * 1.4 + vec3(0.6, 0.9, 1.0) * fr * 0.55 + vec3(0.25, 0.55, 1.0) * uGlow;
-    gl_FragColor = vec4(col, uA * (0.62 + 0.38 * fr));
+    // white ice [the user's call, 2026-11-17: whiter, not plain clear crystal]: packed frost, near white, a faint cold blue
+    // only in the facets turned from the light and at thin edges, a grain of frost over it that glints as the view moves
+    vec3 shade = vec3(0.76, 0.84, 0.94), white = vec3(0.97, 0.985, 1.0);
+    float grain = n3(vW * 22.0), glint = smoothstep(0.86, 0.95, n3(vW * 40.0 + Vd * 6.0));
+    vec3 col = mix(shade, white, smoothstep(0.3, 0.85, diff) * (0.85 + 0.15 * grain)) * (0.86 + 0.14 * diff);
+    col = mix(col, vec3(0.8, 0.9, 1.0), fr * 0.25);   // (thin at the edges: a little light through it)
+    col -= vec3(0.12, 0.06, 0.0) * (crack * 0.5 + crack2 * 0.3);   // (cracks as faint blue lines in the white)
+    float rime = n3(vW * 5.0) * 0.6 + n3(vW * 13.0) * 0.4;
+    col = mix(col * 0.94, white * 1.04, smoothstep(0.42, 0.68, rime) * 0.55);   // (rime: white patches over it, mottled)
+    col = mix(col, white * 1.08, smoothstep(0.45, 0.85, N.y) * 0.75);   // (snow lying on the facets turned up)
+    col += vec3(1.0) * (spec * 0.9 + glint * 0.7 + bub * 0.15) + vec3(0.7, 0.85, 1.0) * uGlow * 0.5;
+    gl_FragColor = vec4(col, uA * (0.9 + 0.1 * fr));
   }`;
 export function iceMaterial(o = {}) {
   return new THREE.ShaderMaterial({ vertexShader: ICE_VS, fragmentShader: ICE_FS, transparent: true, depthWrite: true, toneMapped: false, side: THREE.FrontSide,

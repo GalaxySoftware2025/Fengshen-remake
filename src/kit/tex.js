@@ -43,7 +43,17 @@ export const hex = h => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 2
 export const mixc = (a, b, t) => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
 
 // ---------------------------------------------------------------- painting
-const CACHE = new Map();
+// The cache is bounded [the user's call: the Windows app's memory]: every recipe painted used to stay, 441 MB after the
+// seven maps of scene 65. The recipes of the world being built always stay; of the others, the most recently used up to
+// KEEP bytes (a room or set gone back to soon is still instant; one long gone is painted again). World.reset calls
+// newWorld. (A recipe let go is freed once no material holds it: world.reset has disposed the old world's on the GPU.)
+const CACHE = new Map(), KEEP = 128 * 1048576; let GEN = 0;
+const bytesOf = t => ['map', 'normalMap', 'arm', '_em'].reduce((b, k) => b + (t[k] ? t[k].image.data.byteLength : 0), 0);
+function trim() {
+  let other = 0; for (const t of CACHE.values()) if (t.gen !== GEN) other += bytesOf(t);
+  for (const [k, t] of CACHE) { if (other <= KEEP) break; if (t.gen === GEN) continue; CACHE.delete(k); other -= bytesOf(t); }   // (oldest first: a Map keeps its order, a hit moves to the end)
+}
+export function newWorld() { GEN++; trim(); }
 function dataTex(data, n, srgb) {
   const t = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -53,7 +63,7 @@ function dataTex(data, n, srgb) {
 // paint(u, v, o): set o.c = [r, g, b] (0..1, sRGB), o.h (relief 0..1), o.r (roughness 0..1), o.a (alpha, optional),
 // o.m (metalness, optional), o.e (emission 0..1, optional). bump: relief strength for the normal map.
 export function pbr(name, n, paint, bump = 2) {
-  if (CACHE.has(name)) return CACHE.get(name);
+  if (CACHE.has(name)) { const t = CACHE.get(name); CACHE.delete(name); CACHE.set(name, t); t.gen = GEN; return t; }
   const col = new Uint8Array(n * n * 4), hgt = new Float32Array(n * n), arm = new Uint8Array(n * n * 4);
   const o = {}; let alpha = false, metal = false, emis = false;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
@@ -71,8 +81,10 @@ export function pbr(name, n, paint, bump = 2) {
   }
   // roughness in G, metalness in B (three's convention for roughnessMap / metalnessMap); emission in R
   const out = { map: dataTex(col, n, true), normalMap: dataTex(nor, n, false), arm: dataTex(arm, n, false), alpha, metal, emis };
-  CACHE.set(name, out); return out;
+  out.gen = GEN; CACHE.set(name, out); trim(); return out;
 }
+// what the cache holds: recipes and their painted bytes (tools/qa: memory)
+export const cacheStats = () => { let b = 0, cur = 0; for (const t of CACHE.values()) { b += bytesOf(t); if (t.gen === GEN) cur += bytesOf(t); } return { n: CACHE.size, mb: Math.round(b / 1048576), inUse: Math.round(cur / 1048576) }; };
 // a MeshStandard / MeshPhysical material from a recipe; o: extra material options, rep: texture repeat [u, v]
 export function material(t, o = {}, rep) {
   const phys = o.clearcoat || o.sheen;

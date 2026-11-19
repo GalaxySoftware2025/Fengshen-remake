@@ -235,21 +235,28 @@ function guardian(x0, z0, x1, z1, y, tall) {
   return shade(g);
 }
 // the gate over the court's north (x0-x1, z0-z1): a pale stone plinth, olive ashlar walls with stone quoins at their
-// corners, a stone door frame and lintel, dark doors standing ajar, the plaque cut from the map's own pixels over the
-// door, and a tiled roof on timber eaves over it all
+// corners, a stone door frame and lintel, the plaque cut from the map's own pixels over the door, and a tiled roof on
+// timber eaves over it all. The doorway (dx0-dx1) an open passage as the original draws it: the threshold's cell level
+// with the court, then steps going up into the dark (no doors). The wall's face at z1, the front of the threshold's row
+// as on the original [the user's report, 2026-11-17: it stood a row back, the threshold's row beside the door left open
+// down to the sand and the doors swung out over the holes] (tools/qa/sets.js level: a cell drawn under its ground)
 function gate(S, { x0, x1, z0, z1, door: [dx0, dx1], plaque }, y) {
-  const { brick, stone, dark, roof, timber } = materials(), top = y + 2.5, g = new THREE.Group();
-  g.add(box(stone, x0 - 0.1, y, z0, x1 + 0.1, y + 0.32, z1 + 0.06, 0.6));
-  g.add(shade(merged(brick, [box(brick, x0, y + 0.32, z0, dx0, top, z1 - 0.05, 1), box(brick, dx1, y + 0.32, z0, x1, top, z1 - 0.05, 1), box(brick, dx0, y + 2.05, z0, dx1, top, z1 - 0.05, 1)])));
+  const { brick, stone, dark, roof, timber, slab } = materials(), top = y + 2.5, g = new THREE.Group();
+  // (the plinth either side of the door, not across it: the threshold is the court's floor; the walls on it, their
+  // reveals beside the door down past the floor)
+  g.add(shade(merged(stone, [box(stone, x0 - 0.1, y, z0, dx0 - 0.18, y + 0.32, z1 + 0.06, 0.6), box(stone, dx1 + 0.18, y, z0, x1 + 0.1, y + 0.32, z1 + 0.06, 0.6)])));
+  g.add(shade(merged(brick, [box(brick, x0, y + 0.32, z0, dx0 - 0.18, top, z1 - 0.05, 1), box(brick, dx0 - 0.18, y - 0.6, z0, dx0, top, z1 - 0.05, 1),
+    box(brick, dx1, y - 0.6, z0, dx1 + 0.18, top, z1 - 0.05, 1), box(brick, dx1 + 0.18, y + 0.32, z0, x1, top, z1 - 0.05, 1), box(brick, dx0, y + 2.05, z0, dx1, top, z1 - 0.05, 1)])));
   const Q = []; for (const qx of [x0, x1 - 0.32]) for (let k = 0; k < 6; k++) { const yy = y + 0.32 + k * 0.36, wide = k % 2 ? 0.32 : 0.46; Q.push(box(stone, qx === x0 ? x0 - 0.02 : x1 - wide + 0.02, yy, z1 - 0.12, qx === x0 ? x0 + wide : x1 + 0.02, yy + 0.34, z1 + 0.02, 0.5)); }
-  Q.push(box(stone, dx0 - 0.18, y + 0.32, z1 - 0.12, dx0 + 0.02, y + 2.1, z1 + 0.06, 0.5), box(stone, dx1 - 0.02, y + 0.32, z1 - 0.12, dx1 + 0.18, y + 2.1, z1 + 0.06, 0.5),
+  Q.push(box(stone, dx0 - 0.18, y, z1 - 0.12, dx0 + 0.02, y + 2.1, z1 + 0.06, 0.5), box(stone, dx1 - 0.02, y, z1 - 0.12, dx1 + 0.18, y + 2.1, z1 + 0.06, 0.5),
     box(stone, dx0 - 0.3, y + 2.05, z1 - 0.14, dx1 + 0.3, y + 2.28, z1 + 0.1, 0.5), box(stone, x0 - 0.06, top, z0 - 0.04, x1 + 0.06, top + 0.12, z1 + 0.06, 0.5));
   g.add(shade(merged(stone, Q)));
-  g.add(box(dark, dx0 + 0.02, y + 0.32, z1 - 0.6, dx1 - 0.02, y + 2.05, z1 - 0.5));
-  const dw = (dx1 - dx0) / 2;
-  for (const [hx, sgn] of [[dx0, 1], [dx1, -1]]) { const leaf = new THREE.Group(), m = box(timber, 0, 0, -0.04, dw * 0.92 * sgn, 1.7, 0.04, 1); m.position.y = y + 0.32; leaf.add(m);
-    for (const yy of [0.35, 0.85, 1.35]) { const bnd = box(materials().M.bronze, 0, yy, 0.04, dw * 0.92 * sgn, yy + 0.06, 0.06, 1); bnd.position.y = y + 0.32; leaf.add(bnd); }
-    leaf.position.set(hx, 0, z1 - 0.12); leaf.rotation.y = -sgn * 0.55; g.add(shade(leaf)); }
+  // the passage: the threshold's cell flat at the court's level, then steps up into the dark, the back wall dark
+  // (the floor 4 mm under the threshold cell's own, which shows through it there; the steps one behind the other)
+  const back = z0 + 0.3, s0 = z1 - 1, n = 5, run = (s0 - back) / n, ST = [box(slab, dx0 + 0.005, y - 0.6, s0, dx1 - 0.005, y - 0.004, z1, 0.5)];
+  for (let k = 1; k <= n; k++) ST.push(box(slab, dx0 + 0.005, y - 0.6, k === n ? back : s0 - k * run, dx1 - 0.005, y + k * 0.17, s0 - (k - 1) * run, 0.5));
+  g.add(shade(merged(slab, ST)));
+  g.add(box(dark, dx0 + 0.005, y, z0, dx1 - 0.005, y + 2.05, back, 1));
   // the roof: timber eaves and a tiled hip over the gate, its ridge along x
   const eave = 0.45, ry = top + 0.12, rh = 0.9, rw = x1 - x0 + eave * 2, rd = z1 - z0 + eave * 2;
   g.add(shade(box(timber, x0 - eave + 0.1, ry, z0 - eave + 0.1, x1 + eave - 0.1, ry + 0.14, z1 + eave - 0.1, 1)));
@@ -307,8 +314,8 @@ export const isle = island({
   ],
   D: { '13,8': 1.5, '14,9': 1.38, '14,10': 1.26, '15,10': 1.26, '14,11': 1.13 },
   stairs: [[1, 5, 3, 8, 0, 1.6, 7, 'n'], [25, 6, 27, 11, 1.0, 2.2, 9, 's'], [8, 13, 11, 18, 0, 1.6, 9, 's'], [19, 16, 21, 21, 0, 1.0, 7, 's']],
-  guards: [[17, 2, 18, 4], [21, 2, 22, 4]],
-  gate: { x0: 16, x1: 24, z0: 0, z1: 2, door: [18.2, 20.8], plaque: { src: 'assets/maps/0f6860.png', x: 18.3 * 32, y: 0.15 * 32, w: 2.4 * 32, h: 0.75 * 32 } },
+  guards: [[17, 3, 18, 4], [21, 3, 22, 4]],   // (on row 3, against the gate's wall, as the original draws them)
+  gate: { x0: 16, x1: 24, z0: 0, z1: 3, door: [18.5, 20.5], plaque: { src: 'assets/maps/0f6860.png', x: 18.3 * 32, y: 0.15 * 32, w: 2.4 * 32, h: 0.75 * 32 } },
   chests: [[11, 1], [31, 1, true]],
 });
 // the shrine (0f687c, battle 21's room 1): T2 the cross of the terrace, T3 the stele's court
@@ -340,21 +347,8 @@ export const isleShrine = island({
   guards: [[7, 2, 8, 4, true]],
   chests: [[0, 9], [12, 17]],
 });
-// scene 42: the third 古文書, which the 北方守護靈 gives at the stele. The original draws it with 姬發's unit (slot 5, sheet
-// 05e3a8: he is not there, its tiles swapped for the tablet's) on the stele's face, a small rose-red tablet (f645-718);
-// the remade shrine plays that sheet as a glowing tablet, as scene 36's temple does (src/remake/taohua.js standIn)
-let tablet = null;
-isleShrine.standIn = {
-  '05e3a8': (E, x, z, moving, ctx) => {
-    if (ctx.tag !== '42') return false;
-    if (!tablet || tablet.parent !== E.world.scene) {
-      tablet = new THREE.Group();
-      const m = new THREE.MeshStandardMaterial({ color: 0xff8aa0, emissive: 0xd83a5a, emissiveIntensity: 1.3, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.94 });
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.42, 0.07), m); b.position.y = 0.5; tablet.add(b);
-      const L = new THREE.PointLight(0xff7a90, 2, 3, 1.6); L.position.y = 0.55; tablet.add(L);
-      E.world.scene.add(tablet);
-    }
-    tablet.visible = true; tablet.position.set(x, isleShrine.ground(x, z) + 0.6 + 0.1 * Math.sin(E.gameT * 2.4), z + 0.3); tablet.rotation.y = E.gameT * 0.8;
-  },
-  hide: (E, gfx) => { if (gfx === '05e3a8' && tablet) tablet.visible = false; },
-};
+// scene 42: the third 古文書, which the 北方守護靈 gives at the stele: the original drops it from the stele to 林雲 as
+// an item (the prop item-0f0db0, f645-682; its colour src/tablets.js). 姬發's unit (slot 5, sheet 05e3a8: he is not
+// there) is kept hidden: the recording has it on 林雲 for one frame, f718, where the hardware draws nothing, and a
+// glowing tablet played there stayed on him through the lines paused at f719 [the user's report, 2026-11-17]
+isleShrine.standIn = { '05e3a8': (E, x, z, moving, ctx) => ctx.tag === '42' ? undefined : false };

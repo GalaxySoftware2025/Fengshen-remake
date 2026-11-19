@@ -1,5 +1,5 @@
 // War's marks over a built set (孟津 after the fighting: battle 29 and scene 60). The original draws dark star-shaped breaks
-// all over its roofs, walls, doors and windows (map 0fc438); here they are projected onto the buildings' own faces (project:
+// all over its roofs, walls, doors and windows (map 0fc438); here real ones, ragged holes (breakTex), are projected onto the buildings' own faces (project:
 // the faces' triangles clipped to a box, so a break follows a roof's sag and stops at its edge), soot rising over some of
 // those in the walls, and the ground scorched and holed, with what fell from the roofs at the buildings' feet [the user's
 // call: the floors too, which the original leaves whole]. Nothing here changes the ground's height: units stand where they
@@ -10,21 +10,41 @@ import * as T from './tex.js';
 const H = s => { const x = Math.sin(s * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
 // ---------------------------------------------------------------- the marks (alpha: clear where nothing is marked)
-// a break, as the original draws it: a star of six ragged points, black inside, its edge splintered and charred, soot round
-// it; laths: the charred battens seen through a roof's hole
+// a break, four of them in one texture (2 x 2: a break picks its cell, BREAKS), each its own ragged shape [the user's
+// report, 2026-11-18: every break in battle 29 the same six-pointed star (the original's drawing), "real broken parts
+// shouldn't look like this"]. In a roof (laths): tiles knocked out, the hole longer down the slope than across it (v up
+// the slope: projected unturned), its rim broken tile ends showing their clay, the battens across it under the ridge's
+// line, dark between them, a little soot on the tiles round it, uneven; a crack or two running on into the tiles. In a
+// wall: plaster broken away in a ragged hole, its rim the plaster's thickness, the laths behind it, cracks running out
+const BREAKS = 4;
 function breakTex(laths) {
-  return T.pbr(laths ? 'warRoofBreak' : 'warWallBreak', 128, (u, v, o) => {
-    const x = u - 0.5, y = v - 0.5, d = Math.hypot(x, y) * 2, a = Math.atan2(y, x), n = T.fbm(u, v, 6, 3, laths ? 611 : 612);
-    const r = 0.34 + 0.24 * Math.pow(Math.abs(Math.cos(3 * a + (n - 0.5) * 1.4)), 3) + 0.1 * (n - 0.5);
-    o.r = 1; o.c = [0.04, 0.03, 0.025]; o.h = 0.05; o.a = 1;
-    if (d < r * 0.7) {
-      const lath = laths ? T.smooth(0.1, 0.05, Math.abs(((u * 4.5 + 0.3) % 1) - 0.5)) : 0;
-      if (lath > 0) { o.c = T.mixc(o.c, [0.22 * (0.6 + 0.4 * n), 0.13 * (0.6 + 0.4 * n), 0.07], lath); o.h = 0.05 + lath * 0.7; }
-    } else if (d < r) {
-      o.c = T.mixc([0.26, 0.16, 0.08], [0.07, 0.05, 0.03], T.fbm(u, v, 24, 2, 613)); o.h = 0.9;
-    } else if (d < r + 0.32) {
-      const s = 1 - (d - r) / 0.32; o.c = [0.05, 0.045, 0.04]; o.h = 0.5; o.a = Math.pow(s, 1.6) * 0.8 * (0.55 + 0.45 * T.fbm(u, v, 10, 3, 614));
-    } else { o.a = 0; o.h = 0.5; }
+  return T.pbr(laths ? 'warRoofBreak2' : 'warWallBreak2', 256, (U, V, o) => {
+    const k = (U >= 0.5 ? 1 : 0) + (V >= 0.5 ? 2 : 0), u = (U * 2) % 1, v = (V * 2) % 1, sd = (laths ? 700 : 760) + k * 13;
+    const x = (u - 0.5) / (laths ? 0.78 : 1), y = v - 0.5, a = Math.atan2(y, x), d = Math.hypot(x, y) * 2;
+    // the outline: smooth lobes round it (noise on a circle), ragged at a finer scale (broken tile ends, plaster)
+    const lobe = T.fbm(0.5 + 0.35 * Math.cos(a), 0.5 + 0.35 * Math.sin(a), 3.2, 3, sd), jag = T.fbm(u, v, laths ? 26 : 18, 2, sd + 1);
+    const r = (0.4 + 0.06 * k / 3) * (0.45 + 1.1 * lobe) + 0.08 * (jag - 0.5), n = T.fbm(u, v, 6, 3, sd + 2);
+    o.r = 1; o.h = 0.5; o.a = 0; o.c = [0.04, 0.035, 0.03];
+    if (d < r - 0.06) {   // the hole: dark, the battens (roof) or laths (wall) across it
+      const pitch = laths ? 7.5 : 11, q = Math.abs(((v * pitch + k * 0.37) % 1) - 0.5), bar = T.smooth(0.2, 0.12, q) * (laths ? 1 : 0.8);
+      const broke = T.fbm(u, v, 9, 2, sd + 3) < (laths ? 0.25 : 0.35);   // (one burnt through here and there)
+      const wood = [0.3 * (0.6 + 0.4 * n), 0.19 * (0.6 + 0.4 * n), 0.1];   // (charred on top, still wood: they must read in the dark)
+      o.c = T.mixc([0.025, 0.02, 0.018], wood, broke ? 0 : bar); o.h = 0.05 + (broke ? 0 : bar * 0.6); o.a = 1;
+    } else if (d < r) {   // the rim: broken tile ends (fired clay) or the plaster's broken edge, uneven
+      const t = (r - d) / 0.06, chip = T.fbm(u, v, 40, 2, sd + 4);
+      o.c = laths ? T.mixc([0.4, 0.33, 0.27], [0.2, 0.15, 0.12], chip) : T.mixc([0.74, 0.7, 0.62], [0.45, 0.41, 0.36], chip);
+      o.c = T.mixc(o.c, [0.06, 0.05, 0.04], T.smooth(0.55, 1, t) * 0.7); o.h = 0.75 - t * 0.3; o.a = 1;
+    } else {   // round it: soot, thin and patchy, and a crack or two running on
+      const soot = T.smooth(r + (laths ? 0.16 : 0.22), r, d) * T.smooth(0.35, 0.7, T.fbm(u, v, 7, 3, sd + 5));
+      let crack = 0;
+      for (let c = 0; c < 2 + (k & 1); c++) {
+        const ca = (T.fbm(c * 0.31 + 0.1, k * 0.23 + 0.2, 1, 1, sd + 6) * 2 - 0.5) * 6.28, cl = r + 0.12 + 0.18 * T.fbm(c * 0.7, 0.3, 1, 1, sd + 7);
+        const along = x * Math.cos(ca) + y * Math.sin(ca), side = -x * Math.sin(ca) + y * Math.cos(ca) + 0.03 * (T.fbm(u, v, 22, 2, sd + 8 + c) - 0.5);
+        if (along * 2 > r * 0.8 && along * 2 < cl) crack = Math.max(crack, T.smooth(0.006, 0.0015, Math.abs(side)) * T.smooth(cl, cl - 0.1, along * 2));
+      }
+      o.c = [0.05, 0.045, 0.04]; o.a = Math.max(soot * 0.55, crack * 0.85); o.h = 0.5 - crack * 0.3;
+    }
+    if (u < 0.02 || u > 0.98 || v < 0.02 || v > 0.98) o.a = 0;   // (nothing bleeds into the next cell)
   }, 3);
 }
 // soot up a wall from a break: a plume widening as it rises, thinning to nothing (v up)
@@ -63,7 +83,8 @@ const clip = (poly, ax, s) => { const out = [];   // keep s * p[ax] <= 0.5
   return out; };
 // the faces of `meshes` inside the box at pos (z along n, y as near world up as it can be, turned by spin), w across and
 // depth deep, as triangles in world space with uvs over the box: pushed into out.P, out.U
-export function project(meshes, pos, n, w, depth, spin, out) {
+export function project(meshes, pos, n, w, depth, spin, out, cell) {   // cell: [u0, v0, size] of the texture (default all of it)
+  const [c0, c1, cs] = cell || [0, 0, 1];
   const z = n.clone().normalize(), up = Math.abs(z.y) > 0.95 ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(0, 1, 0);
   const x = new THREE.Vector3().crossVectors(up, z).normalize(), y = new THREE.Vector3().crossVectors(z, x);
   x.applyAxisAngle(z, spin); y.applyAxisAngle(z, spin);
@@ -81,7 +102,7 @@ export function project(meshes, pos, n, w, depth, spin, out) {
       for (const [ax, s] of [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1]]) { poly = clip(poly, ax, s); if (poly.length < 3) break; }
       if (poly.length < 3) continue;
       const W = poly.map(a => new THREE.Vector3(a[0], a[1], a[2]).applyMatrix4(M).addScaledVector(fn, dot > 0 ? 0.005 : -0.005));
-      for (let k = 1; k + 1 < poly.length; k++) for (const j of [0, k, k + 1]) { out.P.push(W[j].x, W[j].y, W[j].z); out.U.push(poly[j][0] + 0.5, poly[j][1] + 0.5); }
+      for (let k = 1; k + 1 < poly.length; k++) for (const j of [0, k, k + 1]) { out.P.push(W[j].x, W[j].y, W[j].z); out.U.push(c0 + (poly[j][0] + 0.5) * cs, c1 + (poly[j][1] + 0.5) * cs); }
     }
   }
 }
@@ -105,7 +126,7 @@ export function batter(S, buildings, ground, seed = 0) {
       const px = bb.min.x + 0.35 + H(s0 + tries * 3.1) * (bb.max.x - bb.min.x - 0.7), pz = bb.min.z + 0.35 + H(s0 + tries * 5.7 + 1) * (bb.max.z - bb.min.z - 0.7);
       ray.set(new THREE.Vector3(px, bb.max.y + 1, pz), down); const hit = ray.intersectObjects(meshes, false)[0]; if (!hit) continue;
       const nrm = hit.face.normal.clone().transformDirection(hit.object.matrixWorld); if (nrm.y < 0) nrm.negate(); if (nrm.y < 0.3 || hit.point.y > bb.max.y - 0.25) continue;   // (a slope, not the ridge)
-      const w = 0.62 + H(s0 + tries * 7.3 + 2) * 0.5; project(meshes, hit.point, nrm, w, 0.5, H(s0 + tries) * 6.28, out.roof); i++;
+      const w = 0.95 + H(s0 + tries * 7.3 + 2) * 0.6, vk = Math.floor(H(s0 + tries * 9.1 + 4) * BREAKS); project(meshes, hit.point, nrm, w, 0.5, 0, out.roof, [(vk & 1) * 0.5, (vk >> 1) * 0.5, 0.5]); i++;   // (unturned: the hole runs down the slope, the battens along the ridge, as the roof's own)
       for (let k = 0; k < (H(s0 + tries * 8.7) < 0.6 ? 1 : 0); k++) {   // a charred rafter left across most holes, one end tipped up out of it
         const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), nrm), a = H(s0 + tries * 3.9 + k * 7) * 6.28, len = w * (0.35 + H(s0 + tries + k * 3) * 0.25);
         const along = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).applyQuaternion(q), at = hit.point.clone().addScaledVector(nrm, 0.02 + k * 0.025).addScaledVector(along, (H(s0 + k + tries * 2.2) - 0.5) * w * 0.25);
@@ -118,7 +139,7 @@ export function batter(S, buildings, ground, seed = 0) {
       const px = bb.min.x + 0.3 + H(s0 + tries * 2.3 + 9) * (bb.max.x - bb.min.x - 0.6), py = bb.min.y + 0.25 + H(s0 + tries * 4.1 + 11) * (bb.max.y - bb.min.y - 0.6);
       ray.set(new THREE.Vector3(px, py, bb.max.z + 1), north); const hit = ray.intersectObjects(meshes, false)[0]; if (!hit) continue;
       const nrm = hit.face.normal.clone().transformDirection(hit.object.matrixWorld); if (nrm.z < 0) nrm.negate(); if (nrm.z < 0.6) continue;
-      const w = 0.42 + H(s0 + tries * 6.1 + 3) * 0.36; project(meshes, hit.point, nrm, w, 0.3, H(s0 + tries + 5) * 6.28, out.wall);
+      const w = 0.42 + H(s0 + tries * 6.1 + 3) * 0.36, vk = Math.floor(H(s0 + tries * 9.7 + 6) * BREAKS); project(meshes, hit.point, nrm, w, 0.3, (H(s0 + tries + 5) - 0.5) * 0.6, out.wall, [(vk & 1) * 0.5, (vk >> 1) * 0.5, 0.5]);   // (the laths level, near enough)
       if (i % 2 === 0) project(meshes, hit.point.clone().add(new THREE.Vector3(0, w * 0.9, 0)), nrm, w * 1.6, 0.3, 0, out.soot);
       i++;
     }

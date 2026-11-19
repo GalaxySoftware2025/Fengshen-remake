@@ -34,7 +34,17 @@ function stripShadow(sdImg, hdImg, rows) {
   og.putImageData(od, 0, 0); return out;
 }
 function upscale(img, k) { const c = canvas(img.width * k, img.height * k), g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(img, 0, 0, c.width, c.height); return c; }
-export function tex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 4; return t; }
+// one upload a sheet: each unit takes its own texture (its frame is its own offset) on the sheet's one source; a new
+// CanvasTexture made a source of its own, and every unit of a kind uploaded the kind's sheets again (11-56 MB over a
+// battle: tools/qa/memory.js)
+const SOURCES = new WeakMap();
+// A sample of a hero repainted for the remade scenes (the user's ask, 2026-11-15: 林雲; tools/hd/repaint.js writes
+// assets/remade/): the same frames in the same cells at 8x (256 px a frame), smooth edges and retuned colours, shown with #...&repaint. Its
+// sheets come with the baked shadow already gone and are filtered smoothly (SMOOTH), not as crisp pixels.
+const REMADE = new Set(typeof location !== 'undefined' && /[#&]repaint\b/.test(location.hash) ? ['p0'] : []), SMOOTH = new WeakSet();
+const BIAS = -1;
+const smooth = img => { const c = canvas(img.width, img.height); c.getContext('2d').drawImage(img, 0, 0); SMOOTH.add(c); return c; };
+export function tex(c) { const t = new THREE.CanvasTexture(c); if (SOURCES.has(c)) t.source = SOURCES.get(c); else SOURCES.set(c, t.source); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = SMOOTH.has(c) ? THREE.LinearFilter : THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 4; return t; }
 
 export class SpriteBank {
   async load(names) {
@@ -52,6 +62,11 @@ export class SpriteBank {
           const act = stripShadow(asd, ahd, [0, 2, 3]); e.acts[t] = { act, atk: this.attackComposite(act, t, true) };
         }
         this.sheets[n] = e; return;
+      }
+      if (REMADE.has(n)) {
+        const [walk, flash, act] = await Promise.all(['spr', 'sprf', 'act'].map(k => load('assets/remade/' + k + '_' + n + '.png')));
+        const e = { walk: smooth(walk), flash: smooth(flash), act: smooth(act) };
+        e.atk = this.attackComposite(e.act, AD.act[n].type); SMOOTH.add(e.atk); this.sheets[n] = e; return;
       }
       const [walk, walkSD] = await Promise.all([load('assets/spr_' + n + '.png'), load('assets/sd/spr_' + n + '.png')]);
       const e = { walk: stripShadow(walkSD, walk) };
@@ -75,6 +90,7 @@ export class SpriteBank {
   // join each attack frame with its weapon piece, as placed by the ROM table at 0xE714, into 64px cells
   // (raw: the piece is stored as its 2x4 tiles in the VDP's column order, tools/rom/actions.py; a 4x2 piece is re-tiled)
   attackComposite(act, typ, raw) {
+    const HD = act.width / 288;   // (the sheet's own scale: 4, or a repainted sheet's 8)
     const recs = AD.attack.records[typ], c = canvas(9 * 64 * HD, 64 * HD), g = c.getContext('2d');
     g.imageSmoothingEnabled = false;
     for (let di = 0; di < 3; di++) for (let k = 0; k < 3; k++) {
@@ -93,14 +109,14 @@ export class SpriteBank {
   // a small canvas portrait (first walk frame) for UI
   portrait(n, scale) {
     const e = this.sheets[n], c = canvas(32 * scale, 32 * scale), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-    g.drawImage(e.walk, 0, 0, 32 * HD, 32 * HD, 0, 0, 32 * scale, 32 * scale); return c;
+    const fw = e.walk.width / 9; g.imageSmoothingEnabled = SMOOTH.has(e.walk); g.drawImage(e.walk, 0, 0, fw, fw, 0, 0, 32 * scale, 32 * scale); return c;
   }
   // the same, marking time facing down as on the map (the walk cycle's down frames, 165 ms each); stops when the canvas
   // leaves the page. still: standing, not marking time (a hero not chosen on the 出戰人選 page)
   walker(n, scale, still) {
-    const e = this.sheets[n], c = canvas(32 * scale, 32 * scale), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    const e = this.sheets[n], c = canvas(32 * scale, 32 * scale), g = c.getContext('2d'), fw = e.walk.width / 9; g.imageSmoothingEnabled = SMOOTH.has(e.walk);
     let k = 0, started = false;
-    const draw = () => { g.clearRect(0, 0, c.width, c.height); g.drawImage(e.walk, FACE.down[k % 4] * 32 * HD, 0, 32 * HD, 32 * HD, 0, 0, 32 * scale, 32 * scale); };
+    const draw = () => { g.clearRect(0, 0, c.width, c.height); g.drawImage(e.walk, FACE.down[k % 4] * fw, 0, fw, fw, 0, 0, 32 * scale, 32 * scale); };
     draw(); if (still) return c;
     const id = setInterval(() => { if (!c.isConnected) { if (started) clearInterval(id); return; } started = true; k++; draw(); }, 165);
     return c;
@@ -119,9 +135,12 @@ const shadowTex = (() => {
 export const VIEW = { turn: 0 };
 const XRAY = (map, g) => new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map, color: new THREE.Color(0.7, 0.85, 1), transparent: true, opacity: 0.5, alphaTest: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth, side: THREE.DoubleSide }));
 // sprite material: lit by the scene, never fully dark, with hit flash and an ember dissolve for deaths
-function spriteMaterial(map) {
+// crisp: a repainted sheet (8x) is shown at a third of its size at play distance, where the mipmaps' blend softens it
+// (the user's report, 2026-11-15: "still a bit blurry"): its texture is read a mip level finer (uBias), in a program of its own
+function spriteMaterial(map, crisp) {
   const m = new THREE.MeshLambertMaterial({ map, emissiveMap: map, emissive: new THREE.Color(0.42, 0.42, 0.42), alphaTest: 0.5, side: THREE.DoubleSide });
   m.userData.u = { uDissolve: { value: 0 }, uFlash: { value: 0 }, uTint: { value: new THREE.Color(1, 1, 1) }, uStone: { value: 0 }, uStoneCol: { value: new THREE.Color(1, 1, 1) }, uGain: { value: 1 } };
+  if (crisp) { m.userData.u.uBias = { value: BIAS }; m.customProgramCacheKey = () => 'crisp'; }
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, m.userData.u);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
@@ -140,6 +159,11 @@ function spriteMaterial(map) {
       if (uDissolve > 0.0) totalEmissiveRadiance += vec3(1.0, 0.45, 0.1) * 4.0 * (1.0 - smoothstep(0.0, 0.12, dn - (uDissolve * 1.15 - 0.05)));`)
       .replace('#include <opaque_fragment>', `outgoingLight *= uGain;
       #include <opaque_fragment>`);
+    if (crisp) {
+      const biased = (chunk, call) => { const src = THREE.ShaderChunk[chunk]; if (!src.includes(call + ' )')) throw new Error('spriteMaterial: ' + chunk + ' no longer reads its texture as expected'); return src.replace(call + ' )', call + ', uBias )'); };
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n      uniform float uBias;')
+        .replace('#include <map_fragment>', biased('map_fragment', 'texture2D( map, vMapUv')).replace('#include <emissivemap_fragment>', biased('emissivemap_fragment', 'texture2D( emissiveMap, vEmissiveMapUv'));
+    }
   };
   return m;
 }
@@ -159,8 +183,9 @@ export class Actor {
     if (this.sheet.act) { this.texAct = tex(this.sheet.act); this.texAct.repeat.set(1 / 9, 1 / 4); this.texAtk = tex(this.sheet.atk); this.texAtk.repeat.set(1 / 9, 1); }
     const g1 = new THREE.PlaneGeometry(1, 1); g1.translate(0, 0.5, 0);
     const g2 = new THREE.PlaneGeometry(2, 2); g2.translate(0, 0.5, 0);
-    this.mat = spriteMaterial(this.texWalk);
-    this.mesh = new THREE.Mesh(g1, this.mat); this.big = new THREE.Mesh(g2, spriteMaterial(this.texAtk || this.texWalk));
+    const crisp = SMOOTH.has(this.sheet.walk);
+    this.mat = spriteMaterial(this.texWalk, crisp);
+    this.mesh = new THREE.Mesh(g1, this.mat); this.big = new THREE.Mesh(g2, spriteMaterial(this.texAtk || this.texWalk, crisp));
     this.big.visible = false;
     // shadow caster: same frame, turned to face the sun, invisible to the camera
     // (three r160's shadow pass takes map and alphaTest from the object's own material, even over customDepthMaterial:
@@ -204,7 +229,9 @@ export class Actor {
       // each unit marks time out of step with its neighbours: a phase fixed when it first shows (from the cell it stood
       // on then: a phase from the current cell would skip a frame every cell crossed on a walk)
       if (this.phase == null) this.phase = (u.x * 3 + u.y + (parseInt(u.slot, 10) || 0)) & 3;
-      const step = u.done && !this.walking ? 0 : (tick + this.phase) % 4;
+      // and a sleeper stands still, on its first frame, till it wakes [the user's report, 2026-11-17: asleep, a hero still
+      // marked time with his walk] (tools/qa/sleep.js)
+      const step = (u.done || (u.status && u.status.sleep > 0)) && !this.walking ? 0 : (tick + this.phase) % 4;
       frame = u.sprite === 'jiang_bound' ? tick % 2 : u.still != null ? u.still : ONE_POSE.has(u.sprite) ? 0 : FACE[flip ? 'left' : vd][step];   // (ONE_POSE: frame 0 in every facing, src/sprites.js)
       if (this.u.sprite === 'jiang_bound') { tx.repeat.x = 1 / 2; }
     }

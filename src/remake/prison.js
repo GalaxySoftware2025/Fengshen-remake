@@ -129,7 +129,7 @@ function floorPlan(spec) {
   const X = spec.exit, inWell = (x, y) => !!(X && X.down) && x >= X.x0 && x < X.x1 && y >= X.z0 && y < X.z1;   // a way down: the exit cells are its steps
   const low = (x, y) => open(kind(x, y - 1)) || open(kind(x, y - 2));   // someone stands within two cells north: kept low
   const height = (x, z) => { const cx = Math.floor(x), cy = Math.floor(z), k = kind(cx, cy);
-    if (inWell(cx, cy)) return -stairAt(X, z);
+    if (inWell(cx, cy)) return -wellAt(X, x, z);
     if (open(k)) return 0;
     if (k === 's' && spec.exit) return stairAt(spec.exit, z);
     if (cx < 0 || cy < 0 || cx >= MW || cy >= MH || k === ' ') return FILL_H;
@@ -187,16 +187,18 @@ function exitStair(S, { x0, x1, z0, z1, top, bare }) {
   for (const px of [x0 - 0.12, x1 - 0.06]) S.add(shade(box(frame, px, 0, z0 - 0.1, px + 0.18, top + 1.8, z0 + 0.2, 0.5)));
   S.add(shade(box(frame, x0 - 0.15, top + 1.6, z0 - 0.12, x1 + 0.15, top + 1.85, z0 + 0.22, 0.5)));
 }
-// the way down out of the gaol's own floor (0f5b14): the original's pale steps falling away north on the exit cells
-// themselves (22-23, rows 2-3) into the dark under the wall: a flight dropping north over (x0, z0)-(x1, z1), on the cells
-// a hero steps onto to go down, to a depth of top; pale curbs along its sides, black under the wall at its foot
+// the way down out of the gaol's own floor (0f5b14): the original's pale steps on the exit cells themselves (22-23, rows
+// 2-3), their treads running north-south and falling away east to the map's edge, the only way in from the west (row 4
+// under them is bars) [the user's report, 2026-11-15: a flight dropping north met the floor west of it with a drop of
+// 0.71]; to a depth of top; pale curbs along its north and south sides, black at its foot
+const wellAt = ({ x0, x1, top }, x) => top * Math.min(1, Math.ceil(Math.max(0, (x - x0) / (x1 - x0)) * STEPS - 1e-6) / STEPS);
 function exitWell(S, { x0, x1, z0, z1, top }) {
   const { frame, dark } = materials(), n = STEPS, steps = [];
-  for (let k = 0; k < n; k++) { const za = z1 - (z1 - z0) * (k + 1) / n, zb = z1 - (z1 - z0) * k / n; steps.push(box(frame, x0 + 0.12, -top - 0.6, za, x1 - 0.12, -top * (k + 1) / n, zb, 0.5)); }
+  for (let k = 0; k < n; k++) { const xa = x0 + (x1 - x0) * k / n, xb = x0 + (x1 - x0) * (k + 1) / n; steps.push(box(frame, xa, -top - 0.6, z0 + 0.12, xb, -top * (k + 1) / n, z1 - 0.12, 0.5)); }
   S.add(shade(merged(frame, steps)));
-  S.add(box(dark, x0, -top - 0.6, z0 - 0.06, x1, 0.02, z0 + 0.02));                                     // the dark under the wall it goes into
-  for (const [a, b] of [[x0, x0 + 0.12], [x1 - 0.12, x1]]) S.add(shade(box(frame, a, -top - 0.6, z0, b, 0.08, z1, 0.5)));   // its curbs
-  const L = new THREE.PointLight(0xc8c0ff, 3, 2.6, 1.6); L.position.set((x0 + x1) / 2, 0.5, z1 - 0.4); S.add(L);   // a little light on the top steps (the original's pale treads)
+  S.add(box(dark, x1 - 0.02, -top - 0.6, z0, x1 + 0.06, 0.02, z1));                                     // the dark at its foot, past the map's edge
+  for (const [a, b] of [[z0, z0 + 0.12], [z1 - 0.12, z1]]) S.add(shade(box(frame, x0, -top - 0.6, a, x1, 0.08, b, 0.5)));   // its curbs
+  const L = new THREE.PointLight(0xc8c0ff, 3, 2.6, 1.6); L.position.set(x0 + 0.4, 0.5, (z0 + z1) / 2); S.add(L);   // a little light on the top steps (the original's pale treads)
 }
 // a stone arch on a wall's face (the lower floor's way out, between its two totems): a ring of dressed stones springing
 // from two jambs, the passage behind it dark (archway: { x0, x1, z, y } the jambs' outer edges, the face, the spring)
