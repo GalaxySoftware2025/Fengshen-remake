@@ -23,6 +23,10 @@ import { petals } from './ui.js';
 import * as Audio from './audio.js';
 import * as Keys from './keys.js';
 import { keynav } from './keynav.js';
+import { mountTouchpad } from './touchpad.js';
+import { mountGamepad } from './gamepad.js';
+import { mountCursor } from './cursor.js';
+import * as Tex from './kit/tex.js';
 const { D, G } = R;
 const $ = id => document.getElementById(id);
 const { opts, V, tileCenter } = E;
@@ -45,8 +49,10 @@ async function openBattle(n, party) {
   FX = opts.arena ? { look: Arena.look } : await fxOf(n);
   R.loadBattle(B, party || defaultParty(globalThis.COMMON, B), opts.arena ? null : await rulesOf(n), opts.arena ? arena : null);
   setScreen('loading'); const fill = $('l-fill'); fill.style.width = '0%';
+  const key = opts.arena ? 'arena' : 'battle:' + n;
+  if (FX.look && FX.look.set) await Tex.prepaint(Tex.planOf(key));   // (its shared textures painted side by side off the main thread: src/kit/tex.js)
   await E.loadWorld(FX, p => { fill.style.width = (p * 100) + '%'; });
-  if (FX.look && FX.look.set) { await dress(E, FX.look.set); E.measureLight(); }   // a battle on a remade set (src/remake): its pieces, particles and lights
+  if (FX.look && FX.look.set) { await dress(E, FX.look.set); E.measureLight(); Tex.learn(key); }   // a battle on a remade set (src/remake): its pieces, particles and lights
   fillScreens(); loaded = n; dirty = false; window.__remake.world = 'battle:' + n;
 }
 
@@ -96,7 +102,7 @@ async function endScene(res) {
     const end = FX.end || { title: '戰役勝利', sub: '—— 待續 ——' };
     $('end-title').textContent = end.title; $('end-sub').textContent = end.sub;
   } else { $('end-title').textContent = '戰役失敗'; $('end-sub').textContent = (res.why || '') + (solo ? '' : '　·　回到出陣前，保留等級與物品'); }
-  document.querySelector('#end .press').textContent = solo ? '點擊或按 I 重新開始' : '點擊或按 I 返回出陣';
+  document.querySelector('#end .press').textContent = Keys.tapOr(solo ? '點擊或按 I 重新開始' : '點擊或按 I 返回出陣');
   setScreen('end'); E.ui.show('hud', false);
   await clickOnce($('end'));
 }
@@ -130,8 +136,9 @@ async function titleWorld() {
   const flat = Array.from({ length: MH }, () => Array(MW).fill(0));
   R.loadBattle({ n: 'title', name: '', chapter: 0, mapW: MW, mapH: MH, terrain: flat, deploy: [[0, 0]], enemies: [], win: [], lose: [], party: { deployMax: 0, forced: [], unavailable: [], joins: [] }, intro: [], outro: [] }, [], {});
   setScreen('loading'); const fill = $('l-fill'); fill.style.width = '0%';
+  await Tex.prepaint(Tex.planOf(alt ? 'title:reimagine' : 'title'));
   await E.loadWorld({ look: { set }, sprites: [] }, p => { fill.style.width = (p * 100) + '%'; });
-  await dress(E, set); E.world.calm = true;
+  await dress(E, set); E.world.calm = true; Tex.learn(alt ? 'title:reimagine' : 'title');
   loaded = 0; dirty = true; window.__remake.world = 'title:building';
 }
 const TITLE_VIEW = { dist: 9, pitch: 0.88, fov: 34 }, PAN = 60 / 32;   // the descent's view of a world map; cells a second
@@ -217,7 +224,7 @@ async function campaign(state0) {
       if (state.part === 'intro' && Scene.seekPast(S)) state.part = 'outro';   // #scene=N&at=F past its battle (QA shots of the outro)
       if (state.part === 'intro' && S.chapter) state.chapter = S.chapter;   // (no 第X章 card at a new chapter: the original has none [the user's call])
       // @qa scene:42 scene:54 job:flow
-      const r = await Scene.play(E, tag, state.part, { join: cid => K.join(state, cid), summon: spell => K.summon(state, spell), gifts: K.GIFTS[tag], gift: g => K.gift(state, g) });
+      const r = await Scene.play(E, tag, state.part, { join: cid => K.join(state, cid), summon: spell => K.summon(state, spell), gifts: K.GIFTS[tag], gift: g => K.gift(state, g), after: () => afterScene(state) });
       if (r === 'battle' && S.battle) { state.camp = true; state.battle = S.battle; continue; }   // stays dark: the camp fades in once its world is built
       K.nextScene(state); continue;
     }
@@ -227,6 +234,7 @@ async function campaign(state0) {
     G.chestFlags = JSON.parse(JSON.stringify(state.chestFlags || {}));   // the chests opened before, by table (rules.js loadChests)
     if (loaded !== state.battle || dirty) await openBattle(state.battle, K.partyOf(state));
     else D.party = K.partyOf(state);
+    outroAhead(state.scene);   // (the map the scene's outro opens on, painted while the camp and the battle play)
     await Scene.clearFade(); if (D.music != null) Audio.music(D.music, 0.6, true);   // the preparation plays the coming battle's song, from the top (not carried on from the scene before) [the user's calls]
     E.stage(autoPick(D.party, D.partyRules)); setScreen('camp'); orbit(true, 20);
     const r = await campScene(E, state, () => { D.party = K.partyOf(state); });
@@ -239,6 +247,20 @@ async function campaign(state0) {
     if (res.win) K.afterBattle(state, G.units, true, G.found, G.chestFlags);  // then the scene's outro
     else { state = K.afterBattle(before, G.units, false, G.found, G.chestFlags); if (!state.test) Save.write(Save.AUTO, state); }   // a loss: back to the camp as it was before the battle, but the heroes keep what they gained in it (levels, experience, items) [the user's call]
   }
+}
+// the map a scene's outro opens on, its textures painted ahead (the battle's own map when the outro plays on it: nothing)
+async function outroAhead(scene) {
+  if (scene == null) return;   // (#from=N: a camp with no scene before it)
+  const S = await Scene.sceneData(typeof scene === 'string' ? scene : String(scene).padStart(2, '0')).catch(() => null); if (!S) return;
+  const bi = S.events.findIndex(e => e.kind === 'battle'), m = bi >= 0 && S.events.slice(bi + 1).find(e => e.kind === 'map');
+  if (m) Tex.prepaint(Tex.planOf('map:' + m.map), true);
+}
+// the world the next scene opens on ('map:<key>'), for its textures to be painted while this one ends (src/kit/tex.js)
+async function afterScene(state) {
+  if (state.scene == null) return null;
+  const nx = K.nextScene(JSON.parse(JSON.stringify(state))); if (nx.scene === 'end' || nx.scene == null || Number.isNaN(nx.scene)) return null;
+  const S = await Scene.sceneData(typeof nx.scene === 'string' ? nx.scene : String(nx.scene).padStart(2, '0')).catch(() => null), m = S && S.events.find(e => e.kind === 'map');
+  return m ? 'map:' + m.map : null;
 }
 // development starts: #from=N opens the camp before battle N with its roster snapshot (磻溪), #scene=S plays scene S
 // (the test page's scene links: a test state, no auto-save)
@@ -300,7 +322,9 @@ async function single() {
 }
 
 async function main() {
-  mountSpeed(); mountQuality(); mountMenu();   // the menu, top right: the game speed, the picture quality and the controls page (src/speed.js, src/quality.js, src/gamemenu.js)
+  mountSpeed(); mountQuality(); Audio.mountVolume(); mountMenu(); mountTouchpad();   // (and on a touch screen the touch pad: src/touchpad.js)
+  mountGamepad(); mountCursor();   // a controller's buttons as keys (src/gamepad.js); the pointer hidden while keys play (src/cursor.js)
+  // the menu, top left: the game speed, the picture quality, the volume and the controls page (src/speed.js, src/quality.js, src/audio.js, src/gamemenu.js)
   E.boot(); Audio.attach();
   if (/qa/.test(location.hash)) (await import('./qa.js')).install(E);   // QA probes for tools/qa/tour.js
   await document.fonts.ready;

@@ -33,7 +33,7 @@ export default {
     a.flash = 0;
     vfx.explode(P.clone().setY(P.y + 0.5), 0.6, { smoke: false });
     const b = await reskin(u, PHOENIX);
-    for (let i = 0; i < 18; i++) { const t = i / 18 * Math.PI * 2; vfx.flame(P.x + Math.cos(t) * 0.35, P.y + 0.1, P.z + Math.sin(t) * 0.35, { vy: 1.2, life: 0.7, size: 0.35 }); }
+    for (let i = 0; i < 18; i++) { const t = i / 18 * Math.PI * 2; vfx.flame(P.x + Math.cos(t) * 0.35, P.y + 0.1, P.z + Math.sin(t) * 0.35, { mode: 0, vy: 1.2, life: 0.7, size: 0.35 }); }
     b.fade = 0; await anim(0.53, k => { b.fade = k; }); b.fade = 1;   // (32 frames)
     await wait(330);   // (20 frames)
   },

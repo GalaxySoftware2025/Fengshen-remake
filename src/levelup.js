@@ -7,7 +7,9 @@ import { tex } from './actors.js';
 import { arrowMesh } from './spells.js';
 import { swirl } from './spellkit.js';
 import { upscale } from '../extract/hd.js';
-import { world, vfx, cam, ui, anim, wait, V } from './battle.js';
+import { world, vfx as rawVfx, cam, ui, anim, wait, V } from './battle.js';
+// the effects through the themed handle: the dots this adds take the motif of the spell or level-up under way (src/motifs.js)
+const vfx = new Proxy({}, { get: (_, k) => rawVfx.themed[k], set: (_, k, v) => { rawVfx[k] = v; return true; } });
 
 const LV = {
   atk: (a, f) => { a.act = { kind: 'atk', frame: f }; },
@@ -470,151 +472,168 @@ async function linLevel(a, P) {
   await wait(300);
 }
 
-// ---------------------------------------------------------------- 黃飛虎: 武成王, the flying tiger
-// the tiger head-on, lunging at us, drawn on a 256 grid at twice that (512x512) [the user's call: real and ferocious, not
-// cute]: a broad angular head, its cheek ruffs flaring in pointed tufts, the ears pinned back; heavy brows drawn down
-// over glowing amber eyes; the snarl wrinkling the nose's bridge, the upper lip drawn back off long fangs; tapering
-// broken stripes and fine fur over it all; the massive forepaws thrown out below, claws out. roar: the jaws wide
-export function drawTigerFront(g, roar) {
+// ---------------------------------------------------------------- 黃飛虎: 武成王, and his 五色神牛
+// [the user's call, 2026-11-21: his level-up with his mount, the five-coloured divine ox of the 封神演義; the ROM has no
+// picture of it, he is on foot in every sheet: drawn from the story] side on, facing right, on a 256 x 128 grid drawn at
+// twice that (512 x 256): a heavy-shouldered ox, its hump high over the forelegs, a broad head carried low, the horns
+// sweeping forward and up; a dark bronze coat lit along the back; its mane, the feathering at its fetlocks and its tail's
+// tuft in the five colours (青 赤 黃 白 黑, the five directions). pose 0 at full stretch, 1 gathered (a gallop's two
+// beats), 2 rearing on its hind legs (the body turned up about the hind hip)
+export const OX_FIVE = ['#38b8a0', '#e0402a', '#f2c234', '#f6f1e6', '#2c2a3c'];
+export const OX_HIP = [82, 84], OX_REAR = -0.55;   // the hind hip, the pivot the rear turns the body about (radians)
+export const OX_SEAT = [128, 54];   // where its rider's feet go, on the grid: astride the back, his legs over its flank (the sprite's feet are its lowest pixels)
+export function drawOx(g, pose) {
   g.save(); g.scale(2, 2);
-  const R = (a, b) => a + Math.random() * (b - a), jaw = roar ? 30 : 12;
-  const fur = (x0, y0, x1, y1) => { const q = g.createLinearGradient(x0, y0, x1, y1); q.addColorStop(0, '#e89a48'); q.addColorStop(0.55, '#c86c24'); q.addColorStop(1, '#6a2a0c'); return q; };
-  const ink = '#120604';
-  const stripe = (x0, y0, x1, y1, w, b = 0) => { const mx = (x0 + x1) / 2 + b, my = (y0 + y1) / 2 - b * 0.4, nx = -(y1 - y0), ny = x1 - x0, l = Math.hypot(nx, ny) || 1;
-    g.fillStyle = ink; g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(mx + nx / l * w, my + ny / l * w, x1, y1); g.quadraticCurveTo(mx - nx / l * w, my - ny / l * w, x0, y0); g.closePath(); g.fill(); };   // pointed at both ends
-  // the forepaws, out to either side and toward us, heavy, striped, the claws hooked out of the toes
-  for (const s of [-1, 1]) {
-    limb(g, [[128 + s * 44, 176], [128 + s * 84, 196], [128 + s * 106, 226]], [54, 44, 40], fur(128 + s * 40, 168, 128 + s * 112, 244));
-    for (const t of [0.2, 0.45, 0.7]) stripe(128 + s * (50 + 52 * t), 172 + 46 * t, 128 + s * (40 + 52 * t), 198 + 46 * t, 3.2, s * 3);
-    g.fillStyle = fur(128 + s * 90, 214, 128 + s * 124, 254); g.beginPath(); g.ellipse(128 + s * 106, 234, 32, 21, s * 0.2, 0, 6.28); g.fill();
-    g.strokeStyle = 'rgba(60,20,4,0.7)'; g.lineWidth = 1.5; for (let c = -1; c <= 1; c++) { g.beginPath(); g.moveTo(128 + s * (106 + c * 11), 226); g.lineTo(128 + s * (106 + c * 11), 248); g.stroke(); }   // the toes
-    for (let c = -2; c <= 1; c++) { const x = 128 + s * (100 + c * 11), y = 248; const cg = g.createLinearGradient(x, y - 4, x, y + 14); cg.addColorStop(0, '#f8f2dc'); cg.addColorStop(1, '#a89878');
-      g.fillStyle = cg; g.beginPath(); g.moveTo(x - 3, y - 3); g.quadraticCurveTo(x + s * 2, y + 5, x + s * 6, y + 13); g.quadraticCurveTo(x + s * 0.5, y + 5, x + 3, y - 3); g.closePath(); g.fill(); }
-  }
-  // the shoulders behind the head, hunched: each blade rising at the side as it crouches (one oval made a ball of it all)
-  g.fillStyle = fur(128, 124, 128, 214); for (const s of [-1, 1]) { g.beginPath(); g.ellipse(128 + s * 66, 188, 48, 28, s * -0.35, 0, 6.28); g.fill(); }
-  g.beginPath(); g.ellipse(128, 200, 64, 24, 0, 0, 6.28); g.fill();
-  for (const s of [-1, 1]) for (const k of [0, 1, 2, 3]) stripe(128 + s * (66 + k * 13), 166 + k * 3, 128 + s * (60 + k * 13), 208 + k * 2, 3.5, s * 4);
-  // the head and its ears 80% of the size they were drawn at, about the neck where it meets the shoulders [the user's call:
-  // the face 20% smaller, the body and paws as they are]
-  g.save(); g.translate(128, 176); g.scale(0.8, 0.8); g.translate(-128, -176);
-  // the ears laid back at the top corners of the skull: short rounded triangles turned outward, their dark backs and
-  // the white spot on each showing (a pinned blob at the sides made the head read as a ball [the user's report])
-  for (const s of [-1, 1]) { g.save(); g.translate(128 + s * 62, 58); g.rotate(s * 1.5); g.scale(0.8, 0.7);
-    g.fillStyle = '#2a1206'; g.beginPath(); g.moveTo(-15, 4); g.quadraticCurveTo(-11, -16, -2, -25); g.quadraticCurveTo(3, -27, 6, -22); g.quadraticCurveTo(13, -10, 15, 4); g.closePath(); g.fill();
-    const sp = g.createRadialGradient(1, -11, 0.5, 1, -11, 6); sp.addColorStop(0, 'rgba(236,226,206,0.85)'); sp.addColorStop(1, 'rgba(236,226,206,0)'); g.fillStyle = sp; g.beginPath(); g.ellipse(1, -11, 4, 6.5, 0, 0, 6.28); g.fill();
-    g.strokeStyle = '#c87830'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(-15, 4); g.quadraticCurveTo(-11, -16, -2, -25); g.stroke(); g.restore(); }
-  // the head: a flat broad brow between the ears, the skull's sides straight down to the cheek ruffs, which flare out in
-  // pointed tufts; then the jaw cut in at an angle to a square chin (not a round face: the user's report)
-  const head = new Path2D(); head.moveTo(128, 40);
-  head.quadraticCurveTo(152, 37, 172, 42); head.quadraticCurveTo(188, 48, 194, 64); head.lineTo(198, 90);
-  for (let i = 0; i < 6; i++) { const y = 96 + i * 11, x = 204 - Math.abs(i - 2.2) * 4; head.lineTo(x + 10, y + 4); head.lineTo(x - 5, y + 8); }
-  head.lineTo(176, 172); head.lineTo(156, 190); head.quadraticCurveTo(128, 197, 100, 190); head.lineTo(80, 172);
-  for (let i = 5; i >= 0; i--) { const y = 96 + i * 11, x = 52 + Math.abs(i - 2.2) * 4; head.lineTo(x + 5, y + 8); head.lineTo(x - 10, y + 4); }
-  head.lineTo(58, 90); head.lineTo(62, 64); head.quadraticCurveTo(68, 48, 84, 42); head.quadraticCurveTo(104, 37, 128, 40); head.closePath();
-  // lit as planes, not a dome: the brow and muzzle catch the light down the middle, the cheeks turn away darker to the sides
-  const hg = g.createLinearGradient(36, 0, 220, 0);
-  for (const [t, c] of [[0, '#4a1a06'], [0.16, '#9a4612'], [0.3, '#c86a22'], [0.42, '#e49448'], [0.5, '#eca050'], [0.58, '#e49448'], [0.7, '#c86a22'], [0.84, '#9a4612'], [1, '#4a1a06']]) hg.addColorStop(t, c);
-  g.save(); g.shadowColor = 'rgba(30,8,0,0.7)'; g.shadowBlur = 18; g.shadowOffsetY = 8; g.fillStyle = hg; g.fill(head); g.restore();   // (its shadow on the shoulders: the head stands off the body)
-  const vg = g.createLinearGradient(0, 40, 0, 196); vg.addColorStop(0, 'rgba(60,20,4,0.35)'); vg.addColorStop(0.25, 'rgba(60,20,4,0)'); vg.addColorStop(0.8, 'rgba(60,20,4,0)'); vg.addColorStop(1, 'rgba(40,12,2,0.5)');
-  g.fillStyle = vg; g.fill(head);
-  g.save(); g.clip(head);
-  const pale = (x, y, rx, ry, rot = 0, a = 0.92) => { const q = g.createRadialGradient(0, 0, 1, 0, 0, rx); q.addColorStop(0, `rgba(238,228,208,${a})`); q.addColorStop(0.65, `rgba(230,214,186,${a * 0.85})`); q.addColorStop(1, 'rgba(230,214,186,0)');
-    g.save(); g.translate(x, y); g.rotate(rot); g.scale(1, ry / rx); g.fillStyle = q; g.beginPath(); g.arc(0, 0, rx, 0, 6.28); g.fill(); g.restore(); };
-  for (const s of [-1, 1]) { pale(128 + s * 26, 74, 10, 5, s * 0.35, 0.7); pale(128 + s * 58, 154, 28, 20, s * -0.4); pale(128 + s * 19, 142, 22, 17); }   // spots over the eyes, the cheeks' undersides, the muzzle pads
-  pale(128, 188, 22, 8, 0, 0.8);   // the chin under the jaw
-  // the stripes: thin, black, pointed at both ends, in the brow's broken bars and the cheeks' long parallel sweeps
-  stripe(114, 54, 128, 52, 2.4); stripe(128, 52, 142, 54, 2.4); stripe(112, 62, 144, 62, 2.6); stripe(118, 70, 138, 70, 2.2); stripe(128, 48, 128, 76, 1.8);
-  for (const s of [-1, 1]) {
-    for (const [x0, y0, x1, y1] of [[22, 52, 40, 70], [34, 48, 56, 70], [48, 54, 66, 76]]) stripe(128 + s * x0, y0, 128 + s * x1, y1, 2.6, s * 2);
-    for (const [x0, y0, x1, y1, w] of [[44, 98, 88, 92, 3.4], [48, 110, 92, 106, 3.8], [50, 122, 90, 122, 3.6], [52, 134, 88, 140, 3.2], [50, 146, 80, 156, 2.8]]) stripe(128 + s * x0, y0, 128 + s * x1, y1, w, s * -4);
-  }
+  const ink = '#140a04';
+  // a dark bronze coat lit gold along the back (a divine beast, not a farm ox: the user's look at the first, a plain brown cow)
+  const coat = (y0, y1) => { const q = g.createLinearGradient(0, y0, 0, y1); q.addColorStop(0, '#d8a24a'); q.addColorStop(0.3, '#7a4a22'); q.addColorStop(0.7, '#3a2210'); q.addColorStop(1, '#1c0e06'); return q; };
+  const far = (y0, y1) => { const q = g.createLinearGradient(0, y0, 0, y1); q.addColorStop(0, '#4a2c12'); q.addColorStop(1, '#140a04'); return q; };
+  // a lock of the mane: a broad flame-like sweep from its root back along the line it streams, in one of the five colours
+  const lock = (x, y, len, lift, w, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + w * 0.4, y + w * 0.3);
+    g.bezierCurveTo(x - len * 0.3, y - lift - w, x - len * 0.7, y - lift * 1.4 - w * 0.4, x - len, y - lift * 0.8);
+    g.bezierCurveTo(x - len * 0.65, y - lift * 0.6 + w * 0.6, x - len * 0.3, y - lift * 0.2 + w * 0.8, x - w * 0.4, y + w * 0.6); g.closePath(); g.fill(); };
+  // a leg: shoulder or hip, knee, fetlock, then the cloven hoof and the five-coloured feathering over it
+  const leg = (pts, near) => {
+    limb(g, pts, [18, 12, 8], near ? coat(pts[0][1] - 10, pts[2][1] + 4) : far(pts[0][1], pts[2][1]));
+    const [x, y] = pts[pts.length - 1], [px, py] = pts[pts.length - 2], ang = Math.atan2(y - py, x - px);
+    g.save(); g.translate(x, y); g.rotate(ang - Math.PI / 2);
+    g.fillStyle = near ? '#1a1410' : '#0e0a08'; g.beginPath(); g.moveTo(-5.5, -2); g.lineTo(5.5, -2); g.lineTo(6, 6); g.lineTo(0.8, 6); g.lineTo(0, 3); g.lineTo(-0.8, 6); g.lineTo(-6, 6); g.closePath(); g.fill();   // the cloven hoof
+    for (let i = 0; i < 5; i++) { g.strokeStyle = OX_FIVE[i]; g.globalAlpha = near ? 0.9 : 0.55; g.lineWidth = 1.6; g.beginPath(); g.moveTo(-4 + i * 2, -6); g.quadraticCurveTo(-6 + i * 2.5, -1, -9 + i * 2, 3); g.stroke(); }
+    g.globalAlpha = 1; g.restore();
+  };
+  const L = {   // the legs' joints by pose: [fore far, hind far, fore near, hind near]
+    0: [[[160, 86], [182, 102], [194, 118]], [[90, 86], [72, 102], [58, 118]], [[170, 84], [196, 98], [216, 108]], [[80, 84], [58, 98], [36, 106]]],
+    1: [[[162, 86], [174, 104], [178, 121]], [[90, 86], [82, 104], [74, 121]], [[168, 86], [160, 104], [150, 120]], [[80, 84], [98, 102], [106, 120]]],
+    2: [[[160, 86], [178, 92], [172, 104]], [[90, 86], [96, 104], [98, 121]], [[168, 84], [186, 90], [182, 104]], [[80, 84], [86, 104], [84, 121]]],
+  }[pose];
+  // the far legs first, then the body turned up about the hip when it rears (the hind legs stay down to the ground)
+  leg(L[1], false); if (pose !== 2) leg(L[0], false);
+  g.save(); if (pose === 2) { g.translate(...OX_HIP); g.rotate(OX_REAR); g.translate(-OX_HIP[0], -OX_HIP[1]); leg(L[0], false); }
+  // the tail: a rope swung out behind, ending in a tuft of the five colours
+  const sw = pose === 1 ? 10 : pose === 2 ? 16 : -4;
+  g.strokeStyle = '#3a2210'; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath(); g.moveTo(62, 56); g.quadraticCurveTo(40, 60 + sw * 0.3, 34 - sw * 0.4, 92 + sw * 0.4); g.stroke();
+  for (let i = 4; i >= 0; i--) { g.save(); g.translate(34 - sw * 0.4, 90 + sw * 0.4); g.rotate(-1.75 + i * 0.12 - sw * 0.01); lock(0, 0, 24 - i, 3, 4.5, OX_FIVE[i]); g.restore(); }   // the tuft: five broad locks
+  // the body: the barrel, the rump, the great hump over the shoulders, the dewlap under the neck
+  const body = new Path2D();
+  body.moveTo(62, 54); body.quadraticCurveTo(70, 40, 100, 42); body.quadraticCurveTo(130, 44, 140, 38);   // the back, dipping before the hump
+  body.quadraticCurveTo(152, 22, 172, 34); body.quadraticCurveTo(184, 42, 190, 52);   // the hump
+  body.lineTo(196, 72); body.quadraticCurveTo(188, 96, 170, 92);   // the chest, the dewlap
+  body.quadraticCurveTo(130, 100, 100, 94); body.quadraticCurveTo(76, 96, 66, 84); body.quadraticCurveTo(54, 70, 62, 54); body.closePath();
+  g.save(); g.shadowColor = 'rgba(20,8,0,0.6)'; g.shadowBlur = 10; g.fillStyle = coat(30, 98); g.fill(body); g.restore();
+  g.save(); g.clip(body);
+  const sheen = g.createLinearGradient(0, 30, 0, 60); sheen.addColorStop(0, 'rgba(255,214,150,0.55)'); sheen.addColorStop(1, 'rgba(255,214,150,0)');
+  g.fillStyle = sheen; g.fillRect(50, 20, 160, 40);   // the light along the back
+  g.strokeStyle = 'rgba(30,14,4,0.55)'; g.lineWidth = 1.4;   // the muscles' folds: shoulder, ribs, the haunch
+  for (const [x0, y0, cx, cy, x1, y1] of [[168, 48, 160, 70, 166, 90], [150, 60, 146, 76, 152, 92], [118, 58, 112, 74, 116, 92], [84, 52, 96, 66, 92, 88], [72, 62, 82, 74, 78, 90]]) { g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(cx, cy, x1, y1); g.stroke(); }
   g.restore();
-  // brows: heavy ridges driven down to the nose in a scowl, deep shadow under them
-  for (const s of [-1, 1]) { const sh = g.createLinearGradient(0, 80, 0, 96); sh.addColorStop(0, 'rgba(30,10,2,0.8)'); sh.addColorStop(1, 'rgba(30,10,2,0)');
-    g.fillStyle = sh; g.beginPath(); g.moveTo(128 + s * 6, 84); g.lineTo(128 + s * 46, 78); g.lineTo(128 + s * 44, 96); g.lineTo(128 + s * 8, 98); g.closePath(); g.fill();
-    g.strokeStyle = ink; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath(); g.moveTo(128 + s * 8, 89); g.quadraticCurveTo(128 + s * 26, 79, 128 + s * 46, 81); g.stroke(); }
-  // the eyes: hooded, slanting down to the nose, molten amber round a small black pupil, ringed in black, a hard glint
-  for (const s of [-1, 1]) { g.save(); g.translate(128 + s * 28, 93); g.rotate(s * -0.3);
-    g.fillStyle = ink; g.beginPath(); g.ellipse(0, 0, 14, 6.5, 0, 0, 6.28); g.fill();
-    const ir = g.createRadialGradient(0, 1, 0.5, 0, 1, 10); ir.addColorStop(0, '#fff2a0'); ir.addColorStop(0.45, '#f0b018'); ir.addColorStop(1, '#a85000');
-    g.fillStyle = ir; g.beginPath(); g.ellipse(0, 1, 11, 4.2, 0, 0, 6.28); g.fill();
-    g.fillStyle = 'rgba(20,6,0,0.55)'; g.beginPath(); g.ellipse(0, -2.5, 12, 3, 0, 0, 6.28); g.fill();   // the heavy upper lid's shadow
-    g.fillStyle = '#000'; g.beginPath(); g.arc(0, 1, 2.3, 0, 6.28); g.fill();
-    g.fillStyle = '#fff'; g.beginPath(); g.arc(-s * 3, 0, 1, 0, 6.28); g.fill(); g.restore(); }
-  // the long bridge of the nose, wrinkled in deep folds by the snarl, creases running down to the lip
-  const br = g.createLinearGradient(0, 88, 0, 128); br.addColorStop(0, 'rgba(240,170,90,0.5)'); br.addColorStop(1, 'rgba(240,170,90,0)');
-  g.fillStyle = br; g.beginPath(); g.moveTo(120, 88); g.lineTo(136, 88); g.lineTo(144, 126); g.lineTo(112, 126); g.closePath(); g.fill();
-  g.strokeStyle = 'rgba(50,16,2,0.85)'; g.lineWidth = 2;
-  for (const y of [104, 110, 116]) { g.beginPath(); g.moveTo(117, y); g.quadraticCurveTo(128, y - 4, 139, y); g.stroke(); }
-  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(128 + s * 14, 118); g.quadraticCurveTo(128 + s * 26, 128, 128 + s * 38, 144); g.stroke(); }
-  // the nose: broad, the leather a dull rose, the nostrils flared
-  g.fillStyle = '#9a5848'; g.beginPath(); g.moveTo(109, 122); g.quadraticCurveTo(128, 116, 147, 122); g.quadraticCurveTo(143, 136, 128, 138); g.quadraticCurveTo(113, 136, 109, 122); g.fill();
-  g.fillStyle = ink; for (const s of [-1, 1]) { g.beginPath(); g.ellipse(128 + s * 7, 131, 4.2, 2.5, s * 0.5, 0, 6.28); g.fill(); }
-  g.strokeStyle = ink; g.lineWidth = 1.6; g.beginPath(); g.moveTo(128, 137); g.lineTo(128, 145); g.stroke();
-  // the mouth: the upper lip drawn up off the gums across the whole muzzle, the jaws gaping on a dark throat
-  const top = 146, bot = top + jaw * 1.6, half = 37;
-  const thr = g.createRadialGradient(128, (top + bot) / 2, 2, 128, (top + bot) / 2, 40); thr.addColorStop(0, '#120201'); thr.addColorStop(0.7, '#3e0806'); thr.addColorStop(1, '#6e160e');
-  g.fillStyle = thr; g.beginPath(); g.moveTo(128 - half, top); g.quadraticCurveTo(128, top - 8, 128 + half, top); g.quadraticCurveTo(128 + half - 4, bot, 128, bot + 5); g.quadraticCurveTo(128 - half + 4, bot, 128 - half, top); g.fill();
-  if (roar) { g.fillStyle = '#a84444'; g.beginPath(); g.ellipse(128, bot - 3, 18, 6, 0, 0, 6.28); g.fill(); g.strokeStyle = 'rgba(80,16,16,0.6)'; g.lineWidth = 1; for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(128 + k * 6, bot - 8); g.lineTo(128 + k * 6.5, bot); g.stroke(); } }   // the tongue, ridged
-  g.fillStyle = '#8a3438'; g.beginPath(); g.moveTo(128 - half + 2, top); g.quadraticCurveTo(128, top - 10, 128 + half - 2, top); g.lineTo(128 + half - 4, top + 5); g.quadraticCurveTo(128, top - 3, 128 - half + 4, top + 5); g.closePath(); g.fill();   // the gums
-  g.strokeStyle = ink; g.lineWidth = 3; g.beginPath(); g.moveTo(128 - half - 4, top + 2); g.quadraticCurveTo(128, top - 12, 128 + half + 4, top + 2); g.stroke();   // the black lips
-  g.beginPath(); g.moveTo(128 - half + 2, bot - 8); g.quadraticCurveTo(128, bot + 8, 128 + half - 2, bot - 8); g.stroke();
-  const tooth = (x, y, len, w, down) => { const d = down ? 1 : -1, tg = g.createLinearGradient(x, y, x, y + len * d); tg.addColorStop(0, '#f4ead0'); tg.addColorStop(1, '#c8b488');
-    g.fillStyle = tg; g.beginPath(); g.moveTo(x - w, y); g.quadraticCurveTo(x - w * 0.4, y + len * 0.6 * d, x + w * 0.2, y + len * d); g.quadraticCurveTo(x + w * 0.6, y + len * 0.4 * d, x + w, y); g.closePath(); g.fill(); };
-  for (const s of [-1, 1]) { tooth(128 + s * 22, top + 2, 15 + jaw * 0.3, 4.6, true); tooth(128 + s * 19, bot - 5, 11 + jaw * 0.18, 4, false); }   // the fangs
-  for (let k = -3; k <= 3; k++) if (k) { tooth(128 + k * 4.6, top + 2, 4.5, 1.9, true); tooth(128 + k * 4.4, bot - 5, 3.8, 1.7, false); }   // the incisors
-  // whiskers out from the pads, stiff and fine
-  g.strokeStyle = 'rgba(250,244,228,0.75)'; g.lineWidth = 0.7;
-  for (const s of [-1, 1]) for (let k = 0; k < 4; k++) { g.beginPath(); g.moveTo(128 + s * 30, 134 + k * 4); g.quadraticCurveTo(128 + s * 56, 130 + k * 5, 128 + s * (82 + k * 3), 124 + k * 8); g.stroke(); }
-  g.restore();   // (the head's scale)
-  g.restore();
-  // fur over everything: short strokes in each spot's own colour, lighter and darker, running out from the nose
-  const W = g.canvas.width, H = g.canvas.height, px = g.getImageData(0, 0, W, H).data;
-  g.lineWidth = 1; g.lineCap = 'round';
-  for (let i = 0; i < 12000; i++) {
-    const x = Math.random() * W, y = Math.random() * H, o = (Math.floor(y) * W + Math.floor(x)) * 4; if (px[o + 3] < 200) continue;
-    const r = px[o], gg = px[o + 1], b = px[o + 2]; if (r + gg + b < 120 && Math.random() < 0.7) continue;
-    const ang = Math.atan2(y - 244, x - 256) + R(-0.3, 0.3), len = R(3, 9), k = Math.random() < 0.5 ? 1.16 : 0.8;
-    g.strokeStyle = `rgba(${Math.min(255, r * k) | 0},${Math.min(255, gg * k) | 0},${Math.min(255, b * k) | 0},0.5)`;
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len); g.stroke();
+  // the neck and head, carried low and forward: the skull, the broad muzzle, a red-gold eye under a heavy brow
+  limb(g, [[176, 56], [196, 62], [210, 70]], [34, 28, 24], coat(44, 90));
+  g.fillStyle = coat(52, 92); g.beginPath(); g.ellipse(212, 68, 19, 14, 0.55, 0, 6.28); g.fill();
+  g.fillStyle = '#4a2c14'; g.beginPath(); g.ellipse(226, 82, 12, 10, 0.4, 0, 6.28); g.fill();   // the muzzle
+  g.fillStyle = '#2a1a10'; g.beginPath(); g.ellipse(232, 86, 3.4, 2.2, 0.5, 0, 6.28); g.fill();   // the nostril
+  g.fillStyle = 'rgba(30,14,4,0.7)'; g.beginPath(); g.moveTo(214, 88); g.quadraticCurveTo(224, 94, 234, 90); g.lineTo(232, 92); g.quadraticCurveTo(222, 96, 214, 90); g.fill();   // the mouth
+  g.fillStyle = ink; g.beginPath(); g.ellipse(209, 63, 4.6, 3.4, 0.3, 0, 6.28); g.fill();
+  const ir = g.createRadialGradient(209.5, 63, 0.3, 209.5, 63, 3.2); ir.addColorStop(0, '#fff0a0'); ir.addColorStop(0.5, '#ff8a1a'); ir.addColorStop(1, '#a01800');
+  g.fillStyle = ir; g.beginPath(); g.ellipse(209.5, 63, 3.4, 2.4, 0.3, 0, 6.28); g.fill();
+  g.strokeStyle = ink; g.lineWidth = 2; g.beginPath(); g.moveTo(202, 58); g.quadraticCurveTo(209, 55, 216, 59); g.stroke();   // the brow, drawn down
+  g.fillStyle = '#5a3418'; g.beginPath(); g.moveTo(198, 56); g.quadraticCurveTo(186, 50, 180, 54); g.quadraticCurveTo(188, 60, 198, 60); g.fill();   // the ear, laid back
+  // the horns: from the poll, sweeping forward and up to sharp dark tips; the far one behind and darker
+  const horn = (dx, dy, dark) => { const hg = g.createLinearGradient(200 + dx, 52 + dy, 238 + dx, 26 + dy); hg.addColorStop(0, dark ? '#a8822a' : '#fff0b0'); hg.addColorStop(0.6, dark ? '#8a6418' : '#f2c234'); hg.addColorStop(1, dark ? '#5a3c08' : '#b07810');   // gold
+    g.fillStyle = hg; g.beginPath(); g.moveTo(198 + dx, 54 + dy); g.quadraticCurveTo(204 + dx, 34 + dy, 238 + dx, 24 + dy); g.quadraticCurveTo(212 + dx, 38 + dy, 206 + dx, 56 + dy); g.closePath(); g.fill(); };
+  horn(-6, -2, true); horn(0, 0, false);
+  // the mane: broad locks of the five colours from the poll down the crest and over the hump, streaming back in the wind
+  // of its running, in bands (青 赤 黃 白 黑 over and over); the dark one edged in white so it reads against the coat
+  for (let i = 15; i >= 0; i--) {
+    const t = i / 15, x = 204 - t * 64, y = 50 - Math.sin(Math.min(1, t * 1.15) * Math.PI) * 20 + t * 4, len = 22 + Math.sin(t * Math.PI) * 14, c = OX_FIVE[i % 5];
+    if (i % 5 === 4) lock(x, y, len + 2, (pose === 0 ? 9 : 6), 5.4, 'rgba(246,241,230,0.7)');
+    lock(x, y, len, pose === 0 ? 9 : pose === 2 ? 4 : 6, 4.6, c);
   }
+  g.restore();   // (the rear's turn)
+  // the near legs over the body (the near foreleg turned with the body when it rears)
+  leg(L[1 + 2], true);
+  if (pose === 2) { g.save(); g.translate(...OX_HIP); g.rotate(OX_REAR); g.translate(-OX_HIP[0], -OX_HIP[1]); leg(L[2], true); g.restore(); } else leg(L[2], true);
+  g.restore();
 }
-// 黃飛虎's level-up [the user's call: the tiger comes out of his body, to the front]: war-fire climbs round him and a gold
-// light gathers in his chest; the spirit tiger bursts out of it head-on, lunging at us, growing as it comes, and roars
-// with the screen shaking; it breaks into gold embers and he stands in his guard
+// where the rider sits for a pose, on the grid (the seat turned with the body when it rears)
+export function oxSeat(pose) {
+  if (pose !== 2) return OX_SEAT;
+  const [hx, hy] = OX_HIP, dx = OX_SEAT[0] - hx, dy = OX_SEAT[1] - hy, c = Math.cos(OX_REAR), s = Math.sin(OX_REAR);
+  return [hx + dx * c - dy * s, hy + dx * s + dy * c];
+}
+
+// 黃飛虎's level-up [the user's call, 2026-11-21: with his mount, the 五色神牛 (it was a spirit tiger lunging out of his
+// chest)]: clouds of the five colours swirl in round his feet as the ground trembles; the divine ox charges in from the
+// side, kicking up dust, and he leaps onto its back; it rears with him, the five colours streaming up round them; it
+// stamps down, the ground shaking in a ring of dust and thrown stone; it melts into five-coloured mist and he lands in his
+// guard. He rides it [the user's call, 2026-11-21: riding, not walking]: sat still on its back, side on, his walk frame
+// held; as it rears he draws his bow, and as it comes down and stands he looses the arrow out ahead
+const OX_RGB = OX_FIVE.map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255));
 async function huangLevel(a, P) {
-  const { right, toCam } = axes();
+  const { right, toCam } = axes(), cu = V(0, 1, 0).applyQuaternion(world.camera.quaternion);   // (the card's up: the camera's, tilted)
+  const faceScreen = s => { const r = right.clone().multiplyScalar(s), fs = [['right', 1, 0], ['left', -1, 0], ['down', 0, 1], ['up', 0, -1]];
+    a.u.facing = fs.reduce((b, f) => f[1] * r.x + f[2] * r.z > b[1] * r.x + b[2] * r.z ? f : b)[0]; };
   a.u.facing = 'down'; LV.guard(a);
-  // war-fire: low golden flames climb round him, the light gathering in his chest
-  vfx.light(a.chest(), [1, 0.75, 0.3], 6, 1.2, 4);
-  await anim(0.7, k => { for (let i = 0; i < 2; i++) { const t = rand(0, 6.28), r = rand(0.35, 0.65); vfx.realFire(P.x + Math.cos(t) * r, P.y - 0.05, P.z + Math.sin(t) * r, { size: rand(0.3, 0.45) * (0.5 + k), asp: 1.5, life: 0.6, vy: 0.5 }); }
-    a.flash = 0.45 * k; const c = a.chest(); vfx.spark(c.x + rand(-0.5, 0.5), c.y + rand(-0.4, 0.6), c.z, { vx: 0, vy: 0, seek: { x: c.x, y: c.y, z: c.z, k: 6 }, life: 0.45, size: rand(0.03, 0.05), r: 1, gg: 0.85, b: 0.4, shape: 5 }); });
-  // the tiger bursts out of his chest, lunging at the camera, growing as it comes
-  const map = once('tigerFront3', () => glowStrip(512, 512, 2, 'rgba(255,150,40,0.7)', (g, i) => drawTigerFront(g, i === 1))).clone(); map.needsUpdate = true; map.repeat.set(0.5, 1);
-  const tiger = card(map, 1, 1, { order: 9.5 }); tiger.material.depthTest = false;   // (solid, its own colours: see-through and brightened, the hero showed through its jaws and it read soft [the user's call: real, ferocious])
-  const c0 = a.chest(), cp = world.camera.position, toward = cp.clone().sub(c0).normalize(), dist = cp.distanceTo(c0);
-  vfx.flash([1, 0.8, 0.4], 0.15); vfx.burst(c0, { n: 30, speed: 2.5, cols: [[1, 0.95, 0.7], [1, 0.7, 0.25]], size: 0.05, life: 0.5, g: 0, shape: 5 });
-  a.flash = 0;
-  await anim(0.55, k => {
-    const e = 1 - Math.pow(1 - k, 3); tiger.position.copy(c0).addScaledVector(toward, e * dist * 0.25).add(V(0, e * 0.25, 0));
-    face(tiger); tiger.scale.setScalar(0.3 + e * 1.5); tiger.material.opacity = Math.min(1, k * 4); map.offset.x = k > 0.7 ? 0.5 : 0;
-    if (Math.random() < 0.8) vfx.spark(tiger.position.x + rand(-0.6, 0.6), tiger.position.y + rand(-0.5, 0.5), tiger.position.z, { vy: rand(-0.3, 0.4), life: 0.5, size: rand(0.04, 0.06), r: 1, gg: 0.8, b: 0.35, shape: 5 });
+  // the ox: a card of its three poses, turned to the camera, drawn before him (he sits on it)
+  const map = once('ox3', () => glowStrip(512, 256, 3, 'rgba(255,214,110,0.95)', (g, i) => drawOx(g, i))).clone(); map.needsUpdate = true; map.repeat.set(1 / 3, 1);   // (a gold glow round its outline: a divine beast)
+  const W = 2.4, H = W / 2, ox = card(map, W, H, { order: 1 }); ox.material.opacity = 0; ox.material.depthTest = true;
+  const loc = (gx, gy) => [(gx - 128) / 256 * W, (64 - gy) / 128 * H];   // a point of the grid, off the card's centre (right, up)
+  const hoof = loc(0, 121)[1];
+  // where the card stands for a pose, its seat over his feet (extra: along the screen from there), and his lift to the seat
+  const stand = (i, extra = 0) => { const [sx, sy] = loc(...oxSeat(i)), h = (sy - hoof) * cu.y;
+    ox.position.copy(P).add(V(0, h, 0)).addScaledVector(right, extra - sx).addScaledVector(cu, -sy).addScaledVector(toCam, -0.12); face(ox); map.offset.x = i / 3; return h; };
+  const hoofAt = gx => ox.position.clone().addScaledVector(right, loc(gx, 0)[0]).addScaledVector(cu, hoof);
+  const dust = (q, s = 1) => vfx.smokePuff(q.x, P.y + 0.06, q.z, { vx: rand(-0.4, 0.4), vy: rand(0.2, 0.6), vz: rand(-0.4, 0.4), drag: 2, life: rand(0.6, 0.9), size: 0.18 * s, size1: 0.5 * s, tint: [0.62, 0.52, 0.38] });
+  // 1. the five colours gather: clouds of each swirl in round his feet and rise, the ground trembling
+  vfx.light(P.clone().setY(P.y + 0.5), [1, 0.9, 0.7], 6, 1.4, 5);
+  await anim(0.65, (k, dt = 1 / 60) => {
+    if (Math.random() < 0.7) { const i = (Math.random() * 5) | 0, c = OX_RGB[i], t = rand(0, 6.28), r = rand(0.7, 1.1);
+      vfx.smokePuff(P.x + Math.cos(t) * r, P.y + 0.1, P.z + Math.sin(t) * r, { vx: -Math.sin(t) * 1.2 - Math.cos(t) * 0.5, vz: Math.cos(t) * 1.2 - Math.sin(t) * 0.5, vy: rand(0.3, 0.7), drag: 1.5, life: 0.9, size: 0.22, size1: 0.55, tint: c }); }
+    vfx.shake(0.03 * k, 0.05);
   });
-  // the roar
-  map.offset.x = 0.5; LV.atk(a, 1);
-  vfx.shake(0.28, 0.5); vfx.flash([1, 0.85, 0.5], 0.2); vfx.light(tiger.position.clone(), [1, 0.8, 0.4], 16, 0.6, 7);
-  for (const [d, r] of [[0, 2.8], [120, 2.1], [240, 1.5]]) later(() => vfx.ring(tiger.position, [1, 0.8, 0.35], r, 0.6, { vertical: true, yaw: cam.yaw, y: tiger.position.y, intensity: 0.7 }), d);
-  for (let i = 0; i < 18; i++) { const t = i / 18 * 6.28, sp = rand(2.2, 3.2); vfx.smokePuff(P.x, P.y + 0.08, P.z, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: 0.2, drag: 2.5, life: 0.9, size: 0.25, size1: 0.7, tint: [0.62, 0.5, 0.36] }); }
-  await anim(0.5, k => { tiger.scale.setScalar(1.8 + Math.sin(k * 30) * 0.03); face(tiger); });
-  // it breaks into gold embers
-  const tp = tiger.position.clone();
-  for (let i = 0; i < 50; i++) vfx.spark(tp.x + rand(-0.7, 0.7), tp.y + rand(-0.6, 0.6), tp.z + rand(-0.3, 0.3), { vx: rand(-1, 1), vy: rand(-0.2, 1.4), vz: rand(-0.5, 0.5), life: rand(0.6, 1.2), size: rand(0.04, 0.07), r: 1, gg: rand(0.7, 0.9), b: 0.35, shape: 5, flicker: 1, ph: rand(0, 6) });
-  await anim(0.4, k => { tiger.scale.setScalar(1.8 + k * 0.4); tiger.material.opacity = 1 - k; face(tiger); });
-  drop(tiger);
-  LV.guard(a);
-  await wait(600);
+  // 2. the ox charges in from the left of the screen, galloping; as it comes up he leaps onto its back
+  const h0 = stand(0, -4.2); let gal = 0, jumped = false;
+  await anim(0.8, (k, dt = 1 / 60) => {
+    const e = 1 - Math.pow(1 - k, 2.2); gal += dt;
+    const fr = Math.floor(gal / 0.09) % 2; stand(fr, -4.2 * (1 - e)); ox.position.y += Math.abs(Math.sin(gal / 0.09 * Math.PI)) * 0.05;
+    ox.material.opacity = Math.min(1, k * 6);
+    if (Math.random() < 0.7) { const q = hoofAt(fr ? -20 : -40), c = OX_RGB[(Math.random() * 5) | 0];   // it treads on clouds of the five colours (踏雲), not dust: a divine beast
+      vfx.smokePuff(q.x, P.y + 0.08, q.z, { vx: rand(-0.3, 0.3), vy: rand(0.2, 0.5), vz: rand(-0.3, 0.3), drag: 2, life: rand(0.5, 0.8), size: 0.16, size1: 0.42, tint: c }); }
+    if (k > 0.62) { if (!jumped) { jumped = true; faceScreen(1); a.act = null; a.u.still = 6; }   // (side on, the way it runs, sat still: his side frame held, not marking time)
+      const j = (k - 0.62) / 0.38; a.lift = h0 * j + Math.sin(j * Math.PI) * 0.45; }
+  });
+  a.lift = h0; stand(0);
+  // 3. it rears with him, the five colours streaming up round them in spirals, a bellow that shakes the screen
+  const h2 = stand(2); a.lift = h2; LV.atk(a, 0); later(() => LV.atk(a, 1), 380);   // (he draws his bow as it rears)
+  vfx.shake(0.12, 0.3); vfx.flash([1, 0.95, 0.8], 0.15); vfx.light(ox.position.clone(), [1, 0.85, 0.6], 14, 0.9, 7);
+  const ribs = OX_RGB.map(c => vfx.ribbon({ col: c, width: 0.07, n: 24 })), c0 = ox.position.clone();
+  await anim(0.85, (k, dt = 1 / 60) => {
+    ribs.forEach((rb, i) => { const t = k * 7 + i / 5 * 6.28, r = 0.9 - k * 0.35; rb.push(V(c0.x + Math.cos(t) * r, P.y + 0.2 + k * 2.4, c0.z + Math.sin(t) * r)); });
+    if (Math.random() < 0.5) { const c = OX_RGB[(Math.random() * 5) | 0], t = rand(0, 6.28); vfx.spark(c0.x + Math.cos(t) * 0.8, P.y + rand(0.3, 2), c0.z + Math.sin(t) * 0.8, { vy: rand(0.3, 0.8), life: 0.7, size: rand(0.05, 0.08), r: c[0], gg: c[1], b: c[2], shape: 5 }); }
+  });
+  for (const rb of ribs) rb.end();
+  // 4. it stamps down and stands: the ground shakes, a ring of dust and thrown stone round them, and he looses the arrow
+  // out ahead, the way they face, a gold streak with a glint where it vanishes
+  a.lift = stand(1); LV.atk(a, 2);
+  { const from = a.chest().addScaledVector(right, 0.35).add(V(0, 0.1, 0)), to = from.clone().addScaledVector(right, 7).add(V(0, 0.6, 0)), dir = to.clone().sub(from).normalize();
+    const ar = arrowMesh([1, 0.85, 0.5], 0.6), rib = vfx.ribbon({ col: [1, 0.82, 0.4], width: 0.06, n: 14 }); ar.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
+    vfx.timed(ar, 0.4, k => { ar.position.copy(from).lerp(to, k); rib.push(ar.position); }, () => { rib.end(); ar.visible = false; vfx.burst(to, { n: 14, speed: 1.4, cols: [[1, 0.95, 0.75], [1, 0.8, 0.4]], size: 0.05, life: 0.5, g: 0, shape: 5 }); }); }
+  vfx.shake(0.3, 0.45); vfx.flash([1, 0.9, 0.7], 0.12); vfx.light(P.clone().setY(P.y + 0.3), [1, 0.8, 0.5], 12, 0.5, 6);
+  vfx.ring(P, [1, 0.85, 0.55], 2.4, 0.55, { intensity: 0.8 });
+  for (let i = 0; i < 16; i++) { const t = i / 16 * 6.28, sp = rand(1.8, 2.6); vfx.smokePuff(P.x + Math.cos(t) * 0.7, P.y + 0.05, P.z + Math.sin(t) * 0.7, { vx: Math.cos(t) * sp, vz: Math.sin(t) * sp, vy: 0.2, drag: 2.5, life: 0.8, size: 0.18, size1: 0.5, tint: [0.66, 0.56, 0.42] }); }   // (from the hooves out: from one point they made a doughnut over the ox)
+  vfx.burst(P.clone().setY(P.y + 0.1), { n: 22, speed: 3, cols: [[0.55, 0.45, 0.35], [0.42, 0.35, 0.27]], size: 0.06, life: 0.8, g: 6, up: 0.7, shape: 10 });
+  await wait(450);
+  // 5. it melts into mist of the five colours, rising, and he comes down to the ground in his guard
+  const hs = a.lift;
+  await anim(0.6, k => {
+    ox.material.opacity = 1 - k; a.lift = hs * (1 - k * k);
+    if (Math.random() < 0.35) { const c = OX_RGB[(Math.random() * 5) | 0], q = ox.position.clone().addScaledVector(right, rand(-W * 0.4, W * 0.4)).addScaledVector(cu, rand(-H * 0.3, H * 0.2));
+      vfx.smokePuff(q.x, q.y, q.z, { vy: rand(1, 1.6), life: 0.6, size: 0.12, size1: 0.3, tint: c }); }   // (a few small ones rising off it: a cloud of them hid him a second)
+  });
+  drop(ox); a.lift = 0; delete a.u.still; dust(P, 1.2);
+  a.u.facing = 'down'; LV.guard(a);
+  await wait(500);
 }
+
 
 // ---------------------------------------------------------------- 姬發: the prince of Zhou, 鳳鳴岐山
 // the phoenix whose cry on Mount Qi foretold Zhou's rise is born out of his breast and spirals up round him trailing its
@@ -1048,7 +1067,7 @@ export const LEVEL_POSE = {
   // mist gathers, the third eye opens on his brow and its gold beam sweeps the field (nothing is hidden from it), 哮天犬
   // bounds out of the mist and runs round him, and sits by him (yangLevel)
   p2: spun([1, 1, 1], yangLevel),
-  // 黃飛虎: 武成王, the flying tiger: a spirit tiger bursts out of his chest at us and roars (huangLevel)
+  // 黃飛虎: 武成王 on his 五色神牛: it charges in, he leaps onto its back, it rears and stamps in the five colours (huangLevel)
   p3: spun([1, 0.7, 0], huangLevel),
   // 哪吒: the lotus child [the user's call: from his story]: a lotus opens under him (太乙真人 remade him from lotus after he gave
   // his life back to his parents), the 風火輪 flare at his feet and lift him spinning in his red 混天綾, he flings the 乾坤圈

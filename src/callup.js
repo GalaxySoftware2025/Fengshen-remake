@@ -28,19 +28,22 @@ export async function callUp(E, v, by) {
   const core = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.85, 2.1), toneMapped: false }));
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow(), color: new THREE.Color(0.75, 1.1, 1.9), transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, toneMapped: false }));
   halo.scale.setScalar(0.85); core.add(halo); core.name = 'callup-orb'; core.renderOrder = 7;
-  const light = new THREE.PointLight(0x84bcff, 4, 4, 1.6); core.add(light); E.world.scene.add(core);
+  E.world.scene.add(core);
+  // its light the pool's, moved with it (a PointLight of its own made three.js build every lit material's program again: a
+  // 0.36 s stall as the orb rose [the user's report, 2026-11-20])
+  const light = vfx.holdLight(), lit = [0.52, 0.74, 1], shine = () => light.set(core.position, lit, 4, 4);
   const trail = vfx.ribbon({ col: [0.45, 0.72, 1], width: 0.07, n: 72, fade: 0.3 });   // (points along the path between frames: a frame's step drawn as one chord showed corners)
   // the loops: off the summoner, two and a half turns round the pair at a swelling then closing radius, bobbing
   const span = Math.max(1.2, from.distanceTo(to)), loop = k => {
     const th = k * Math.PI * 5 - Math.PI / 2, r = (0.5 + span * 0.55) * Math.sin(Math.PI * Math.min(1, k * 1.15)) + 0.25;
     return new THREE.Vector3(mid.x + Math.cos(th) * r, mid.y + 0.9 + Math.sin(k * Math.PI * 3) * 0.3, mid.z + Math.sin(th) * r * 0.75);
   };
-  const place = (p, path, k0, k1) => { for (let i = 1; i <= 3; i++) trail.push(path(k0 + (k1 - k0) * i / 4)); core.position.copy(p); trail.push(p); if (Math.random() < 0.55) vfx.spark(p.x, p.y, p.z, { vx: rand(-0.2, 0.2), vy: rand(0.05, 0.3), vz: rand(-0.2, 0.2), life: 0.45, size: 0.035, r: 0.7, gg: 0.88, b: 1, shape: 5, flicker: 1, ph: rand(0, 9) }); };
+  const place = (p, path, k0, k1) => { for (let i = 1; i <= 3; i++) trail.push(path(k0 + (k1 - k0) * i / 4)); core.position.copy(p); shine(); trail.push(p); if (Math.random() < 0.55) vfx.spark(p.x, p.y, p.z, { vx: rand(-0.2, 0.2), vy: rand(0.05, 0.3), vz: rand(-0.2, 0.2), life: 0.45, size: 0.035, r: 0.7, gg: 0.88, b: 1, shape: 5, flicker: 1, ph: rand(0, 9) }); };
   const flight = k => { const p = loop(k); if (k < 0.12) p.lerp(from, 1 - k / 0.12); return p; };
   let k0 = 0; await E.anim(FLY, k => { place(flight(k), flight, k0, k); k0 = k; halo.material.rotation = k * 6; });
   const top = core.position.clone(), drop = k => top.clone().lerp(to, ease(k));
   k0 = 0; await E.anim(DROP, k => { place(drop(k), drop, k0, k); k0 = k; });
-  E.world.scene.remove(core); core.geometry.dispose(); core.material.dispose(); halo.material.dispose(); trail.end();
+  light.release(); E.world.scene.remove(core); core.geometry.dispose(); core.material.dispose(); halo.material.dispose(); trail.end();
   // the landing: dust puffing out sideways round the cell, a flash of the orb's light; the sound; the newcomer flickers in
   const P = a.pos.clone(); vfx.light(to, [0.6, 0.8, 1], 6, 0.35, 4);
   vfx.burst(to, { shape: 5, n: 18, speed: 1.6, cols: [[0.7, 0.85, 1], [1, 1, 1]], size: 0.04, life: 0.5, up: 0.4 });

@@ -26,11 +26,38 @@ const LOOPED = { 0x15: 0 };
 export const loopOf = (id, t, dur) => t && t[1] != null ? [t[1], Math.min(t[0], dur)] : LOOPED[id] != null ? [LOOPED[id], Math.min(t ? t[0] : dur, dur)] : null;
 const key = id => typeof id === 'string' ? id : id < 0x8000 ? id.toString(16).padStart(2, '0') : id.toString(16);   // a string: a sound of the remake's own (assets/audio/<name>.ogg)
 function muted() { try { return localStorage.getItem('fs-mute') === '1'; } catch (e) { return false; } }
+// the volume (選單 › 音量, 0-100% in steps of 10 [the user's call, 2026-11-21]): music and effects together, remembered in
+// this browser (a QA page, &qa, starts at 100% and keeps nothing); the gain is its square, as loudness is heard (50%
+// sounds about half as loud). M's mute stays apart: muted, the row says 靜音, and ＋ / − there unmute.
+const VOL_KEY = 'fengshen.volume', QA = typeof location !== 'undefined' && /[#&]qa\b/.test(location.hash);
+let vol = 100;
+try { const s = localStorage.getItem(VOL_KEY); if (!QA && s != null && +s >= 0 && +s <= 100) vol = Math.round(+s / 10) * 10; } catch (e) { /* no storage: 100% */ }
+const gainNow = () => muted() ? 0 : (vol / 100) ** 2;
+export const volume = () => vol;
+function setGain() { if (master) master.gain.setTargetAtTime(gainNow(), ctx.currentTime, 0.05); }
+export function setVolume(v) {
+  vol = Math.max(0, Math.min(100, Math.round(v / 10) * 10));
+  if (!QA) try { localStorage.setItem(VOL_KEY, String(vol)); } catch (e) { /* not remembered */ }
+  setGain(); showVolume();
+}
+function setMuted(m) { try { localStorage.setItem('fs-mute', m ? '1' : '0'); } catch (err) {} setGain(); showVolume(); }
+function showVolume() {
+  const el = typeof document !== 'undefined' && document.getElementById('volume'); if (!el) return;
+  const m = muted(); el.classList.toggle('muted', m); el.querySelector('b').textContent = m ? '靜音' : vol + '%';
+  el.querySelector('[data-d="-1"]').disabled = !m && vol <= 0; el.querySelector('[data-d="1"]').disabled = !m && vol >= 100;
+}
+// the row in the menu (src/gamemenu.js): − 100% ＋ (its clicks stop there, as the speed row's)
+export function mountVolume() {
+  const el = document.getElementById('volume'); if (!el) return;
+  for (const ev of ['click', 'pointerdown', 'mousedown']) el.addEventListener(ev, e => e.stopPropagation());
+  for (const b of el.querySelectorAll('button')) b.addEventListener('click', () => { if (muted()) { setMuted(false); return; } setVolume(vol + 10 * +b.dataset.d); });   // (the click's own sound: attach)
+  showVolume();
+}
 
 async function init() {
   if (ctx) return;
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-  ctx = new AC(); master = ctx.createGain(); master.gain.value = muted() ? 0 : 1; master.connect(ctx.destination);
+  ctx = new AC(); master = ctx.createGain(); master.gain.value = gainNow(); master.connect(ctx.destination);
   musicBus = ctx.createGain(); musicBus.gain.value = MUSIC_VOL; musicBus.connect(master);
   sfxBus = ctx.createGain(); sfxBus.gain.value = SFX_VOL; sfxBus.connect(master);
   if (!window.AUDIO) await new Promise(res => { const s = document.createElement('script'); s.src = 'data/audio.js'; s.onload = s.onerror = res; document.head.appendChild(s); });
@@ -71,6 +98,7 @@ export async function music(id, fade = 0.6, restart = false) {
   src.buffer = buf;
   const lp = loopOf(id, t, buf.duration); if (lp) { src.loop = true; [src.loopStart, src.loopEnd] = lp; }
   gain.gain.value = 1; src.connect(gain); gain.connect(musicBus); src.start();
+  if (window.__qa) (window.__qa.songOn ||= []).push([id, performance.now()]);   // when it is heard (tools/qa/xfade.js: against the picture)
   cur = { id, src, gain };
   if (jing && jing.id !== id) jing = null;   // (the jingle over: back, or another song in its place)
   release(id);
@@ -105,6 +133,8 @@ export async function sfx(id, o = {}) {
     src.onended = () => { voices.delete(v); if (v.qa && v.qa.t1 == null) v.qa.t1 = now(); };
   }
 }
+// a song fetched and decoded ahead, not played (a scene's song held for its picture: src/scene.js)
+export async function preload(id) { await init(); if (ctx && id != null) await load(id); }
 // a short song played once over the music (an ally's fall: song 0x0A, ROM 0x10A16), then the song it broke into starts again
 export async function jingle(id) {
   const back = want; jing = { id, back }; await music(id, 0.3);
@@ -123,12 +153,14 @@ export function attach() {
   // heard as an error; O is silent in the battle's menus too])
   document.addEventListener('click', e => { const el = pick(e.target); if (!el || el.disabled || /返回|取消/.test(el.textContent)) return; sfx('ok'); }, true);
   let over = null;
-  document.addEventListener('pointerover', e => { const el = pick(e.target); if (el && el !== over && !el.disabled) sfx('cursor'); over = el; }, true);
+  // the cursor's sound as the pointer comes over one; not a finger's: a tap sends pointerover before its click, two sounds
+  // for one press [the user's report, 2026-11-21, a Galaxy S21: the camp's menu]; nor the keyboard's frame moved by the
+  // game (quiet: src/keynav.js focus)
+  document.addEventListener('pointerover', e => { const el = pick(e.target); if (el && el !== over && !el.disabled && !e.quiet && e.pointerType !== 'touch') sfx('cursor'); over = el; }, true);
   window.addEventListener('keydown', e => {
     if (!Keys.is(e, 'mute')) return;
-    const m = !muted(); try { localStorage.setItem('fs-mute', m ? '1' : '0'); } catch (err) {}
-    if (master) master.gain.setTargetAtTime(m ? 0 : 1, ctx.currentTime, 0.05);
+    setMuted(!muted());
   });
 }
-// for QA: what is playing
-export const status = () => ({ ctx: ctx && ctx.state, song: cur && cur.id, loaded: [...buffers.keys()] });
+// for QA: what is playing, and the master gain (its value now, and where it is headed)
+export const status = () => ({ ctx: ctx && ctx.state, song: cur && cur.id, loaded: [...buffers.keys()], volume: vol, gain: master ? master.gain.value : null, goal: gainNow() });

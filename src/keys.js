@@ -30,3 +30,33 @@ export const HELP = [
   { act: ['slower', 'faster'], caps: ['−', '+'], what: '遊戲速度' },
   { act: ['mute'], caps: ['M'], what: '靜音' },
 ];
+// A prompt to the player, on a touch screen without the keyboard's key: 點擊或按 I 開始 → 點擊開始 (html.touch: src/touchpad.js);
+// with a controller connected its button: 點擊或按 A 開始 (src/gamepad.js: A is 確定)
+const padOn = () => typeof navigator !== 'undefined' && !!navigator.getGamepads && [...navigator.getGamepads()].some(p => p && p.connected);
+// (a touch screen's pad takes no tap on the game: 點擊或按 I 開始 → 按確定開始, 再次點擊或按 I 確定 → 再次按確定 [the
+// user's call, 2026-11-21: every action the pad's])
+export const tapOr = s => typeof document !== 'undefined' && document.documentElement.classList.contains('touch') ? s.replace(/點擊或按 I ?/g, '按確定').replace(/按確定 ?確定/g, '按確定') : padOn() ? s.replace(/按 I/g, '按 A') : s;
+// The same page on a touch screen (src/touchpad.js): the pad's buttons as drawn on it, every one in some row
+// (tools/qa/touchpad.js); 選單 is the menu at the top left (speed and picture; the phone's own keys set the volume)
+export const TOUCH_HELP = [
+  { act: ['up', 'down', 'left', 'right'], caps: ['十字鍵'], what: '移動游標 · 選擇' },
+  { act: ['ok'], caps: ['確定'], what: '確定' },   // (no 點擊畫面: the game takes no tap, src/touchpad.js)
+  { act: ['cancel'], caps: ['取消'], also: '返回鍵', what: '取消 · 返回' },
+  { act: ['turnLeft', 'turnRight'], caps: ['⟲', '⟳'], pre: '戰鬥中', what: '轉動戰場視角' },
+  { act: ['danger'], caps: ['範圍'], pre: '戰鬥中', what: '顯示敵方攻擊範圍' },
+  { act: ['fast'], caps: ['加速'], pre: '按住', what: '加速' },
+  { act: ['skip'], caps: ['跳過'], what: '跳過劇情' },
+  { act: ['slower', 'faster'], caps: ['選單'], what: '遊戲速度 · 畫面品質' },
+];
+// The same page with a controller connected (src/gamepad.js PAD, an Xbox pad's names: tools/qa/gamepad.js checks every
+// button it maps is named here, and nothing else); the speed is the menu's (選單) as on a touch screen
+export const PAD_HELP = [
+  { act: ['up', 'down', 'left', 'right'], caps: ['十字鍵'], also: '左搖桿', what: '移動游標 · 選擇' },
+  { act: ['ok'], caps: ['A'], what: '確定' },
+  { act: ['cancel'], caps: ['B'], what: '取消 · 返回' },
+  { act: ['turnLeft', 'turnRight'], caps: ['LB', 'RB'], what: '轉動戰場視角' },
+  { act: ['danger'], caps: ['X'], what: '顯示敵方攻擊範圍' },
+  { act: ['fast'], caps: ['LT', 'RT'], pre: '按住', what: '加速' },
+  { act: ['skip'], caps: ['Start'], what: '跳過劇情' },
+  { act: ['mute'], caps: ['Select'], what: '靜音' },
+];

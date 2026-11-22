@@ -279,10 +279,10 @@ export class World {
     // sprite into a milky veil over the whole picture (the haze probe in src/qa.js measures it)
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.42, 0.45, BLOOM_THRESHOLD); comp.addPass(this.bloom);
     this.grade = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(size.x, size.y) }, uTilt: { value: 0 }, uChroma: { value: 0 },
+      uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 1 }, uRes: { value: new THREE.Vector2(size.x, size.y) }, uTilt: { value: 0 }, uChroma: { value: 0 },
         uFlash: { value: 0 }, uFlashCol: { value: new THREE.Color(1, 1, 1) }, uBars: { value: 0 }, uSat: { value: 1.08 }, uDark: { value: 0 }, uDarkCol: { value: new THREE.Color(1, 1, 1) }, uHeat: { value: 0 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uTime, uTilt, uChroma, uFlash, uBars, uSat, uDark, uHeat; uniform vec3 uFlashCol, uDarkCol; varying vec2 vUv;
+      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uTime, uGrain, uTilt, uChroma, uFlash, uBars, uSat, uDark, uHeat; uniform vec3 uFlashCol, uDarkCol; varying vec2 vUv;
         float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
         void main(){
           vec2 uv = vUv, c = uv - 0.5;
@@ -307,7 +307,7 @@ export class World {
             col = mix(col, burn, uHeat * 0.8); }
           col += uFlashCol * uFlash;
           col *= 1.0 - smoothstep(0.42, 0.75, length(c * vec2(1.0, 0.75))) * 0.18;     // a faint vignette in the corners only
-          col += (h(uv * uRes + fract(uTime) * 61.0) - 0.5) * 0.022;                 // grain
+          col += (h(uv * uRes + fract(uTime) * 61.0) - 0.5) * 0.022 * uGrain;        // grain (fainter where the render is stretched: setScale)
           float bar = step(abs(c.y), 0.5 - uBars * 0.11);                            // cinematic letterbox
           gl_FragColor = vec4(col * bar, 1.0);
         }`,
@@ -329,7 +329,20 @@ export class World {
     if (this.renderPass) this.renderPass.useMS = level < 2;
     if (this.bloom) this.bloom.enabled = level < 3;
   }
-  setScale(k) { this.scale = k; this.renderer.setPixelRatio(k); if (this.composer) this.composer._pixelRatio = k; if (this.lastSize) this.resize(...this.lastSize); }   // the composer keeps its own ratio: without it every pass stays at the first scale
+  // 畫面品質's lamps (src/quality.js): the set's lamp lights (every point light in the scene but the effects' pool,
+  // src/vfx.js) cut to the n reaching the farthest (by distance; 0, unbounded, first), the rest hidden; Infinity: all.
+  // Called once the set is dressed (sets.js dress) and on a new pick (battle.js): never while a scene plays, as a light
+  // shown or hidden makes three.js build every lit material's program again. What a set hides itself stays hidden.
+  trimLamps(n) {
+    const L = []; this.scene.traverse(o => { if (!o.isPointLight || o.userData.pool) return; if (o.userData.lampOn == null) o.userData.lampOn = o.visible; if (o.userData.lampOn) L.push(o); });
+    L.sort((a, b) => (b.distance || 1e9) - (a.distance || 1e9));
+    L.forEach((l, i) => { l.visible = i < n; });
+  }
+  // the render scale (a pixel ratio: battle.js governor). The grain is a render pixel's: a picture stretched to the screen
+  // (the scale under the display's ratio) blows it up into blocks [the user's report, 2026-11-20: a phone's night scene
+  // grainy and coarse], so it fades past the stretch a Retina Mac at 1.5 has (1.33): at 1.75 x 0.77, at 4 x 0.34
+  setScale(k) { if (this.grade) this.grade.uniforms.uGrain.value = Math.min(1, 1.34 * k / (window.devicePixelRatio || 1));
+    this.scale = k; this.renderer.setPixelRatio(k); if (this.composer) this.composer._pixelRatio = k; if (this.lastSize) this.resize(...this.lastSize); }   // the composer keeps its own ratio: without it every pass stays at the first scale
   resize(w, h) {
     this.lastSize = [w, h];
     this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix();

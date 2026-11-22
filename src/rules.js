@@ -213,6 +213,9 @@ export function itemEffect(user, it) {
     case id === 0x1e: return { kind: 12, apply: t => { t.df = Math.min(255, t.df + 3); return { text: '防禦 +3', exp: 10 }; } };
     case id === 0x1f: return { kind: 12, apply: t => { t.move = Math.min(255, t.move + 1); return { text: '移動 +1', exp: 10 }; } };
     case id === 0x20: return { kind: 12, apply: t => { t.spd = Math.min(255, t.spd + 5); return { text: '速度 +5', exp: 10 }; } };
+    // 舍利子: 100 experience to its target (one level, what it had kept), none to its user [0x37DEA: the experience
+    // routine 0x12372 with the target as the one gaining, 0xFF0E18]; battle.js useEffect gives it once it lands
+    case id === 0x21: return { kind: 12, apply: () => ({ levelExp: 100 }) };
     // 龍蛇膽, 護元金丹: +2 for 3, nothing while their own change runs (the item still used) [0x37E56, 0x37F16]
     case id === 0x22: return { kind: 12, apply: t => { if (!(t.bufT && t.bufT.atk)) timedBuff(t, ['atk'], 2, 3); return { text: '攻擊 +2', exp: 10 }; } };
     case id === 0x23: return { kind: 12, apply: t => { if (!(t.bufT && t.bufT.df)) timedBuff(t, ['df'], 2, 3); return { text: '防禦 +2', exp: 10 }; } };

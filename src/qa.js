@@ -26,7 +26,7 @@ import { LINE_SHOW } from './tracks.js';
 export function install(E) {
   const Q = window.__qa = { fades: [], shown: [] };
   let pending = null;
-  Q.vis = []; let seg = null, uiWas = false, lastCam = null, lastW = null;
+  Q.vis = []; let seg = null, uiWas = false, lastCam = null, lastW = null, lastT = 0;
   const fadeEl = document.getElementById('fade'), opaque = ['card-screen', 'loading'].map(id => document.getElementById(id));
   const interactive = ['dialog', 'title', 'camp', 'brief', 'end'].map(id => document.getElementById(id)).filter(Boolean);
   const on = el => el && !el.classList.contains('hidden') && +getComputedStyle(el).opacity > 0.5;
@@ -56,8 +56,8 @@ export function install(E) {
   Q.stale = []; Q.jumps = []; Q.half = []; Q.propLine = [];
   function checkFrame(w, now) {
     const cam = E.world.camera.position;
-    if (lastCam && lastW === w && cam.distanceTo(lastCam) > 2.5) Q.jumps.push({ w, t: now, d: +cam.distanceTo(lastCam).toFixed(1), from: lastCam.toArray().map(v => +v.toFixed(2)), to: cam.toArray().map(v => +v.toFixed(2)) });
-    lastCam = cam.clone(); lastW = w;
+    if (lastCam && lastW === w && cam.distanceTo(lastCam) > 2.5) Q.jumps.push({ w, t: now, dt: Math.round(now - lastT), f: window.__remake && window.__remake.sceneT ? Math.round(window.__remake.sceneT.t) : null, op: +(+getComputedStyle(fadeEl).opacity).toFixed(2), d: +cam.distanceTo(lastCam).toFixed(1), from: lastCam.toArray().map(v => +v.toFixed(2)), to: cam.toArray().map(v => +v.toFixed(2)) });
+    lastCam = cam.clone(); lastW = w; lastT = now;
     const st = window.__remake && window.__remake.sceneT; if (!st || !w.startsWith('map:')) return;
     const S = globalThis.SCENES && globalThis.SCENES[st.tag]; if (!S) return;
     const talking = on(document.getElementById('dialog'));

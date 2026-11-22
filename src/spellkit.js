@@ -79,34 +79,45 @@ export function yawToward(ctx, from, to, lim = 0.9) { let d = Math.atan2(from.x 
 export const ticker = (v, life, fn, onEnd) => v.timed(new THREE.Object3D(), life, fn, onEnd);   // per-frame callback for a while
 export const facing = (a, b) => b.clone().sub(a).setY(0).normalize();
 export const yawOf = d => Math.atan2(d.x, d.z);
-// shader for swirling energy surfaces (tornado, water column): streaks scrolling around and up an open cylinder
+// shader for swirling energy surfaces (tornado, water column): streaks scrolling around and up an open cylinder. The
+// noise wraps round the wall (u 0 = u 1: NOISE_WRAP, its period the whole number of cells a turn), so no seam runs down it
+// [the user's report, 2026-11-19: a hard vertical line down the whirlwinds, where the noise jumped from u 1 to u 0]
+const NOISE_WRAP = `float wh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float wn(vec2 p, float per){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    float x0 = mod(i.x, per), x1 = mod(i.x + 1.0, per);
+    return mix(mix(wh(vec2(x0, i.y)), wh(vec2(x1, i.y)), f.x), mix(wh(vec2(x0, i.y + 1.0)), wh(vec2(x1, i.y + 1.0)), f.x), f.y); }
+  float wfbm(vec2 p, float per){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += wn(p, per) * a; p = vec2(p.x * 2.0 + 17.0, p.y * 2.03 + 17.1); per *= 2.0; a *= 0.5; } return s; }`;
 export function swirlMat(col, o) {
   o = o || {};
-  // o.ragged: a whirlwind's own outline, not a smooth cylinder's [the user's call, 2026-10-30: tornado outlines do not
-  // look like that]: the wall bulges in lumps that turn with the spin and climb, the axis sways, and where the wall
-  // turns away from the eye (its outline) it is torn into wisps instead of glowing
-  const rag = o.ragged ? 1 : 0;
+  // o.soft: a whirlwind's wall [the user's call, 2026-11-19: 旋風矢's and 黃飛虎's tornados as a smooth circle with a
+  // smooth edge; it replaces the lumpy wall torn into wisps at its outline, 2026-10-30]: round all the way up, its axis
+  // swaying (most at the top), no glowing rim: the wall fades out smoothly where it turns away from the eye
+  const soft = o.soft ? 1 : 0;
   return new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: o.normal ? THREE.NormalBlending : THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
     uniforms: { uT: { value: 0 }, uA: { value: 0 }, uCol: { value: new THREE.Color(...col) }, uFoam: { value: new THREE.Color(...(o.foam || [1, 1, 1])) }, uSp: { value: o.speed || 4 }, uTw: { value: o.twist || 4 }, uH: { value: o.h || 3 } },
-    vertexShader: `uniform float uT, uSp, uH; varying vec2 vUv; varying vec3 vN, vV;
-      ${rag ? NOISE : ''}
+    vertexShader: `uniform float uT, uSp, uH; varying vec2 vUv; varying vec3 vN, vV, vNo, vVo;
       void main(){ vUv = uv; vec3 p = position;
-        ${rag ? `float lump = fbm(vec2(uv.x * 5.0 - uT * uSp * 0.12, uv.y * 3.0 - uT * 1.1)) + 0.5 * fbm(vec2(uv.x * 13.0 - uT * uSp * 0.2, uv.y * 8.0 - uT * 2.0));
-          p.xz *= 0.62 + lump * 0.7;                                                                   // bulging, lumpy wall
-          p.xz += vec2(sin(uT * 1.7 + uv.y * 2.6), cos(uT * 1.3 + uv.y * 2.1)) * 0.22 * uv.y * uH / 3.0;   // the axis swaying, most at the top` : ''}
+        ${soft ? `float c = 0.22 * uH / 3.0, a1 = uT * 1.7 + uv.y * 2.6, a2 = uT * 1.3 + uv.y * 2.1;
+          vec2 sw = vec2(sin(a1), cos(a2)) * c * uv.y;   // the axis swaying, most at the top
+          p.xz += sw;
+          // the wall's own normal, sheared with the sway (dsw / dy), and the way to the eye, in the whirlwind's own frame
+          // (fragment: how far the wall is turned from the eye, for its outline)
+          vec2 dsw = c * vec2(sin(a1) + 2.6 * uv.y * cos(a1), cos(a2) - 2.1 * uv.y * sin(a2)) / uH;
+          vNo = vec3(normal.x, normal.y - dot(normal.xz, dsw), normal.z);
+          vVo = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz - p;` : ''}
         vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(p, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform float uT, uA, uSp, uTw; uniform vec3 uCol, uFoam; varying vec2 vUv; varying vec3 vN, vV;
-      ${NOISE}
+    fragmentShader: `uniform float uT, uA, uSp, uTw; uniform vec3 uCol, uFoam; varying vec2 vUv; varying vec3 vN, vV, vNo, vVo;
+      ${NOISE_WRAP}
       void main(){ float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
-        float s = fbm(vec2(vUv.x * 7.0 + vUv.y * uTw - uT * uSp, vUv.y * 2.5 - uT * 1.3));
+        float s = wfbm(vec2(vUv.x * 7.0 + vUv.y * uTw - uT * uSp, vUv.y * 2.5 - uT * 1.3), 7.0);   // (7 cells a turn: it wraps)
         float st = smoothstep(0.42, 0.78, s), foam = smoothstep(0.7, 0.9, s);
         float fade = smoothstep(0.0, 0.12, vUv.y) * (1.0 - smoothstep(0.78, 1.0, vUv.y));
         vec3 c = uCol * (0.35 + st * 1.4) + uFoam * foam * 1.2;
         float a = (0.12 + st * 0.7 + f * 0.25) * fade;
-        ${rag ? `float w = fbm(vec2(vUv.x * 22.0 + vUv.y * uTw * 2.0 - uT * uSp * 0.5, vUv.y * 7.0 - uT * 2.5));   // (wisps drawn out along the spin)
-          a = (0.12 + st * 0.7 + f * 0.3 * smoothstep(0.3, 0.7, w)) * (1.0 - smoothstep(0.72, 1.0, f + (w - 0.5) * 0.9));   // the rim broken into streaks, only its very edge torn away (the body reads through the rim: from the battle's high camera the whole wall is seen at a slant)                  // the outline torn into wisps, no glowing rim
-          a *= smoothstep(0.0, 0.18, vUv.y + (w - 0.5) * 0.2) * (1.0 - smoothstep(0.7, 1.0, vUv.y + (w - 0.5) * 0.35));   // a ragged foot and top` : ''}
+        ${soft ? `float d = dot(normalize(vNo), normalize(vVo)), e = sqrt(max(0.0, 1.0 - d * d));   // (sin of the wall's turn from the eye: its share of the way out to the outline, 1 there)
+          a = (0.12 + st * 0.7 + e * 0.2) * (1.0 - smoothstep(0.62, 1.0, e));   // the outline fading out smoothly, over its outer third (the mesh's normals in view space faded only the last few pixels: a hard edge)
+          a *= smoothstep(0.0, 0.18, vUv.y) * (1.0 - smoothstep(0.7, 1.0, vUv.y));   // a soft foot and top` : ''}
         gl_FragColor = vec4(c, a * uA); }`,
   });
 }
@@ -114,7 +125,7 @@ export function swirl(v, p, col, r0, r1, h, life, o) {
   o = o || {};
   const g = new THREE.Group();
   const layers = [[1, 1], [0.72, -1.4]].map(([k, sp]) => {
-    const geo = new THREE.CylinderGeometry(r1 * k, r0 * k, h, o.ragged ? 64 : 40, o.ragged ? 32 : 10, true); geo.translate(0, h / 2, 0);   // (ragged: enough rows to bulge)
+    const geo = new THREE.CylinderGeometry(r1 * k, r0 * k, h, o.soft ? 96 : 40, o.soft ? 32 : 10, true); geo.translate(0, h / 2, 0);   // (soft: a round outline, enough rows to sway)
     const m = new THREE.Mesh(geo, swirlMat(col, Object.assign({}, o, { h, speed: (o.speed || 4) * sp }))); m.renderOrder = 6; g.add(m); return m;
   });
   g.position.copy(p);

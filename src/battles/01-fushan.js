@@ -9,6 +9,9 @@
 //      movea.l ff32bc, so it reads ROM bytes 0x48 and 0xF9 and always passes)
 //   3  10-13 have all fallen and 14 still waits: the leader attacks                            [0x0E8ABE, 0x0E89A0]
 // Win and lose are the generic ones (every enemy down; 林雲 falls).
+// [design, the user's call 2026-11-20] The hidden chest at (30, 6) gives 舍利子 every time it is opened: the original's
+// holds its second item (金創藥, table 0 slot 1's `again`) once its flag is set (rules.js loadChests), so a battle 1 played
+// again gave 金創藥. Only this chest: every other battle's chests keep the original's rule.
 import { G } from '../rules.js';
 import { sayList } from '../says.js';
 
@@ -21,7 +24,7 @@ const say = beat => LINES[beat].map(l => ({ who: '', text: l.text, unit: slot(l.
 
 export default {
   n: 1,
-  setup(G) { G.beats = 0; },
+  setup(G) { G.beats = 0; for (const c of G.chests) if (c.hidden && c.x === 30 && c.y === 6) c.item = 0x21; },   // 舍利子, opened before or not
   beforeTurn(G) {
     const out = [], fire = (b, ok, then) => { if (G.beats & (1 << b) || !ok) return; G.beats |= 1 << b; out.push(...say(b)); then(); };
     fire(0, true, () => wake(10, 11));

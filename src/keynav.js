@@ -15,10 +15,12 @@ export function keynav(root, { items, start, back, prefer, groups = [] }) {
   const list = () => [...root.querySelectorAll(items)].filter(shown);
   const mid = el => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, r }; };
   const paint = () => { for (const e of root.querySelectorAll('.kf')) if (e !== cur || !kb) e.classList.remove('kf'); if (cur && kb) cur.classList.add('kf'); };
-  const set = el => {
+  // quiet: no cursor sound (src/audio.js): the frame moved by the game, not a key (a page opened from the camp's menu
+  // frames its first item: one sound, the press's, not two [the user's report, 2026-11-21])
+  const set = (el, quiet) => {
     if (el === cur) return paint();
     if (cur && cur.isConnected) cur.dispatchEvent(new MouseEvent('mouseleave'));
-    cur = el; if (el) { at = mid(el); el.dispatchEvent(new MouseEvent('mouseenter')); el.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); el.scrollIntoView({ block: 'nearest' }); }
+    cur = el; if (el) { at = mid(el); el.dispatchEvent(new MouseEvent('mouseenter')); const po = new PointerEvent('pointerover', { bubbles: true }); po.quiet = !!quiet; el.dispatchEvent(po); el.scrollIntoView({ block: 'nearest' }); }
     paint();
   };
   const nearest = (els, p) => els.reduce((b, e) => { const m = mid(e), d = Math.hypot(m.x - p.x, m.y - p.y); return !b || d < b.d ? { e, d } : b; }, null)?.e || null;
@@ -53,7 +55,7 @@ export function keynav(root, { items, start, back, prefer, groups = [] }) {
   window.addEventListener('keydown', key, true); root.addEventListener('pointermove', mouse);
   seen = new Set(prefer ? root.querySelectorAll(prefer) : []);
   return {
-    focus: set,
+    focus: (el, show) => { if (show) kb = true; set(el, true); },   // show: the frame shown at once, as after a key (camp.js: a page opened from its menu)
     stop() { obs.disconnect(); window.removeEventListener('keydown', key, true); root.removeEventListener('pointermove', mouse); kb = false; paint(); },
   };
 }

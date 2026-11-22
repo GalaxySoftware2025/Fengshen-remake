@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import * as T from './tex.js';
 import { loadImg, preRender } from '../world.js';
 import { shade } from './parts.js';
+import { quality } from '../quality.js';
 
 const R = 4;   // layout samples per cell
 export const CL = { ground: 0, grass: 1, rock: 2, water: 3, pave: 4, forest: 5 };
@@ -311,16 +312,22 @@ export function grass(pts, o = {}) {
   const tufts = pts.map(([x, y, z]) => {
     const s = (o.size ?? 0.45) * (0.6 + Math.random() * 0.7); d.position.set(x, y - 0.02, z); d.rotation.set(0, Math.random() * 6.3, 0); d.scale.set(s * 1.25, s * 0.7, s * 1.25); d.updateMatrix();   // 30% shorter [the user's request]
     const t = (0.8 + Math.random() * 0.4) * 0.7, warm = Math.random() * 0.06;   // 30% darker [the user's request]
-    return { x, y, z, m: d.matrix.clone(), c: new THREE.Color(t + warm, t, t * (0.88 - warm)) };
+    const keep = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;   // (畫面品質 中 / 低 draw those under their share: by place, so the same ones every time, and no draw from Math.random)
+    return { x, y, z, keep, m: d.matrix.clone(), c: new THREE.Color(t + warm, t, t * (0.88 - warm)) };
   });
   const BAND = 4, out = new THREE.Group(), dir = new THREE.Vector3();
-  let quarter = -1, queued = false, cut = [];
+  // the share of the tufts drawn: 畫面品質 (src/quality.js grass; 高 all). Tufts are see-through cards drawn over each
+  // other, the GPU shading each one under the next: on a phone the grass cost battle 1 60% of its frame [the user's
+  // call, 2026-11-20: a Galaxy S21]. A new pick builds the bands again (cull, below). tools/qa/qualitypick.js
+  const share = () => quality().grass ?? 1;
+  let quarter = -1, queued = false, cut = [], drawn = share();
   const build = q => {   // q: the way the camera looks, 0 north (-z), 1 east (+x), 2 south (+z), 3 west (-x)
-    quarter = q; cut = []; for (const m of out.children.slice()) { out.remove(m); m.dispose(); }
+    quarter = q; cut = []; drawn = share(); for (const m of out.children.slice()) { out.remove(m); m.dispose(); }
     const far = q === 0 ? t => t.z : q === 2 ? t => -t.z : q === 1 ? t => -t.x : t => t.x;   // smaller: farther off
     const C = o.core, side = !C ? () => 1 : q === 0 || q === 2 ? t => t.x < C[0] ? 0 : t.x > C[2] ? 2 : 1 : t => t.z < C[1] ? 0 : t.z > C[3] ? 2 : 1;
     const bands = new Map();
-    for (const t of tufts) { const k = Math.floor(far(t) / BAND) * 4 + side(t); (bands.get(k) || bands.set(k, []).get(k)).push(t); }
+    for (const t of tufts) { if (t.keep >= drawn) continue; const k = Math.floor(far(t) / BAND) * 4 + side(t); (bands.get(k) || bands.set(k, []).get(k)).push(t); }
+    if (!bands.size) return;
     const keys = [...bands.keys()].sort((a, b) => a - b), nb = Math.floor(keys[keys.length - 1] / 4) - Math.floor(keys[0] / 4) + 1;
     keys.forEach(k => {
       const bi = Math.floor(k / 4) - Math.floor(keys[0] / 4), list = bands.get(k).sort((a, b) => far(a) - far(b)), m = new THREE.InstancedMesh(geo, mat, list.length);
@@ -356,6 +363,7 @@ export function grass(pts, o = {}) {
     let root = out; while (root.parent) root = root.parent;
     if (root !== scene) { if (++away > 600) preRender.delete(cull); return; }   // (not in this scene: gone with its world, or not yet added)
     away = 0; const all = !!(typeof window !== 'undefined' && window.__grassAll);
+    if (share() !== drawn && !queued) { queued = true; requestAnimationFrame(() => { queued = false; build(quarter); }); }   // (a new pick: not inside the render)
     out.updateWorldMatrix(true, true); camera.updateMatrixWorld();
     // the same view as last time (the battle's camera at rest): nothing to do (the tests cost 0.36 ms a frame in battle 18)
     const e = camera.matrixWorld.elements, p = camera.projectionMatrix.elements; let same = seenCut === cut && seen[32] === (all ? 1 : 0);

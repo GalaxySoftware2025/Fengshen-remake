@@ -8,8 +8,9 @@ html, body { margin: 0; height: 100%; background: #050605; overflow: hidden; fon
 .title-xfade { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; }   /* the title flight's dissolve (main.js titlePan) */
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hidden { display: none !important; }
-/* the menu, top right (src/gamemenu.js): 選單 folds out the game speed (src/speed.js) and the controls page */
-#gmenu { position: absolute; right: 18px; top: 18px; z-index: 30; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; color: var(--paper); font-size: 15px; user-select: none; }
+/* the menu, top left [the user's call, 2026-11-20: it was at the top right] (src/gamemenu.js): 選單 folds out the game
+   speed (src/speed.js) and the controls page */
+#gmenu { position: absolute; left: 18px; top: 18px; z-index: 30; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; color: var(--paper); font-size: 15px; user-select: none; }
 #gmenu button { font: inherit; cursor: pointer; }
 #gmenu .gm-open { display: flex; align-items: center; gap: 9px; height: 36px; padding: 0 13px; color: var(--paper2); letter-spacing: 2px; background: rgba(12,10,8,.78); border: 1px solid rgba(216,178,90,.55); border-radius: 4px; }
 #gmenu .gm-open:hover, #gmenu.open .gm-open { background: rgba(40,30,16,.92); border-color: var(--gold); color: var(--paper); }
@@ -19,9 +20,10 @@ html, body { margin: 0; height: 100%; background: #050605; overflow: hidden; fon
 @keyframes gmIn { from { opacity: 0; transform: translateY(-6px); } }
 #gmenu .gm-row { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; box-sizing: border-box; border-radius: 3px; color: var(--paper); letter-spacing: 2px; text-align: left; background: none; border: 0; }
 #gmenu button.gm-row:hover { background: rgba(90,66,28,.6); color: var(--gold2); }
-#speed span { flex: 1; } #speed b { min-width: 46px; text-align: center; color: var(--gold2); letter-spacing: 0; font-variant-numeric: tabular-nums; }
-#speed button { width: 28px; height: 26px; padding: 0; line-height: 1; color: var(--gold2); background: rgba(40,30,16,.9); border: 1px solid rgba(216,178,90,.6); border-radius: 3px; }
-#speed button:hover:not(:disabled) { background: rgba(90,66,28,.95); } #speed button:disabled { opacity: .35; cursor: default; }
+#speed span, #volume span { flex: 1; } #speed b, #volume b { min-width: 46px; text-align: center; color: var(--gold2); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+#speed button, #volume button { width: 28px; height: 26px; padding: 0; line-height: 1; color: var(--gold2); background: rgba(40,30,16,.9); border: 1px solid rgba(216,178,90,.6); border-radius: 3px; }
+#speed button:hover:not(:disabled), #volume button:hover:not(:disabled) { background: rgba(90,66,28,.95); } #speed button:disabled, #volume button:disabled { opacity: .35; cursor: default; }
+#volume.muted b { color: var(--paper2); letter-spacing: 1px; }
 #quality span { flex: 1; } #quality button { width: 30px; height: 26px; padding: 0; line-height: 1; color: var(--paper); background: rgba(40,30,16,.9); border: 1px solid rgba(216,178,90,.35); border-radius: 3px; }
 #quality button:hover { background: rgba(90,66,28,.95); } #quality button.on { color: #1a1208; background: var(--gold2); border-color: var(--gold2); }
 body:has(#title:not(.hidden)) #gmenu, body:has(#controls:not(.hidden)) #gmenu { display: none; }   /* not on the title or the controls page */
@@ -73,7 +75,8 @@ body:has(#title:not(.hidden)) #gmenu, body:has(#controls:not(.hidden)) #gmenu { 
 #order .o.enemy { border-color: #8a3a2a; background: radial-gradient(#4a2a22, #1a0e0b); }
 #order .o.now { border-color: var(--gold2); box-shadow: 0 0 14px rgba(255,210,120,.8); transform: scale(1.15); }
 #order .o canvas { position: absolute; left: -11px; top: -6px; width: 64px; height: 64px; image-rendering: pixelated; }
-#card { position: absolute; left: 22px; bottom: 22px; width: 330px; padding: 14px 18px 12px 96px; min-height: 120px;
+/* the unit card at the top right [the user's call, 2026-11-20: the top left from 2026-11-19, the bottom left before] */
+#card { position: absolute; right: 22px; top: 18px; width: 330px; padding: 14px 18px 12px 96px; min-height: 120px;
   background: linear-gradient(160deg, rgba(241,230,204,.97), rgba(220,203,165,.97)); color: var(--ink); border-radius: 3px;
   border: 2px solid #7a5a22; box-shadow: 0 0 0 4px rgba(20,14,8,.85), 0 10px 40px rgba(0,0,0,.6); }
 #card.enemy { background: linear-gradient(160deg, rgba(236,214,200,.97), rgba(206,176,160,.97)); border-color: #7a2a1a; }
@@ -237,11 +240,12 @@ body:not(.tools) #pg, body:not(.tools) .pg-fly, body:not(.tools) #pg-pop { displ
 .panel h3 { margin: 0 0 14px; font-size: 24px; letter-spacing: 10px; color: var(--gold2); font-weight: 700; }
 #t-load { position: absolute; width: min(760px, 92vw); bottom: 10vh; }
 #camp { background: linear-gradient(90deg, rgba(0,0,0,.72), rgba(0,0,0,.35) 45%, rgba(0,0,0,.55)); display: grid; grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto 1fr;
-  gap: 18px 26px; padding: 30px 40px; box-sizing: border-box; place-items: stretch; align-content: stretch; }
-.c-head { grid-column: 1 / 3; display: flex; align-items: baseline; gap: 18px; }
+  gap: 18px 26px; padding: 18px 40px 30px; box-sizing: border-box; place-items: stretch; align-content: stretch; }
+/* the battle's name on the menu button's row (#gmenu: top 18, 36 high), right of it (camp.js fitHead) [the user's report, 2026-11-21] */
+.c-head { grid-column: 1 / 3; display: flex; align-items: center; gap: 18px; min-height: 36px; }
 .c-head small { font-size: 16px; color: var(--paper2); letter-spacing: 6px; }
 .c-head span { font-size: 16px; color: var(--paper2); letter-spacing: 4px; margin-right: 12px; }
-.c-head b { font-size: 40px; letter-spacing: 14px; color: #fff1cc; text-shadow: 0 0 20px rgba(255,170,60,.45); }
+.c-head b { font-size: 34px; line-height: 1; letter-spacing: 14px; color: #fff1cc; text-shadow: 0 0 20px rgba(255,170,60,.45); }
 #c-menu { display: flex; flex-direction: column; gap: 10px; }
 #c-menu button { font-size: 20px; letter-spacing: 6px; padding: 12px 0; }
 #c-menu button.on { border-color: var(--gold2); color: var(--gold2); box-shadow: 0 0 18px rgba(255,200,100,.25); }
@@ -301,7 +305,9 @@ i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; bo
 
 /* ---------- story scenes (Phase 3) ---------- */
 #fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 5; }
-#dev { position: absolute; left: 8px; top: 6px; z-index: 8; pointer-events: none; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+/* below the menu button (the top left since 2026-11-20: top 18 px, 38 px tall, in the overlay's zoom); src/battle.js
+   devTick places it to the pixel while the frame readout runs */
+#dev { position: absolute; left: 8px; top: calc(56px * var(--ui, 1) + 6px); z-index: 8; pointer-events: none; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 #dev > div { font: 13px/1.3 ui-monospace, Menlo, monospace; color: #fff; background: rgba(0,0,0,.5); padding: 2px 7px; border-radius: 3px; white-space: pre; }
 #fps { color: #9f9; }
 .from-rom #scene-at { display: none; }   /* the public build: no position readout (index.html) */
@@ -339,3 +345,77 @@ i.eq { font-style: normal; font-size: 11px; padding: 0 4px; margin-left: 5px; bo
 
 .iflight { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 8px rgba(255, 210, 120, .8)); }
 .iflight img, .iflight svg, .iflight > * { width: 100%; height: 100%; }
+/* the touch pad (src/touchpad.js): a phone's controls, over the game, kept to the safe area (a camera's notch) */
+#touchpad { position: fixed; inset: 0; z-index: 60; pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  font-family: var(--font); font-weight: 700; --tp: clamp(44px, 15vh, 64px); }
+#touchpad .tp-left { position: absolute; left: calc(env(safe-area-inset-left) + 18px); bottom: calc(env(safe-area-inset-bottom) + 16px); }
+#touchpad .tp-right { position: absolute; right: calc(env(safe-area-inset-right) + 18px); bottom: calc(env(safe-area-inset-bottom) + 16px);
+  width: calc(var(--tp) * 2.6); height: calc(var(--tp) * 2.9); }
+#touchpad .tp-dpad, #touchpad b { pointer-events: auto; touch-action: none; }
+/* the pad's two areas whole, gaps and all, are the pad's alone: a touch in them never reaches the game under them (the
+   battle took a thumb on the D-pad for a pointer over the field there: src/touchpad.js) [the user's call, 2026-11-21] */
+#touchpad .tp-left, #touchpad .tp-right { pointer-events: auto; touch-action: none; }
+#touchpad .tp-dpad { position: relative; width: calc(var(--tp) * 2.3); height: calc(var(--tp) * 2.3); border-radius: 50%;
+  background: radial-gradient(circle, rgba(20,16,10,.30) 0 30%, rgba(20,16,10,.42) 31%); border: 2px solid rgba(214,180,110,.45); }
+#touchpad .tp-dpad i { position: absolute; width: 0; height: 0; border: calc(var(--tp) * .2) solid transparent; opacity: .7; }
+#touchpad .tp-dpad .u { left: 50%; top: 8%; transform: translateX(-50%); border-bottom: calc(var(--tp) * .3) solid #e8d6a8; border-top-width: 0; }
+#touchpad .tp-dpad .d { left: 50%; bottom: 8%; transform: translateX(-50%); border-top: calc(var(--tp) * .3) solid #e8d6a8; border-bottom-width: 0; }
+#touchpad .tp-dpad .l { top: 50%; left: 8%; transform: translateY(-50%); border-right: calc(var(--tp) * .3) solid #e8d6a8; border-left-width: 0; }
+#touchpad .tp-dpad .r { top: 50%; right: 8%; transform: translateY(-50%); border-left: calc(var(--tp) * .3) solid #e8d6a8; border-right-width: 0; }
+#touchpad .tp-dpad.on-up .u, #touchpad .tp-dpad.on-down .d, #touchpad .tp-dpad.on-left .l, #touchpad .tp-dpad.on-right .r { opacity: 1; filter: drop-shadow(0 0 6px #ffd98a); }
+#touchpad b { display: flex; align-items: center; justify-content: center; color: #f3e6c4; background: rgba(20,16,10,.45);
+  border: 2px solid rgba(214,180,110,.5); border-radius: 50%; text-shadow: 0 1px 2px #000; }
+#touchpad b.on { background: rgba(120,90,40,.75); border-color: #ffd98a; }
+#touchpad .tp-big { position: absolute; width: var(--tp); height: var(--tp); font-size: calc(var(--tp) * .3); }
+#touchpad .tp-ok { right: 0; bottom: calc(var(--tp) * .55); width: calc(var(--tp) * 1.15); height: calc(var(--tp) * 1.15); background: rgba(120,40,24,.5); }
+#touchpad .tp-cancel { right: calc(var(--tp) * 1.35); bottom: 0; }
+#touchpad .tp-small { position: absolute; right: 0; display: flex; gap: 8px; }
+#touchpad .tp-small b { width: calc(var(--tp) * .72); height: calc(var(--tp) * .5); border-radius: 10px; font-size: calc(var(--tp) * .22); }
+#touchpad .tp-small:first-child { top: calc(var(--tp) * -.1); }
+#touchpad .tp-battle { top: calc(var(--tp) * .55); display: none; }
+#touchpad.in-battle .tp-battle { display: flex; }
+html.touch #keys { display: none; }   /* (the keyboard's hint strip: on a touch screen the pad is the controls) */
+html.no-cursor, html.no-cursor * { cursor: none !important; }   /* the pointer hidden while keys or a controller play: src/cursor.js */
+html.touch #card { top: 14px; right: calc(env(safe-area-inset-right) + 14px); }   /* (clear of a phone's camera notch) */
+html.touch #gmenu { top: 14px; left: calc(env(safe-area-inset-left) + 14px); }
+/* not over the full screens (the title, the brief, the camp, the controls page, the end): each answers a tap, and the pad
+   covered the camp's menu (tools/qa/touchpad.js) */
+body:has(#brief:not(.hidden)) #touchpad,
+body:has(#controls:not(.hidden)) #touchpad, body:has(#end:not(.hidden)) #touchpad { display: none; }
+/* on the title and the camp the pad too [the user's call, 2026-11-21: the virtual controller there], compact: the D-pad,
+   確定 over 取消 at the right edge (no 加速 / 跳過); the camp keeps clear of both (camp.js fit) */
+body:has(#title:not(.hidden)) #touchpad, body:has(#camp:not(.hidden)) #touchpad { --tp: clamp(38px, 11vh, 52px); }
+body:has(#title:not(.hidden)) #touchpad .tp-small, body:has(#camp:not(.hidden)) #touchpad .tp-small { display: none; }
+body:has(#title:not(.hidden)) #touchpad .tp-right, body:has(#camp:not(.hidden)) #touchpad .tp-right { width: calc(var(--tp) * 1.2); height: calc(var(--tp) * 2.35); }   /* (its area round 確定 and 取消 alone: the camp's page beside it) */
+body:has(#title:not(.hidden)) #touchpad .tp-ok, body:has(#camp:not(.hidden)) #touchpad .tp-ok { right: 0; bottom: calc(var(--tp) * 1.2); }
+body:has(#title:not(.hidden)) #touchpad .tp-cancel, body:has(#camp:not(.hidden)) #touchpad .tp-cancel { right: calc(var(--tp) * .075); bottom: 0; }
+/* a short window (a phone held sideways, ~400 px): the camp's eight buttons and the controls page in it whole, each button
+   still tall enough to touch (tools/qa/touchpad.js) */
+@media (max-height: 520px) {
+  #camp { padding: 14px 24px 10px; gap: 6px 22px; grid-template-columns: 180px minmax(0, 1fr); }
+  .c-head { min-height: 36px; } .c-head b { font-size: 22px; letter-spacing: 10px; } .c-head small, .c-head span { font-size: 13px; }
+  #c-menu { gap: 4px; } #c-menu button { font-size: 16px; letter-spacing: 5px; padding: 7px 0; } #c-menu button[data-id="go"] { margin: 3px 0; }
+  #c-panel { max-height: calc(var(--vh, 100vh) - 66px); padding: 10px 16px; }   /* (--vh: the window's height in the camp's own pixels when it is zoomed to fit: camp.js fit) */
+  /* every camp page whole in a phone held sideways (~412 px: 346 for the page), no scrolling [the user's report,
+     2026-11-21: the pages ran off the bottom on Android] (tools/qa/touchpad.js) */
+  #c-panel h3 { font-size: 18px; letter-spacing: 6px; margin-bottom: 6px; }
+  #c-panel .htabs { grid-template-columns: repeat(auto-fill, 60px); gap: 5px; margin-bottom: 6px; }
+  #c-panel .pt { padding: 2px 1px 3px; } #c-panel .pt canvas { width: 40px; height: 40px; } #c-panel .pt span { font-size: 12px; } #c-panel .pt small { font-size: 10px; }
+  #c-panel .pcard { grid-template-columns: 84px 1fr; gap: 2px 12px; font-size: 14px; } #c-panel .pcard canvas { width: 84px; height: 84px; }
+  #c-panel .pl { font-size: 13px; } #c-panel .pl span { margin: 0 8px 2px 0; }
+  #c-panel .ps { font-size: 14px; margin-bottom: 2px; } #c-panel .iside { gap: 4px; }
+  #c-panel .icols2 { grid-template-columns: 200px 1fr; gap: 14px; margin-top: 2px; }
+  #c-panel .iring { zoom: .58; }
+  #c-panel .ibag { max-height: calc(var(--vh, 100vh) - 230px); grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 10px; }
+  #c-panel .ibag h4 { font-size: 13px; margin-bottom: 2px; } #c-panel .ibag .it { padding: 2px 6px; font-size: 14px; gap: 6px; } #c-panel .ibag .ico { width: 30px; height: 30px; } #c-panel .ibag .it small { font-size: 12px; }
+  #c-panel .idesc2 { min-height: 0; padding: 4px 8px; font-size: 13px; } #c-panel .idesc2 .ico { width: 32px; height: 32px; } #c-panel .idesc2 b { font-size: 14px; } #c-panel .idesc2 .hint { font-size: 12px; }
+  #c-panel .lhead { font-size: 15px; padding: 3px 10px; } #c-panel .lhead b { font-size: 18px; }
+  #c-panel .lgrid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 5px; margin: 6px 0; }
+  #c-panel .lh { padding: 3px 1px 4px; } #c-panel .lh canvas { width: 50px; height: 50px; } #c-panel .lh span { font-size: 13px; } #c-panel .lh.must::after { font-size: 10px; padding: 0 4px; top: 2px; right: 2px; }
+  #c-panel .linfo { min-height: 0; padding: 5px 10px; font-size: 13px; gap: 2px 12px; } #c-panel .linfo b { font-size: 15px; }
+  #c-panel .lask { margin-top: 6px; padding: 5px 10px; font-size: 15px; } #c-panel .lask button { font-size: 15px; padding: 3px 16px; }
+  #c-panel .sl { padding: 5px 10px; font-size: 15px; } #c-panel .sl.head { font-size: 12px; padding-top: 0; }
+  #c-panel .bar { margin-top: 8px; } #c-panel .bar button { font-size: 14px; padding: 4px 14px; }
+  #controls .panel { padding: 12px 32px 10px; } #controls h3 { margin-bottom: 6px; } #controls table { font-size: 16px; }
+  #controls td { padding: 2px 0; } #controls kbd { line-height: 18px; padding: 2px 7px; } #controls .press { margin-top: 8px; }
+}

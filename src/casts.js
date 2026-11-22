@@ -8,7 +8,9 @@
 // original only holds its cast pose.
 import * as THREE from 'three';
 import { rand, effectH } from './world.js';
-import { vfx, anim, wait, V } from './battle.js';
+import { vfx as rawVfx, anim, wait, V } from './battle.js';
+// the effects through the themed handle: the dots this adds take the motif of the spell or level-up under way (src/motifs.js)
+const vfx = new Proxy({}, { get: (_, k) => rawVfx.themed[k], set: (_, k, v) => { rawVfx[k] = v; return true; } });
 import { swordMesh, pointAlong } from './spellkit.js';
 import { axes, face, canvasTex, once, eyeTex, fireWheel, leiFlapFrames } from './levelup.js';
 

@@ -2,6 +2,7 @@
 import { D } from './rules.js';
 import { sfx, SFX } from './audio.js';
 import { toUI } from './uiscale.js';
+import { tapOr } from './keys.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -119,7 +120,7 @@ export class UI {
     F.innerHTML = `<div class="vs"><span>${a.name}</span><span>→</span><span>${d.name}</span></div>
       <div class="big">${f.dmg}${f.kill ? ' <small style="font-size:16px;color:#ff8a6a">擊倒</small>' : ''}</div>
       <div class="sm"><span>命中 ${f.hit}%</span><span>會心 ${f.crit}%</span><span>剩餘 ${Math.max(0, d.hp - f.dmg)}</span></div>
-      <div class="go">再次點擊或按 I 確定</div>`;
+      <div class="go">${tapOr('再次點擊或按 I 確定')}</div>`;
   }
   // ---------- messages
   async say(text, speaker, auto) {
@@ -153,6 +154,9 @@ export class UI {
     this.tags.get(u).textContent = text;
   }
   layout(project, actors, dt, showBars) {
+    // the card shown follows its unit every frame, as the bar over it does [the user's report, 2026-11-21: a blow's 生命
+    // showed on the bar at once, on the card only when it was shown again]; unchanged, card() builds nothing
+    if (this.cardUnit && this.cardKey != null) this.card(this.cardUnit);
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i]; f.t += dt; if (f.t > f.life) { f.e.remove(); this.floaters.splice(i, 1); continue; }
       const p = project(f.world); f.e.style.left = toUI(p.x) + 'px'; f.e.style.top = toUI(p.y) + 'px';   // (screen points inside the overlay's zoom)

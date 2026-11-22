@@ -116,7 +116,7 @@ function native(E, ev, clock) {
       E.vfx.burst(p, { n: 60, speed: 5, cols: [[1, 0.95, 0.7], [1, 0.75, 0.3], [1, 0.45, 0.1]], size: 0.06, life: 1.1, g: 5, flicker: 1 });
       E.vfx.ring(p, [1, 0.7, 0.3], 2.6, 0.45, { intensity: 1.4 }); E.vfx.light(p.clone().setY(p.y + 0.6), [1, 0.6, 0.25], 30, 0.5, 8);
       E.vfx.flash([1, 0.7, 0.4], 0.12); E.vfx.shake(0.14, 0.25);
-      for (let i = 0; i < 10; i++) { const a = Math.random() * 6.28, r = Math.random() * 0.4; E.vfx.flame(p.x + Math.cos(a) * r, p.y - 0.05, p.z + Math.sin(a) * r * 0.6, { size: 0.45 + Math.random() * 0.3, asp: 2.2, life: 0.5 + Math.random() * 0.3, vy: 1.6 + Math.random() * 1.6 }); }
+      for (let i = 0; i < 10; i++) { const a = Math.random() * 6.28, r = Math.random() * 0.4; E.vfx.flame(p.x + Math.cos(a) * r, p.y - 0.05, p.z + Math.sin(a) * r * 0.6, { mode: 0, size: 0.45 + Math.random() * 0.3, asp: 2.2, life: 0.5 + Math.random() * 0.3, vy: 1.6 + Math.random() * 1.6 }); }
     }
     fires.length = 0;   // (the end the last blast left has gone with this piece)
     for (const dz of [-0.22, 0.22]) fires.push(new THREE.Vector3(RANGES[st.piece][1] + 0.05, BR.y + 0.08, BR.z + dz));   // the end left standing burns
@@ -135,7 +135,7 @@ function native(E, ev, clock) {
         const q = st.ball.position;
         if (!st.trail) st.trail = E.vfx.ribbon({ col: [1, 0.5, 0.15], width: 0.42, n: 18 });
         st.trail.push(q);
-        for (let i = 0; i < 6; i++) { const a = Math.random() * 6.28, e = Math.random() * 1.6 - 0.4; E.vfx.flame(q.x + Math.cos(a) * Math.cos(e) * 0.24, q.y + Math.sin(e) * 0.24, q.z + Math.sin(a) * Math.cos(e) * 0.24, { size: 0.3 + Math.random() * 0.25, asp: 1.9, life: 0.22 + Math.random() * 0.15, vy: 1.4 }); }   // a mantle of flame round a white-hot core
+        for (let i = 0; i < 6; i++) { const a = Math.random() * 6.28, e = Math.random() * 1.6 - 0.4; E.vfx.flame(q.x + Math.cos(a) * Math.cos(e) * 0.24, q.y + Math.sin(e) * 0.24, q.z + Math.sin(a) * Math.cos(e) * 0.24, { mode: 0, size: 0.3 + Math.random() * 0.25, asp: 1.9, life: 0.22 + Math.random() * 0.15, vy: 1.4 }); }   // a mantle of flame round a white-hot core
         for (let i = 0; i < 2; i++) E.vfx.puff(q.x + (Math.random() - 0.5) * 0.3, q.y + 0.1, q.z + (Math.random() - 0.5) * 0.3, { size: 0.3, size1: 0.55, life: 0.32, vy: 0.8 });
         if (Math.random() < 0.5) E.vfx.smokePuff(q.x, q.y + 0.2, q.z, { vy: 0.4, life: 1, size: 0.3, size1: 0.8 });
         for (let i = 0; i < 2; i++) E.vfx.spark(q.x, q.y, q.z, { vx: (Math.random() - 0.5) * 1.2, vy: 0.4 + Math.random(), vz: (Math.random() - 0.5) * 1.2, life: 0.5, size: 0.06, r: 1, gg: 0.75, b: 0.3, g: 2, flicker: 1, ph: Math.random() * 9 });
@@ -147,7 +147,7 @@ function native(E, ev, clock) {
       if (Math.random() < dt * 6) E.vfx.puff(d.m.position.x, d.m.position.y, d.m.position.z, { size: 0.08, size1: 0.18, life: 0.35 });
       if (d.m.position.y < RIVER - 0.5) { d.m.visible = false; }
     }
-    if ((acc += dt) > 0.12) { acc = 0; for (const f of fires) E.vfx.flame(f.x + (Math.random() - 0.5) * 0.1, f.y, f.z + (Math.random() - 0.5) * 0.3, { size: 0.22, size1: 0.1, life: 0.6, vy: 0.7 }); }
+    if ((acc += dt) > 0.12) { acc = 0; for (const f of fires) E.vfx.flame(f.x + (Math.random() - 0.5) * 0.1, f.y, f.z + (Math.random() - 0.5) * 0.3, { mode: 0, size: 0.22, size1: 0.1, life: 0.6, vy: 0.7 }); }
     last = t;
   };
   world.updaters.push(tick);

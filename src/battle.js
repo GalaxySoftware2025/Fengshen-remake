@@ -5,8 +5,9 @@ import * as THREE from 'three';
 import { World, groundH, rand, setLook, setEffectGround, preDraw } from './world.js';
 import { SpriteBank, Actor, VIEW } from './actors.js';
 import { LEVEL_POSE } from './levelup.js';
+import { SPELL_MOTIF, LEVEL_MOTIF } from './motifs.js';
 import { speed } from './speed.js';
-import { quality, onQuality, frameGate } from './quality.js';
+import { quality, onQuality, frameGate, capOf } from './quality.js';
 import { toUI } from './uiscale.js';
 import * as Keys from './keys.js';
 import { VFX } from './vfx.js';
@@ -1161,7 +1162,7 @@ function landResult(t, r) {
 }
 export function spellCtx(u, at, targets, results, cells) {
   const a = actorOf(u), ctx = {
-    vfx, cam, caster: a, targets: targets.map(actorOf), at: cellAt(...at), wait,   // (at the cell's level, as the cursor: not a void's bottom)
+    vfx: vfx.themedWith(vfx.motif), cam, caster: a, targets: targets.map(actorOf), at: cellAt(...at), wait,   // (at the cell's level, as the cursor: not a void's bottom; themed: its dots take the spell's motif, src/motifs.js)
     t0: gameT, track: [], until: s => wait(Math.max(0, (ctx.t0 + s - gameT) * 1000)), now: () => gameT - ctx.t0,   // (timeSpell sets the cast's own start and sound track; a raise has neither)
     cells: (cells || [at]).filter(c => R.inMap(...c)).map(c => cellAt(...c)),   // the spell's area, at its cells' levels (the aimed cell first)
     cue: () => { if (ctx.onHit) { const f = ctx.onHit; ctx.onHit = null; f(); } },   // the spell's sounds from here, before it lands (a spell whose first sound is not its blow: 哮天犬's cry as the hound appears)
@@ -1184,6 +1185,7 @@ async function levelUpPlay(u, ch) {
   vfx.ring(P, [1, 0.9, 0.5], 1.4, 0.6);
   await wait(350);   // let the camera arrive
   const pose = LEVEL_POSE[u.sprite];
+  vfx.motif = LEVEL_MOTIF[u.sprite] || 'hue';   // its dots in the hero's own shapes (src/motifs.js); kept for what it leaves falling (燕蓉's flowers), till the next cast, item or level-up sets its own
   if (pose) await pose(a, P); else { vfx.pillar(P, [1, 0.85, 0.4], 0.5, 4, 1.6, { intensity: 0.8, grow: 1 }); await wait(1200); }
   await wait(600);   // hold the final pose
   a.act = null; a.hover = 0; a.off.set(0, 0); u.facing = face;
@@ -1264,6 +1266,10 @@ async function turnStartFx(u, res) {
   }
 }
 export async function castSpell(u, sp, at) {
+  vfx.motif = SPELL_MOTIF[sp.id] || 'hue';   // the spell's dots in its own shapes (src/motifs.js), the cast pose's too
+  try { return await castSpell0(u, sp, at); } finally { vfx.motif = null; }
+}
+async function castSpell0(u, sp, at) {
   u.mp -= sp.mp; R.faceTo(u, at[0], at[1]);
   const eff = R.spellEffect(u, sp);
   if (eff.kind === 3) return raiseOn(u, at, sp.name, c => playSpell(sp.id, c, sp.kind));   // (the menu picks who: pickRaise)
@@ -1351,6 +1357,7 @@ function spellSounds(id) {
   }
 }
 export async function useItem(u, idx, at) {
+  vfx.motif = null;   // (an item's effects as they were: the motifs are the spells' and level-ups')
   const id = u.items[idx], it = D.items[id], eff = R.itemEffect(u, it);
   u.items.splice(idx, 1); R.faceTo(u, at[0], at[1]);
   await itemUse(u, id, at);
@@ -1375,6 +1382,7 @@ export async function useEffect(u, eff, cells, at, name, script) {
     if (r && r.dmg !== undefined) { if (t.hp <= 0) { t.alive = false; killedAny = true; await killAnim(t); await dropFind(u, t); } }
     else if (r) gained += r.exp || 0;
   }
+  for (let i = 0; i < targets.length; i++) if (results[i] && results[i].levelExp) await gainExp(targets[i], results[i].levelExp);   // 舍利子: its target's own
   if (!targets.length && !opts.arena) await ui.toast('沒有效果', 800);
   // experience [ROM 0x12460]: a damage cast or item by the level difference, as a blow's; any other a flat 10 (a resisted
   // status cast too)
@@ -1646,6 +1654,7 @@ export async function aiTurn(u) {
 }
 // battle 32's 紂王 [ROM 0x1C0C2]: two columns struck, every hero there losing 50, for his spell's MP
 async function zoneStrike(u, plan) {
+  vfx.motif = SPELL_MOTIF[plan.sp.id] || 'hue';   // (src/motifs.js, as castSpell)
   u.mp = Math.max(0, u.mp - plan.sp.mp);
   const t0 = gameT; await useEffect(u, { kind: 13, apply: () => ({ dmg: plan.dmg }) }, plan.cells, plan.at, plan.sp.name, async c => { timeSpell(c, plan.sp.id, t0); c.onHit = () => spellSounds(plan.sp.id); await playSpell(plan.sp.id, c, 13); if (c.onHit) c.onHit(); });
 }
@@ -1711,61 +1720,31 @@ async function winBeats(o) {
 
 // ---------------------------------------------------------------- loop
 let last = performance.now();
-// the frame governor: the render scale (pixel ratio) that keeps a steady 60 Hz. It shrinks when frames are missed (2 of 30
-// over 21 ms; by the
-// GPU cost measured with world.takeGpu, pixels ~ scale², where there is a timer) and grows only with clear GPU headroom
-// (without a timer: after 2 s of full-rate frames). It starts within a pixel
-// budget, changes in 0.05 steps only, never right after a change (each one reallocates the post chain: a hitch), and a
-// scale that proved too slow becomes a ceiling, so it settles instead of see-sawing. Frames over 120 ms (loading a world,
-// compiling shaders) are not counted. #fps shows it; #noscale turns it off.
-// At its smallest scale (or where shrinking stopped helping) a machine still late gives up the costly passes one at a
-// time (QUALITY: World.setQuality), and takes them back, the last given up first, before it grows again; a pass that
-// proved too slow when taken back is not tried again for 30 s. A new world (another battle, scene or room) starts with
-// the scale and passes where they were but without the old set's limits: a light set after a heavy one climbs back in
-// seconds, not 5% every 30 s (tools/qa/governor.js)
+// the render: what the player's 畫面品質 picks (src/quality.js), held as picked [the user's call, 2026-11-21: the game
+// must not change the resolution itself; the player picks it]. The pick sets the render scale (a pixel ratio:
+// quality.js capOf, for this window and display), the costly passes left off (QUALITY: World.setQuality), the lamps and
+// the grass; nothing here changes them as frames come slow or fast. (Until then a frame governor shrank the scale and gave
+// up passes when frames were late, and grew back with headroom: on a Galaxy S21 the picks then drew at much the same
+// resolution, as it held each at its floor.) This measures only: the frame rate and the GPU ms for the #fps readout.
+// #noscale leaves the scale alone (tools/qa/perf.js sets its own). tools/qa/governor.js
 const QUALITY = ['', ' · no AO', ' · no AO, MSAA', ' · no AO, MSAA, bloom'];
-// The player's 畫面品質 (src/quality.js) bounds it: the largest scale (max), the GPU ms aimed at (budget) and the passes
-// left off however much room there is (off: the level never taken back below it). 高 is the governor as it was.
-const perf = { acc: 0, n: 0, scale: 0, max: Math.min(quality().max, window.devicePixelRatio || 1), min: 0.6, cool: 0, fps: 0, gpu: 0, good: 0, ceil: 9, ceilAt: 0, floor: 0, miss: 0, before: 0, level: quality().off, lock: 0, lockAt: 0, tried: 0, scene: null };
-let BUDGET = quality().budget;   // GPU ms aimed at when there is room to grow (60 Hz leaves 16.7)
-const PIXELS = 2.6e6;   // start at most this many pixels
-const step = k => Math.round(Math.min(perf.max, Math.max(perf.min, k)) * 20) / 20;
-// a new pick: its bounds at once (a lower one shrinks the scale and turns its passes off now; a higher one lets the
-// passes back and the scale climb with the headroom, from where it is)
-onQuality(q => {
-  BUDGET = q.budget; perf.max = Math.min(q.max, window.devicePixelRatio || 1); perf.level = q.off;
-  perf.ceil = 9; perf.floor = 0; perf.before = 0; perf.lock = 0; perf.tried = 0; perf.good = 0; perf.cool = 2;
-  if (!world) return; world.setQuality(perf.level);
-  if (perf.scale) { const k = step(perf.scale); if (k !== perf.scale) { perf.scale = k; world.setScale(k); } }
-});
+const perf = { acc: 0, n: 0, scale: 0, size: '', fps: 0, gpu: 0, level: quality().off, scene: null };
+const cap = q => capOf(q, window.innerWidth, window.innerHeight, window.devicePixelRatio);   // (the window's: quality.js capOf)
+function apply() {
+  if (!world || /noscale/.test(location.hash)) return;
+  const q = quality(), k = cap(q); perf.level = q.off; world.setQuality(perf.level);
+  if (k !== perf.scale) { perf.scale = k; world.setScale(k); }
+}
+// a new pick: its scale and passes at once (the grass reads the pick itself, src/kit/terrain.js)
+onQuality(q => { if (!world) return; apply(); world.trimLamps(q.lamps); });
 // @qa job:governor   (tools/qa/governor.js feeds it made-up machines; tools/qa/scope.mjs)
 export function governor(ms) {
-  if (/noscale/.test(location.hash)) return;
-  if (!perf.scale) { perf.scale = step(Math.min(perf.max, Math.sqrt(PIXELS / (window.innerWidth * window.innerHeight)))); world.setScale(perf.scale); perf.cool = 1; }
-  if (perf.scene !== world.scene) { perf.scene = world.scene; perf.ceil = 9; perf.floor = 0; perf.before = 0; perf.lock = 0; world.setQuality(perf.level); }   // (a new world: its own limits)
-  if (ms > 120) { perf.acc = perf.n = perf.miss = 0; world.takeGpu(); return; }
-  perf.acc += ms; perf.n++; if (ms > 21) perf.miss++;
-  if (perf.n < 30) return;
-  const avg = perf.acc / perf.n, gpu = world.takeGpu(), missed = perf.miss >= 2; perf.fps = 1000 / avg; perf.gpu = gpu; perf.acc = perf.n = perf.miss = 0;
-  if (perf.cool > 0) { perf.cool--; return; }
-  let k = perf.scale;
-  if (perf.before && gpu != null) { if (gpu > perf.before.gpu * 0.85) perf.floor = perf.before.scale; perf.before = 0; }   // a drop that saved little: the cost is not in the pixels, stop shrinking
-  const now = performance.now(), least = Math.max(perf.min, perf.floor);
-  if (perf.lock && now - perf.lockAt > 30000) perf.lock = 0;
-  if (missed && perf.scale <= least + 1e-6 && perf.level < QUALITY.length - 1) {   // late at the smallest scale: give up the next pass
-    if (perf.tried && now - perf.tried < 10000) { perf.lock = perf.level + 1; perf.lockAt = now; }   // (one just taken back: too slow, leave it off a while)
-    perf.tried = 0; world.setQuality(++perf.level); perf.good = 0; perf.cool = 2; return;
-  }
-  if (!missed && perf.level > Math.max(perf.lock, quality().off) && (gpu != null ? gpu < BUDGET * 0.7 : avg < 17.6 && ++perf.good >= 6)) {   // room again: the last pass given up back first
-    perf.good = 0; perf.tried = now; world.setQuality(--perf.level); perf.cool = 2; return;
-  }
-  if (missed) k *= gpu != null && gpu > BUDGET ? Math.max(0.75, Math.sqrt(BUDGET / gpu)) : avg > 28 ? 0.8 : 0.9;   // frames missed
-  else if (gpu != null ? gpu < BUDGET * 0.8 : avg < 17.6 && ++perf.good >= 4) { perf.good = 0; k = gpu != null ? Math.min(k * 1.15, k * Math.sqrt(BUDGET / gpu)) : k * 1.08;   // clear headroom
-    if (gpu != null && gpu < BUDGET * 0.5) perf.ceil = 9; }   // (under half the budget: a ceiling from a heavier stretch is stale)
-  if (k < perf.scale) { perf.ceil = Math.max(least, Math.min(perf.ceil, perf.scale - 0.05)); perf.ceilAt = performance.now(); perf.good = 0; }   // (never under the floor: late at the floor, it sank to 55% and held a light stretch after for minutes)
-  else if (perf.ceil < 9 && performance.now() - perf.ceilAt > 30000) { perf.ceil += 0.05; perf.ceilAt = performance.now(); }   // a heavy stretch (a big spell) does not cap it for good
-  k = step(Math.max(Math.min(k, perf.ceil), perf.floor));
-  if (Math.abs(k - perf.scale) >= 0.05) { if (k < perf.scale && gpu != null) perf.before = { gpu, scale: perf.scale }; perf.scale = k; world.setScale(k); perf.cool = 2; }
+  const size = innerWidth + 'x' + innerHeight + '@' + (window.devicePixelRatio || 1);   // (the window resized, or moved to another display: its own scale)
+  if (size !== perf.size || !perf.scale) { perf.size = size; apply(); }
+  if (perf.scene !== world.scene) { perf.scene = world.scene; apply(); }   // (a new world: the pick's passes on it)
+  if (ms > 120) { perf.acc = perf.n = 0; world.takeGpu(); return; }   // (a world loading, programs built: not the frame rate)
+  perf.acc += ms; perf.n++;
+  if (perf.n >= 30) { perf.fps = 1000 * perf.n / perf.acc; perf.gpu = world.takeGpu(); perf.acc = perf.n = 0; }
 }
 // the dev readout (index.html #fps, top left above the scene readout), twice a second: the frame rate, the CPU ms a frame
 // (this loop's own work, the render's calls included), the GPU ms (the governor's timer: - where there is none), the
@@ -1782,14 +1761,18 @@ function devTick(now, ms, cpu) {
   const el = $('fps'), heap = performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + ' MB' : '-';
   el.textContent = (1000 / (dev.ms / dev.n)).toFixed(0) + ' fps · CPU ' + (dev.cpu / dev.n).toFixed(1) + ' ms · GPU ' + (perf.gpu ? perf.gpu.toFixed(1) + ' ms' : '-') + ' · ' + ((perf.scale || 1) * 100 | 0) + '%' + QUALITY[perf.level] + ' · JS ' + heap + ' · ' + (info ? info.memory.textures : 0) + ' tex · ' + Math.round(dev.calls / dev.n) + ' draws';
   el.classList.remove('hidden'); dev.t = now; dev.n = dev.ms = dev.cpu = dev.calls = 0;
-  // below the battle's turn order where they would meet (12 portraits, centred: it reaches the left in a narrower window)
+  // below the battle's turn order where they would meet (12 portraits, centred: it reaches the left in a narrower window),
+  // and below the menu button (the top left too, the user's call 2026-11-20; folded: the panel it opens may cover it)
   const o = $('order'), box = $('dev'), r = o && o.offsetParent && o.children.length ? o.getBoundingClientRect() : null;
-  box.style.top = (r && r.left < el.getBoundingClientRect().right + 8 ? Math.round(r.bottom + 6) : 6) + 'px';
+  const g = document.querySelector('#gmenu .gm-open'), gr = g && g.offsetParent ? g.getBoundingClientRect() : null;
+  let top = r && r.left < el.getBoundingClientRect().right + 8 ? Math.round(r.bottom + 6) : 6;
+  if (gr && gr.width) top = Math.max(top, Math.round(gr.bottom + 6));
+  box.style.top = top + 'px';
 }
 // the frame's own CPU ms, the mean since the last call (tools/qa/perf.js)
 const cpuAcc = { s: 0, n: 0 };
 export const cpuMs = () => { const v = cpuAcc.n ? cpuAcc.s / cpuAcc.n : null; cpuAcc.s = cpuAcc.n = 0; return v; };
-export const perfState = () => ({ fps: perf.fps, gpu: perf.gpu, scale: perf.scale, ceil: perf.ceil, floor: perf.floor, level: perf.level });
+export const perfState = () => ({ fps: perf.fps, gpu: perf.gpu, scale: perf.scale, level: perf.level });
 // one frame that throws must not stop the game: the loop asks for its next frame only at its end, so an exception used to end
 // it for good (the view frozen, the camera still, every wait() hung, while a scene's own clock ran on: the user's report,
 // scenes 20-22). Each part of a frame is guarded; each distinct error is reported once (console.error: a page error to QA)

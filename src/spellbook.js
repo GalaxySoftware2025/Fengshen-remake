@@ -66,7 +66,7 @@ function crack(v, a, b, col, life, o) {
   });
   return g;
 }
-// a chasm torn in the ground along a path (points on one level): a ragged gap, dark earth walls with the spell's light far
+// a chasm torn in the ground along a path (points on one level, or o.drape: on the ground all along): a ragged gap, dark earth walls with the spell's light far
 // down in it, a pale broken lip, the ground darkened round it, slabs of the lip heaving up and tipping back as it opens.
 // The caller drives it through the returned object: front (0-1, how far it has torn from the path's start), open (0-1),
 // hot (the light in it), a (fade); at(t) a point along it. Its front throws up dust and chips as it tears.
@@ -79,21 +79,21 @@ function chasm(v, path, col, o) {
   for (let i = 0; i <= N; i++) {
     const s = i / N * L, d = along(Math.min(L, s + 0.05)).sub(along(Math.max(0, s - 0.05))).setY(0).normalize(), n = V(-d.z, 0, d.x);
     const m = (Math.sin(s * 2.3 + ph[0]) * 0.6 + Math.sin(s * 5.9 + ph[1]) * 0.3 + Math.sin(s * 13 + ph[2]) * 0.15) * (o.wander ?? 0.12) * Math.min(1, s / 0.3, (L - s) / 0.3);   // (none at the ends: arms meet where they should)
-    P.push(along(s).addScaledVector(n, m).setY(y0 + 0.035)); S.push(n);
+    const q = along(s).addScaledVector(n, m); P.push(q.setY((o.drape ? effectH(q.x, q.z) : y0) + 0.035)); S.push(n);   // (drape: on the ground's own level all along, a chasm across the whole field)
   }
   const pos = [], aS = [], aX = [], aW = [], idx = [];
   P.forEach((p, i) => { for (const x of [-HW, HW]) { pos.push(p.x + S[i].x * x, p.y, p.z + S[i].z * x); aS.push(i / N * L); aX.push(x); aW.push(W * prof(i / N)); } });
   for (let i = 0; i < N; i++) { const q = i * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
   g.setAttribute('aS', new THREE.Float32BufferAttribute(aS, 1)); g.setAttribute('aX', new THREE.Float32BufferAttribute(aX, 1)); g.setAttribute('aW', new THREE.Float32BufferAttribute(aW, 1));
-  const u = { uFront: { value: 0 }, uOpen: { value: 0 }, uHot: { value: 0 }, uA: { value: 1 }, uT: { value: 0 }, uC: { value: new THREE.Color(...col) } };
+  const u = { uFront: { value: 0 }, uOpen: { value: 0 }, uHot: { value: 0 }, uA: { value: 1 }, uT: { value: 0 }, uC: { value: new THREE.Color(...col) }, uJag: { value: o.jag ?? 1 } };   // (jag: how far its width wanders with the noise; less, and it is as wide as it was asked all along)
   const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
     vertexShader: `attribute float aS, aX, aW; varying float vS, vX, vW; void main(){ vS = aS; vX = aX; vW = aW; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `uniform float uFront, uOpen, uHot, uA, uT; uniform vec3 uC; varying float vS, vX, vW; ${NOISE}
+    fragmentShader: `uniform float uFront, uOpen, uHot, uA, uT, uJag; uniform vec3 uC; varying float vS, vX, vW; ${NOISE}
       void main(){
         float fr = uFront - vS; if (fr < 0.0) discard;
         float n1 = fn(vec2(vS * 9.0, 1.7)), n2 = fn(vec2(vS * 9.0, 7.3)), n3 = fn(vec2(vS * 31.0, 3.1)), tip = smoothstep(0.0, 0.6, fr);
-        float hw = max(vW * uOpen * tip * (0.45 + 0.75 * (vX > 0.0 ? n1 : n2) + 0.35 * (n3 - 0.5)), 0.014);   // (each lip its own jag; a hairline where it has only torn)
+        float hw = max(vW * uOpen * tip * mix(1.0, 0.45 + 0.75 * (vX > 0.0 ? n1 : n2) + 0.35 * (n3 - 0.5), uJag), 0.014);   // (each lip its own jag; a hairline where it has only torn)
         float d = abs(vX), lip = 0.03 + 0.03 * n3 + 0.05 * uOpen * tip;
         vec4 c;
         if (d < hw) {
@@ -108,7 +108,7 @@ function chasm(v, path, col, o) {
   m.renderOrder = 2;
   // the slabs of its lips, under the ground until it tears past them
   const slabs = [];
-  for (let s = 0.15; s < L - 0.1; s += rand(0.13, 0.2)) for (const sg of [-1, 1]) {
+  for (let s = 0.15; s < L - 0.1; s += rand(0.13, 0.2) * (o.slabGap || 1)) for (const sg of [-1, 1]) {
     const i = Math.round(s / L * N), r = rockMesh(rand(0.06, 0.11), [0x7a6650, 0x6b5a46, 0x8a7660][(Math.random() * 3) | 0]);
     r.scale.multiply(V(1, 0.5, 1.5)); r.userData = { s, i, sg, j: rand(0.7, 1.2), yaw: Math.atan2(-S[i].z, S[i].x) + rand(-0.3, 0.3) }; r.visible = false; slabs.push(r);   // (long along the chasm)
   }
@@ -436,8 +436,10 @@ async function skySwords(ctx) {
 // Remade [the user's call, 2026-10-30: next-gen, no wheel]: the sky turns blood-red and the ground under the target glows
 // hot; sixteen blades burst out of the earth round it on trails of fire and spiral up into a crown of swords aimed down
 // at it, red lightning crackling between them, embers rising. On each sound two opposite blades tear free and plunge
-// through the target into the ground, where they stay, a cage of glowing blades; after the last, the cage flares and
-// erupts in a column of fire, the blades shatter into sparks: the blow.
+// through the target into the ground, where they stay, a cage of glowing blades; after the last, the cage flares white,
+// a great sword of crimson light drives down out of the sky through the target, blade-qi sweeps out along the ground
+// in eight crescents and the cage shatters into slivers of steel: the blow [the user's call, 2026-11-21: a sword art,
+// not fire: it ended in an explosion and a column of fire].
 async function furySwords(ctx) {
   const v = ctx.vfx, at = ctx.at.clone(), col = [1, 0.26, 0.05], hot = [1, 0.55, 0.15], F = 3.42, E = 6.52, N = 16;   // (deep: additive light blooms toward white)
   await intro(ctx, col, { dur: 900, dist: 10, pitch: 0.4 });
@@ -496,16 +498,25 @@ async function furySwords(ctx) {
       });
     }
   });
-  // the blow: the cage flares, then erupts in a column of fire; the blades shatter into sparks
-  await ctx.until(fin - 0.18);
-  for (const b of blades) for (const c of b.s.children) if (c.material && c.material.emissive) { c.material.emissive.setRGB(1, 0.4, 0.1); c.material.emissiveIntensity = 3; }
-  v.light(tg, hot, 40, 0.5, 6);
+  // the blow: the cage flares white; the great sword drives down out of the sky through the target, blade-qi sweeps out
+  // along the ground in crescents, the cage shatters into slivers of steel (no fire: a sword art)
+  const STEEL = [0.85, 0.92, 1];
+  await ctx.until(fin - 0.36);
+  for (const b of blades) for (const c of b.s.children) if (c.material && c.material.emissive) { c.material.emissive.setRGB(1, 0.85, 0.8); c.material.emissiveIntensity = 3; }
+  v.light(tg, [1, 0.6, 0.5], 30, 0.6, 6);
+  // (swordMesh: its guard at the origin, the blade 1.24 x its scale along +Y: pointed down, the hilt stops 3 over him and
+  // the tip goes through him into the ground; the trail follows the tip down out of the sky)
+  const BL = 1.24 * 3.4, great = swordMesh(col, 3.4), top = at.clone().setY(at.y + 12), down = at.clone().setY(at.y + BL - 0.9), gTrail = v.ribbon({ col, width: 0.5, n: 16 }), gCore = v.ribbon({ col: [1, 0.9, 0.85], width: 0.14, n: 12 });
+  v.timed(great, 0.36, k => { const p = top.clone().lerp(down, k * k), tip = p.clone().add(V(0, -BL, 0)); great.position.copy(p); pointAlong(great, V(0, -1, 0)); gTrail.push(tip); gCore.push(tip); }, () => { gTrail.end(); gCore.end(); });
   await ctx.until(fin);
-  v.flash([1, 0.55, 0.3], 0.5); v.impact(at, col, 1.9); v.hitstop = 0.15; v.shake(0.3, 0.45);
-  v.pillar(at, [1, 0.22, 0.03], 0.62, 6.5, 1.0, { intensity: 1.6, grow: 1 }); v.pillar(at, [1, 0.55, 0.15], 0.3, 7, 0.7, { intensity: 1.1 });
-  v.ring(at, col, 4.2, 0.9, { intensity: 1.6, y: at.y + 0.05 }); v.ring(at, [1, 1, 1], 2.4, 0.5, { y: at.y + 0.05 });
-  v.explode(at.clone().setY(at.y + 0.3), 0.7, { tint: [1, 0.6, 0.3] });
-  for (const b of blades) { const p = b.s.position.clone().add(V(0, 0.4, 0)); v.burst(p, { n: 10, speed: 3, cols: [[1, 1, 1], hot, col], size: 0.045, life: 0.6, g: 6, shape: 1, floor: at.y + 0.02 }); b.gone = true; b.s.visible = false; }
+  v.flash([1, 0.8, 0.75], 0.1); v.hitstop = 0.15; v.shake(0.3, 0.45); v.screen.chroma = Math.max(v.screen.chroma, 0.25);   // (a short flash, no dome: they read as an explosion)
+  v.light(tg, [1, 0.5, 0.45], 24, 0.4, 6); v.ring(at, col, 3.2, 0.45, { intensity: 0.9, y: at.y + 0.04 });
+  // the blade-qi: eight crescents sweeping out over the ground from the stroke, each a slash of crimson light
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + 0.2, rb = v.ribbon({ col, width: 0.18, n: 12 }), wb = v.ribbon({ col: [1, 0.9, 0.85], width: 0.05, n: 10 });
+    ticker(v, 0.45, k => { const e = 1 - (1 - k) ** 2, r = 0.4 + e * 3.4, bow = Math.sin(e * Math.PI) * 0.5, p = at.clone().add(V(Math.cos(a + bow) * r, 0, Math.sin(a + bow) * r)); p.y = effectH(p.x, p.z) + 0.3; rb.push(p); wb.push(p); }, () => { rb.end(); wb.end(); }); }
+  // the cage shatters: slivers of steel flung out from each blade
+  for (const b of blades) { const p = b.s.position.clone().add(V(0, 0.4, 0)); v.burst(p, { n: 12, speed: 3.2, cols: [STEEL, [1, 1, 1], col], size: 0.05, life: 0.7, g: 6, shape: 7, floor: at.y + 0.02 }); b.gone = true; b.s.visible = false; }
+  later(380, () => { great.visible = false; });
   ctx.hit(); await ctx.until(E + 0.3); outro(ctx);
 }
 // 長虹貫日: [ROM fx 6] one sword streaks back and forth across the area like a rainbow, cutting every cell, until the
@@ -870,7 +881,7 @@ async function arrowVolley(ctx, col, wind) {
   }));
   later(250, () => { a.act = null; });
   await ctx.until(F + 1.15);
-  for (const c of cells) swirl(v, c, wind, 0.25, 0.85, 2.6, 1.5, { speed: 6, twist: 5, sway: true, foam: wind.map(x => x * 0.5 + 0.5), intensity: 0.55, normal: true, ragged: true });
+  for (const c of cells) swirl(v, c, wind, 0.25, 0.85, 2.6, 1.5, { speed: 6, twist: 5, sway: true, foam: wind.map(x => x * 0.5 + 0.5), intensity: 0.55, normal: true, soft: true });
   for (const c of cells) for (let i = 0; i < 18; i++) later(i * 40, () => { const ang = rand(0, 6.28), r = rand(0.2, 0.6); v.spark(c.x + Math.cos(ang) * r, c.y + rand(0.05, 0.4), c.z + Math.sin(ang) * r, { vy: rand(1.2, 2.2), life: 0.9, size: 0.05, r: wind[0], gg: wind[1], b: wind[2], shape: 1, orb: { x: c.x, z: c.z, w: rand(7, 11) } }); });
   v.ring(c0, wind, 2.6, 0.6); glowTargets(ctx, 0.7, 1);
   await ctx.wait(500); ctx.hit(); await ctx.until(E - 0.2); outro(ctx);
@@ -884,7 +895,7 @@ async function arrowStorm(ctx) {
   await ctx.until(F - 0.3);
   DARK(ctx, 0.75, 0.95, 0.85, 0.7);
   const L = F + 3.1 - ctx.now();   // (to the flash)
-  swirl(v, at, wind, 0.4, 1.2, 3.6, L, { speed: 6, twist: 5, sway: true, intensity: 0.6, normal: true, ragged: true });
+  swirl(v, at, wind, 0.4, 1.2, 3.6, L, { speed: 6, twist: 5, sway: true, intensity: 0.6, normal: true, soft: true });
   const N = Math.round((L - 0.45) / 0.055); cueAt(ctx, F);
   for (let i = 0; i < N; i++) later(140 + i * 55, () => {
     const a = rand(0, 6.28), e = rand(-0.2, 0.5), d = V(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e)), c = at.clone().setY(at.y + rand(0.3, 1.3));
@@ -896,7 +907,7 @@ async function arrowStorm(ctx) {
   ticker(v, L, () => { for (const a of tgts(ctx)) a.flash = Math.random() < 0.4 ? 0.6 : 0; }, () => { for (const a of tgts(ctx)) a.flash = 0; });
   await ctx.until(F + 3.1);
   v.flash([0.9, 0.95, 1], 0.4); v.shake(0.16, 0.3); DARK(ctx, 0.3, 0.95, 0.85, 0.7);
-  for (const c of cells) swirl(v, c, wind, 0.3, 0.9, 2.8, 1.3, { speed: 7, twist: 5, sway: true, intensity: 0.5, normal: true, ragged: true });
+  for (const c of cells) swirl(v, c, wind, 0.3, 0.9, 2.8, 1.3, { speed: 7, twist: 5, sway: true, intensity: 0.5, normal: true, soft: true });
   v.ring(at, wind, spreadOf(cells) * 2 + 2, 0.7);
   ctx.hit(); await ctx.until(E - 0.2); outro(ctx);
 }
@@ -934,12 +945,16 @@ async function hurricane(ctx) {
   v.impact(tg, col, 1.0);
   // the cyclone: towering, stones and dust whirling up it, the target lifted and spun at its heart
   const a = tgts(ctx)[0], S = F + (ctx.track[1] || 2.1), L = S - ctx.now() + 0.25;
-  swirl(v, at, [0.2, 0.55, 0.9], 0.55, 1.6, 7, L, { speed: 8, twist: 7, foam: [0.85, 0.95, 1], intensity: 0.8, normal: true, sway: true, ragged: true });
-  swirl(v, at, [0.55, 0.85, 1], 0.4, 1.1, 7.5, L, { speed: -9, twist: 3, intensity: 0.4, ragged: true });
-  swirl(v, at, [0.85, 0.95, 1], 0.9, 2.2, 2.2, L, { speed: 5, twist: 2, intensity: 0.3, ragged: true });
-  const streaks = [0, 1, 2, 3].map(() => v.ribbon({ col: [0.85, 0.97, 1], width: 0.04, n: 20 }));
+  swirl(v, at, [0.2, 0.55, 0.9], 0.55, 1.6, 7, L, { speed: 8, twist: 7, foam: [0.85, 0.95, 1], intensity: 0.8, normal: true, sway: true, soft: true });
+  swirl(v, at, [0.55, 0.85, 1], 0.4, 1.1, 7.5, L, { speed: -9, twist: 3, intensity: 0.4, soft: true });
+  swirl(v, at, [0.85, 0.95, 1], 0.9, 2.2, 2.2, L, { speed: 5, twist: 2, intensity: 0.3, soft: true });
+  // streaks spiralling up it, each starting again at the foot when it reaches the top: a new ribbon then (one ribbon on
+  // through the wrap drew a straight line from the top to the foot down the cyclone's middle: the user's report, 2026-11-19)
+  const streak = () => v.ribbon({ col: [0.85, 0.97, 1], width: 0.04, n: 20 }), streaks = [0, 1, 2, 3].map(streak), lastH = [0, 0, 0, 0];
   ticker(v, L, (k, dt, t) => {
-    streaks.forEach((r, i) => { const ang = t * (7 + i) + i * 1.57, rr = 0.7 + i * 0.25, h = ((t * 1.6 + i * 0.25) % 1) * 6; r.push(at.clone().add(V(Math.cos(ang) * rr * (1 + h * 0.12), 0.2 + h, Math.sin(ang) * rr * (1 + h * 0.12)))); });
+    streaks.forEach((r, i) => { const ang = t * (7 + i) + i * 1.57, rr = 0.7 + i * 0.25, h = ((t * 1.6 + i * 0.25) % 1) * 6;
+      if (h < lastH[i]) { r.end(); r = streaks[i] = streak(); } lastH[i] = h;
+      r.push(at.clone().add(V(Math.cos(ang) * rr * (1 + h * 0.12), 0.2 + h, Math.sin(ang) * rr * (1 + h * 0.12)))); });
     if (Math.random() < dt * 50) { const ang = rand(0, 6.28), r = rand(0.5, 1.4); v.spark(at.x + Math.cos(ang) * r, at.y + rand(0.05, 0.6), at.z + Math.sin(ang) * r, { vy: rand(1.5, 3.5), life: rand(1, 1.5), size: rand(0.05, 0.09), r: 0.55, gg: 0.5, b: 0.42, shape: 1, orb: { x: at.x, z: at.z, w: 6 } }); }   // stones
     if (Math.random() < dt * 14) { const ang = rand(0, 6.28), r = rand(0.8, 1.6); v.smokePuff(at.x + Math.cos(ang) * r, at.y + 0.2, at.z + Math.sin(ang) * r, { vy: rand(0.8, 1.6), life: 1.2, size: 0.4, size1: 1.1, tint: [0.5, 0.46, 0.4], orb: { x: at.x, z: at.z, w: 4 } }); }   // dust
   }, () => streaks.forEach(r => r.end()));
@@ -1014,7 +1029,27 @@ async function fiveQi(ctx) {
 // tears open under the area in gulfs running up the screen (the original's), and the enemies drop into them up to the
 // waist, struggling, stones tumbling in; on the third sound the earth slams shut on them, dust blasting out along the
 // seams, and they are crushed between its lips; it grinds on them twice more, fire spurting from the seams, and on the
-// blow it crushes them a last time and the fire bursts out of every seam, flinging them up out of it
+// blow it crushes them a last time and the fire bursts out of every seam, flinging them up out of it.
+// 地裂天崩 is the earth splitting AND the heavens falling [the user's call, 2026-11-21: tear open the ground and the sky]:
+// as the ground tears, a rift tears open across the sky over the area, the void showing through it, its lips blazing
+// white-gold; on the slam and each grind, chunks of the sky break loose and crash down through it onto them (they were
+// spurts of fire); on the blow a great boulder of heaven comes down, the seams flare and fling them up, and the rift
+// seals over as the sky clears
+// the rift's picture: a jagged tear down the canvas (laid across the sky by its card's turn), the void inside, the lips
+// blazing gold and white, side cracks running off them
+let RIFT = null;
+const RIFT_TEX = () => RIFT || (RIFT = (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 1024; const g = c.getContext('2d');
+  const L = [], Rt = []; for (let y = 0; y <= 1024; y += 32) { const k = y / 1024, w = 70 * Math.pow(Math.sin(Math.PI * k), 0.75) + 2, x = 128 + Math.sin(k * 9.3) * 22 + (Math.random() - 0.5) * 18;
+    L.push([x - w / 2 - Math.random() * 10, y]); Rt.push([x + w / 2 + Math.random() * 10, y]); }
+  const path = () => { g.beginPath(); g.moveTo(...L[0]); for (const p of L) g.lineTo(...p); for (const p of Rt.slice().reverse()) g.lineTo(...p); g.closePath(); };
+  g.shadowColor = 'rgba(255,200,110,1)'; g.shadowBlur = 48; g.strokeStyle = 'rgba(255,214,140,1)'; g.lineWidth = 18; path(); g.stroke(); path(); g.stroke();   // the blaze round the lips
+  const vg = g.createLinearGradient(80, 0, 176, 0); vg.addColorStop(0, '#2a1440'); vg.addColorStop(0.5, '#05020c'); vg.addColorStop(1, '#2a1440');
+  g.shadowBlur = 0; g.fillStyle = vg; path(); g.fill();   // the void
+  g.fillStyle = 'rgba(220,200,255,0.8)'; for (let i = 0; i < 40; i++) { const t = Math.random(), j = (Math.random() * (L.length - 1)) | 0, x = L[j][0] + (Rt[j][0] - L[j][0]) * t; g.fillRect(x, L[j][1] + Math.random() * 32, 1.5, 1.5); }   // far stars in it
+  g.shadowColor = 'rgba(255,230,170,1)'; g.shadowBlur = 14; g.strokeStyle = '#fff6dc'; g.lineWidth = 6; path(); g.stroke();   // the white-hot edge
+  g.lineWidth = 5; g.strokeStyle = 'rgba(255,224,160,0.95)';   // side cracks off the lips
+  for (let i = 0; i < 14; i++) { const side = i % 2 ? Rt : L, j = 2 + ((Math.random() * (side.length - 4)) | 0), [x0, y0] = side[j], d = side === Rt ? 1 : -1; g.beginPath(); g.moveTo(x0, y0); let x = x0, y = y0; for (let s = 0; s < 4; s++) { x += d * (8 + Math.random() * 14); y += (Math.random() - 0.5) * 30; g.lineTo(x, y); } g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })());
 async function quake(ctx) {
   const v = ctx.vfx, cells = cellsOf(ctx), c0 = cells[0], a = ctx.caster, B = basis(ctx), F = 2.47, E = 6.08, H = 5.6;
   ctx.stand = true;   // (his casting without going under the earth: the user's call)
@@ -1027,16 +1062,39 @@ async function quake(ctx) {
   dustBurst(v, a.pos, 0.8); v.burst(a.pos.clone().setY(a.pos.y + 0.1), { n: 20, speed: 3, cols: [[1, 0.85, 0.5], FIRE], size: 0.05, life: 0.5, g: 6, up: 0.7 });   // (his fist into the ground)
   v.shake(0.3, 0.5); v.hitstop = 0.08;
   DARK(ctx, 0.8, 0.45, 0.85, 0.95);   // (the sky reddening: red kept most)
-  // the gulfs: one down each line of cells running up the screen (along the grid axis nearest the camera's view)
-  const ax = Math.abs(B.toCam.x) > Math.abs(B.toCam.z) ? V(1, 0, 0) : V(0, 0, 1), side = V(ax.z, 0, ax.x), lines = new Map();
-  for (const c of cells) { const k = Math.round(c.dot(side) * 2); (lines.get(k) || lines.set(k, []).get(k)).push(c); }
-  const rifts = [...lines.values()].map(cs => { cs.sort((p, q) => p.dot(ax) - q.dot(ax)); const m = cs[(cs.length - 1) >> 1], lo = m.dot(ax) - cs[0].dot(ax) + 0.5, hi = cs[cs.length - 1].dot(ax) - m.dot(ax) + 0.5;
-    const back = levelRun(m, ax.clone().negate(), lo), fwd = levelRun(m, ax, hi); if (back + fwd < 0.4) return null;
-    const ch = chasm(v, [m.clone().addScaledVector(ax, -back), m.clone().addScaledVector(ax, fwd)], FIRE, { w: 0.6, y: m.y, life: E + 0.1 - ctx.now(), wander: 0.06, prof: t => Math.min(1, t / 0.12, (1 - t) / 0.12) });
-    ch.y = m.y; return ch; }).filter(Boolean);
+  const mid = cells.reduce((a, c) => a.add(c.clone()), V(0, 0, 0)).multiplyScalar(1 / cells.length); mid.y = c0.y;   // (the area's middle: the sky's rift over it, the chasm through it)
+  // the sky tears: the rift opens across the heavens over the area, behind it from the camera, tilted, its blaze lighting the field
+  // (high over the area, in the battle's own view: a thin line at the edge of the screen before, half over a cliff; a
+  // camera brought lower to show more sky put the trees of the near slope in front of the enemies)
+  const sky = mid.clone().setY(mid.y + 4.8);   // (upright over the chasm, in its line: earth and sky torn as one, up the screen)
+  const rift = card(RIFT_TEX(), 2.6, 7, { order: 3 }), halo = card(v.glowTex, 6.5, 9, { add: true, col: [1, 0.72, 0.38], order: 2 });
+  rift.position.copy(sky); halo.position.copy(sky); rift.material.rotation = halo.material.rotation = 0.06;
+  let tear = 0; const riftT = E + 0.2 - ctx.now();
+  let riftW = 2.5;   // (its width open: widened with the chasm under it, below)
+  v.timed(rift, riftT, () => { rift.scale.x = 0.1 + riftW * tear; rift.material.opacity = Math.min(1, tear * 4); }); v.timed(halo, riftT, () => { halo.material.opacity = 0.95 * tear; });
+  ticker(v, 0.6, k => { tear = ease(k); }); v.light(sky, [1, 0.85, 0.55], 16, E - ctx.now(), 12);
+  // chunks of the sky breaking loose and crashing down through the rift onto the area: slate-blue stone, its broken edges
+  // smouldering gold, a trail of gold behind; dust and stone where it lands (land: they land that many seconds on)
+  const skyFall = (n, big, land = 0.42) => { for (let i = 0; i < n; i++) { const tc = cells[(Math.random() * cells.length) | 0], to = tc.clone().add(V(rand(-0.35, 0.35), 0, rand(-0.35, 0.35)));
+    const from = sky.clone().add(V(rand(-0.6, 0.6), rand(-1.6, 1.6), rand(-0.6, 0.6))), r = rockMesh(big ? 0.8 : rand(0.2, 0.34), 0x6e7896), tr = v.ribbon({ col: [1, 0.8, 0.45], width: big ? 0.7 : 0.24, n: 12 });
+    r.material.emissive = new THREE.Color(0.55, 0.32, 0.1); r.material.emissiveIntensity = 0.8;
+    const go = () => lob(v, r, from, to, 0, land, q => { tr.end(); dustBurst(v, q, big ? 1.4 : 0.5, [0.5, 0.48, 0.5]); v.burst(q.clone().setY(q.y + 0.15), { n: big ? 24 : 8, speed: big ? 3.5 : 2, cols: [[0.45, 0.48, 0.58], [0.6, 0.62, 0.72]], size: 0.06, life: 0.7, g: 8, up: 0.8, shape: 10 });
+      v.shake(big ? 0.4 : 0.1, big ? 0.5 : 0.18); if (big) { v.flash([1, 0.9, 0.7], 0.12); v.ring(q, [1, 0.85, 0.6], 3.6, 0.5, { intensity: 1, y: q.y + 0.04 }); } }, { fall: true, each: p => tr.push(p) });
+    if (big) go(); else later(i * 70, go); } };
+  // the gulf: one great chasm through the middle of the area, torn the whole height of the screen (along the grid axis
+  // nearest the camera's view, from the near edge to the far), the ground's own level all along [the user's call,
+  // 2026-11-21: one big crack down the whole screen, not a small one down each line of cells]
+  const ax = Math.abs(B.toCam.x) > Math.abs(B.toCam.z) ? V(1, 0, 0) : V(0, 0, 1), side = V(ax.z, 0, ax.x), far = ax.dot(B.toCam) > 0 ? ax.clone().negate() : ax.clone();   // (far: up the screen)
+  // as wide as the area all along its middle [the user's call, 2026-11-21: big enough to take in every cell it strikes]:
+  // the cells' reach either side of its line, half a cell more; its edges wander less (jag), so at its narrowest it still
+  // takes in the outermost (0.78 of its width at the least)
+  const reach = Math.max(...cells.map(c => Math.abs(c.clone().sub(mid).dot(side)))) + 0.5, CW = reach / 0.78 + 0.1;
+  riftW = Math.max(2.5, reach * 2.2);   // (the sky's rift as broad as fits the earth's under it: one tear)
+  const rifts = [chasm(v, [mid.clone().addScaledVector(far, -7), mid.clone().addScaledVector(far, 7)], FIRE, { w: CW, jag: 0.3, y: mid.y, drape: true, life: E + 0.1 - ctx.now(), wander: 0.2, slabGap: 2.2, prof: t => Math.min(1, t / 0.08, (1 - t) / 0.08) })];
+  rifts[0].y = mid.y;
   const C = F + (ctx.track[2] || 1.46), GRIND = [C + 0.55, C + 1.1];   // (C: the slam shut, on the third sound)
   let open = 0, hot = 0.7, flare = 0;
-  ticker(v, E - ctx.now(), (k, dt, t) => { flare *= Math.exp(-dt * 6); for (const ch of rifts) { ch.front = ease(Math.min(1, t / 0.35)); ch.open = open; ch.hot = hot * (1 + flare); } });
+  ticker(v, E - ctx.now(), (k, dt, t) => { flare *= Math.exp(-dt * 6); for (const ch of rifts) { ch.front = ease(Math.min(1, t / 0.6)); ch.open = open; ch.hot = hot * (1 + flare); } });   // (torn up the screen in 0.6 s)
   // they open: the enemies drop into them, struggling, stones tumbling in
   const vic = tgts(ctx).map(t => ({ t, ph: rand(0, 6.28) }));
   ticker(v, C - ctx.now(), (k, dt, t) => { open = ease(Math.min(1, t / 0.5)); const T = ctx.now();
@@ -1047,6 +1105,7 @@ async function quake(ctx) {
   // the slam: the lips crash together on them; dust blasts out along every seam; they are crushed
   const crush = (amt, len) => ticker(v, len, k => { const e = k < 0.25 ? k / 0.25 : 1 - (k - 0.25) / 0.75; for (const q of vic) q.t.sqz = amt * e; }, () => { for (const q of vic) q.t.sqz = 0; });
   const seamDust = (n, sp) => { for (const ch of rifts) for (let i = 0; i < n; i++) { const p = ch.at(i / (n - 1)); for (const sg of [-1, 1]) v.smokePuff(p.x, ch.y + 0.08, p.z, { vx: side.x * sg * sp * rand(0.7, 1.2), vz: side.z * sg * sp * rand(0.7, 1.2), vy: rand(0.4, 1.2), drag: 2.6, life: rand(0.7, 1.1), size: 0.22, size1: 0.7, tint: [0.5, 0.42, 0.33] }); } };
+  await ctx.until(C - 0.42); skyFall(5);   // (landing on the slam)
   await ctx.until(C);
   ticker(v, 0.1, k => { open = 1 - k * k; }, () => { open = 0; });
   await ctx.until(C + 0.1);
@@ -1054,13 +1113,13 @@ async function quake(ctx) {
   seamDust(6, 2.6);
   for (const q of vic) { q.t.lift = -0.12; q.t.off.set(0, 0); v.burst(q.t.chest(), { n: 10, speed: 2, cols: [[0.55, 0.45, 0.35], FIRE], size: 0.045, life: 0.45, g: 7, up: 0.8, shape: 0 }); }
   crush(0.6, 0.6);   // (no glow here: lit up, they hid the squeeze)
-  // it grinds on them: fire spurting from the seams, crushed again
-  const spurt = (n, big) => { for (const ch of rifts) for (let i = 0; i < n; i++) { const p = ch.at(rand(0.05, 0.95));
-    ticker(v, big ? 0.6 : 0.35, (k, dt) => { for (let j = perSec(dt, big ? 40 : 22); j > 0; j--) v.realFire(p.x + rand(-0.12, 0.12), ch.y, p.z + rand(-0.12, 0.12), { size: rand(0.35, 0.6) * (big ? 1.4 : 1), asp: rand(1.6, 2.2), life: rand(0.35, 0.55), vy: rand(2.5, 4.5) * (big ? 1.4 : 1) }); }); } };
-  for (const g of GRIND) { await ctx.until(g); v.shake(0.18, 0.3); flare = 1.2; crush(0.4, 0.4); seamDust(3, 1.4); spurt(2, false); v.light(c0.clone().setY(c0.y + 0.4), FIRE, 10, 0.3, 6); }
-  // the blow: a last crush, and the fire bursts out of every seam, flinging them up out of it
+  // it grinds on them, and the sky comes down on them: a hail of its broken stone through the rift on each grind
+  for (const g of GRIND) { await ctx.until(g - 0.42); skyFall(6); await ctx.until(g); v.shake(0.18, 0.3); flare = 1.2; crush(0.4, 0.4); seamDust(3, 1.4); }
+  // the blow: a great boulder of heaven comes down on them, a last crush, the seams flare and fling them up out of it
+  await ctx.until(H - 0.5); skyFall(1, true, 0.5); skyFall(5);
   await ctx.until(H);
-  v.shake(0.36, 0.5); v.hitstop = 0.1; flare = 2; crush(0.6, 0.35); spurt(3, true); seamDust(5, 2.2);
+  v.shake(0.36, 0.5); v.hitstop = 0.1; flare = 2; crush(0.6, 0.35); seamDust(5, 2.2);
+  ticker(v, Math.max(0.2, E - H - 0.1), k => { tear = 1 - ease(k); });   // (the rift seals over as the sky clears)
   for (const ch of rifts) for (let i = 0; i < 3; i++) { const p = ch.at(rand(0.1, 0.9)), r = rockMesh(rand(0.06, 0.12)), d = side.clone().multiplyScalar(rand(-1.4, 1.4)); lob(v, r, p.clone().setY(ch.y + 0.1), p.clone().add(d).setY(ch.y), rand(1, 1.8), rand(0.5, 0.8), q => dustBurst(v, q, 0.2)); }
   v.light(c0.clone().setY(c0.y + 0.5), FIRE, 24, 0.4, 8);
   ticker(v, 0.4, k => { for (const q of vic) q.t.lift = -0.12 + Math.sin(k * Math.PI) * 0.45 + 0.12 * k; }, () => { for (const q of vic) { q.t.lift = 0; q.t.off.set(0, 0); } });
@@ -1602,11 +1661,12 @@ async function corpseQi(ctx) {
   const lit = c => { const d = v.screen.dark; return [c[0] / Math.max(0.05, 1 - d), c[1] / Math.max(0.08, 1 - d * 0.92), c[2] / Math.max(0.05, 1 - d)]; };
   const GHOST = [0.6, 0.8, 0.58], GLOW = lit(GHOST);
   await intro(ctx, SICK, { dur: 700, dist: 10.5, pitch: 0.45 });
-  // ghost-lights round the area, guttering (the original's ring of lights), then they sink into the earth
+  // ghost-lights round the area, guttering (the original's ring of lights), then they sink into the earth: will-o'-the-
+  // wisps, small pale-green flames (鬼火) [the user's call, 2026-11-21: no round glows hanging in the air; they were glow cards]
   const lights = [...Array(8)].map((_, i) => { const a = i / 8 * 6.28, p = c0.clone().add(V(Math.cos(a) * R, 0, Math.sin(a) * R)); p.y = effectH(p.x, p.z);
-    const g = glowCard(v, [0.7, 1.4, 0.8], 0.45), t0 = ctx.now(), ph = rand(0, 6); g.material.opacity = 0;
-    v.timed(g, F + 0.3 - t0, (k, dt, t) => { const T = ctx.now(), sink = Math.max(0, (T - (F - 0.15)) / 0.3);
-      g.position.copy(p).setY(p.y + 0.45 + Math.sin(T * 3 + ph) * 0.08 - sink * sink * 0.6); g.material.opacity = Math.min(1, t * 3) * (0.7 + 0.3 * Math.sin(T * 17 + ph)) * (1 - sink); }); return p; });
+    const t0 = ctx.now(), ph = rand(0, 6);
+    ticker(v, F + 0.3 - t0, (k, dt) => { const T = ctx.now(), sink = Math.max(0, (T - (F - 0.15)) / 0.3), t = T - t0;
+      if (sink < 1 && Math.random() < dt * 22) v.realFire(p.x + rand(-0.03, 0.03), p.y + 0.3 + Math.sin(T * 3 + ph) * 0.08 - sink * sink * 0.6, p.z, { size: rand(0.5, 0.62) * Math.min(1, t * 3) * (1 - sink * 0.7), asp: 1.7, life: rand(0.35, 0.5), vy: 0.35, tint: [0.22, 1.7, 0.42] }); }); return p; });
   await channel(ctx, SICK, F); ctx.cue();
   // the dark falls; the ground glows a sick green under the cells, the miasma seeps up
   DARK(ctx, 0.95, 1, 0.92, 1);   // (near black, green kept a little: the grade darkens before the gamma, and 0.85 left the field half lit)

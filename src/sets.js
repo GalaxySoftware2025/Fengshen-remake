@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { groundH } from './world.js';
 import { rand } from './world.js';
+import { quality } from './quality.js';
 
 const SETS = {};
 export const registerSets = defs => Object.assign(SETS, defs);
@@ -169,5 +170,6 @@ export async function dress(E, def) {
   await def.build(E, FX);
   if (def.particles) particles(E, def.particles);
   for (const l of def.lights || []) { const L = new THREE.PointLight(l.col, l.i, l.d ?? 8, 1.6); L.position.set(l.x, l.y ?? 2, l.z); E.world.scene.add(L); }
+  E.world.trimLamps(quality().lamps);   // (畫面品質 中 / 低: fewer lamps, src/quality.js)
   E.world.updaters.push((dt, t) => { WATER.uTime.value = t; });
 }

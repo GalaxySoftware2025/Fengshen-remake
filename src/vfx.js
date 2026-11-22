@@ -3,6 +3,38 @@ import * as THREE from 'three';
 import { effectH, rand, FRONT_LAYER } from './world.js';
 
 // ---------------------------------------------------------------- particles
+// QA: every particle and flame added, logged while __qa.parts is an array (tools/qa/motifs.js: the shapes a spell shows)
+const QA_PARTS = () => typeof window !== 'undefined' && window.__qa && Array.isArray(window.__qa.parts);
+// Motifs [the user's call, 2026-11-21: no plain dots in a spell or a level-up; leaves for 旋風矢's green, and so on]: the
+// round dots a spell or a level-up throws (a soft dot, a glow, a spark, big enough to read as one and lasting) take a
+// shape of what the effect is made of. vfx.themed (the spells' ctx.vfx, src/levelup.js, src/casts.js) adds them under
+// vfx.motif (src/motifs.js: a spell's or a hero's; set by battle.js castSpell / levelUpPlay); the plain vfx (a map's
+// embers and fireflies, the deaths, the hits) is untouched. A motif is 'hue' (each dot by its colour: HUE), a shape for
+// every dot, or { colour: shape, any: shape } over the hue's. 'dot' keeps it round.
+export const SHAPE = { dot: null, leaf: 2, petal: 4, glint: 5, shard: 7, flame: 8, drop: 9, chip: 10, wisp: 11, snow: 12 };
+const HUE = { red: 'flame', gold: 'glint', green: 'leaf', cyan: 'drop', blue: 'shard', purple: 'wisp', pink: 'petal', brown: 'chip', white: 'glint', grey: 'chip' };
+export function colourOf(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx <= 0.02) return 'grey';
+  const sat = (mx - mn) / mx; if (sat < 0.18) return mx > 0.8 ? 'white' : 'grey';
+  const d = mx - mn, h = (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
+  if (h < 15 || h >= 345) return 'red';
+  if (h < 42) return mx < 0.75 && sat < 0.7 ? 'brown' : 'red';
+  if (h < 65) return mx < 0.7 ? 'brown' : 'gold';
+  return h < 165 ? 'green' : h < 195 ? 'cyan' : h < 250 ? 'blue' : h < 300 ? 'purple' : 'pink';
+}
+export const motifShape = (m, r, g, b) => { const c = colourOf(r, g, b); const n = m === 'hue' ? HUE[c] : typeof m === 'string' ? m : (m[c] || m.any || HUE[c]); return SHAPE[n]; };
+let motifNow = null;   // the motif of the themed call under way (synchronous: only what that call adds)
+const NOMOTIF = typeof location !== 'undefined' && /[#&]nomotif\b/.test(location.hash);   // (&nomotif: the dots as they were: tools/qa/motifs.js --selftest)
+const SPIN = { 2: 1, 4: 1, 10: 1, 12: 0.6 }, BIGGER = { 2: 1.8, 4: 1.8 };   // (leaves, petals, chips and flakes tumble; a leaf or petal fills less of its point than a dot)
+function themeParticle(q) {
+  if (!motifNow || NOMOTIF || q.shape > 1.5 || q.size < 0.035 || q.size >= 0.3 || q.life < 0.3) return;   // (a big soft glow is light, a tiny brief speck no dot)
+  const k = motifShape(motifNow, q.r, q.gg, q.b); if (k == null) return;
+  q.shape = k; q.size *= BIGGER[k] || 1; if (q.size1 != null) q.size1 *= BIGGER[k] || 1;
+  if (k === 2 || k === 4 || k === 10) { const m = (q.r + q.gg + q.b) / 3; q.r = m + (q.r - m) * 1.7; q.gg = m + (q.gg - m) * 1.7; q.b = m + (q.b - m) * 1.7; }   // (things, not light: a leaf's green deeper, a pale dot's colour would read white)
+  if (SPIN[k]) { q.spin = (Math.random() < 0.5 ? -1 : 1) * rand(0.5, 1.4) * SPIN[k]; q.ph = rand(0, 1); q.flicker = 0; }
+  else if (k === 8 || k === 9 || k === 11) q.shape += Math.random() * 0.999;   // (upright, each wavering its own way)
+  if (k === 9 || k === 11) q.flicker = 0;
+}
 const PVS = `attribute vec4 aCol; attribute float aSize; attribute float aShape; uniform float uScale;
   varying vec4 vCol; varying float vShape;
   void main(){ vCol = aCol; vShape = aShape; vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -11,7 +43,38 @@ const PFS = `varying vec4 vCol; varying float vShape;
   void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c);
     vec3 rgb = vCol.rgb; float a;
     float kind = floor(vShape + 0.0005);   // the shape by its whole number: a turning one carries its angle in the fraction (4.0-4.999 a petal), never past it (test/particles.mjs)
-    if (kind > 6.5) {   // an ice shard: a thin diamond turned by the shape's fraction, one face lit, a bright edge
+    vec2 u = vec2(c.x, -c.y);   // (up the screen)
+    if (kind > 11.5) {   // a snowflake: six arms, each with a pair of side branches, a small hexagon at the heart, turned by the fraction
+      float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
+      float ang = atan(q.y, q.x), k = floor(ang / 1.0472 + 0.5), aa = ang - k * 1.0472; vec2 f = length(q) * vec2(cos(aa), abs(sin(aa)));
+      float arm = (1.0 - smoothstep(0.016, 0.034, f.y)) * (1.0 - smoothstep(0.4, 0.46, f.x));
+      vec2 b0 = vec2(0.22, 0.0), b1 = vec2(0.32, 0.085), ba = b1 - b0, pa = f - b0; float hb = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+      float br = 1.0 - smoothstep(0.014, 0.03, length(pa - ba * hb));
+      a = max(max(arm, br), 1.0 - smoothstep(0.06, 0.09, length(q)));
+      rgb *= 0.85 + 0.35 * (1.0 - smoothstep(0.0, 0.3, length(q)));
+    } else if (kind > 10.5) {   // a ghost wisp: a soft head trailing a thin tail that curls up and away (積屍氣's will-o'-the-wisp)
+      float t = clamp((u.y + 0.32) / 0.78, 0.0, 1.0), sd = fract(vShape) * 6.2832;
+      float off = 0.13 * sin(t * 5.5 + sd) * t, w = mix(0.17, 0.015, pow(t, 0.7));
+      a = (1.0 - smoothstep(w * 0.35, w, abs(u.x - off))) * smoothstep(-0.34, -0.2, u.y) * (1.0 - smoothstep(0.42, 0.46, u.y)) * (1.0 - 0.55 * t);
+      rgb = mix(rgb, vec3(1.0), (1.0 - smoothstep(0.0, 0.12, length(u - vec2(0.0, -0.18)))) * 0.5);
+    } else if (kind > 9.5) {   // a rock chip: a broken stone of six faces of uneven depth, turned by the fraction, lit on one side
+      float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c; float e = 0.0;
+      for (int i = 0; i < 6; i++) { float an = float(i) * 1.0472 + 0.35 * sin(float(i) * 2.7 + r); e = max(e, dot(q, vec2(cos(an), sin(an))) / (0.26 + 0.1 * fract(sin(float(i) * 12.9 + r) * 43.7))); }
+      a = 1.0 - smoothstep(0.88, 1.0, e); rgb *= 0.7 + 0.5 * smoothstep(-0.15, 0.15, q.x - q.y);
+    } else if (kind > 8.5) {   // a water drop: round below, drawn up to a point, a bright fleck on its shoulder and its rim darker
+      float y = u.y, bot = 1.0 - smoothstep(0.17, 0.2, length(u - vec2(0.0, -0.13)));
+      float t = clamp((y + 0.13) / 0.55, 0.0, 1.0), w = 0.19 * pow(1.0 - t, 1.3);
+      float top = (1.0 - smoothstep(w - 0.02, w + 0.005, abs(u.x))) * step(-0.13, y) * step(y, 0.42);
+      a = max(bot, top); rgb *= 0.7 + 0.4 * smoothstep(0.2, 0.0, length(u - vec2(-0.03, -0.1)));
+      rgb = mix(rgb, vec3(1.0), 1.0 - smoothstep(0.02, 0.05, length(u - vec2(-0.07, -0.06))));
+    } else if (kind > 7.5) {   // a flame lick: a small fire, round at its root, wavering up to a torn tip, white-hot low in its heart
+      float t = clamp((u.y + 0.34) / 0.8, 0.0, 1.0), sd = fract(vShape) * 6.2832;
+      float x = u.x - 0.06 * sin(t * 7.0 + sd) * t, w = 0.23 * sin(3.1416 * pow(t, 0.55)) * (1.0 - 0.25 * t);
+      a = (1.0 - smoothstep(w - 0.05, w + 0.01, abs(x))) * step(u.y, 0.46) * step(-0.34, u.y);
+      a *= 1.0 - smoothstep(0.55, 0.95, t) * (0.5 + 0.5 * sin(t * 18.0 + sd * 3.0));   // the tip torn into tongues
+      rgb = mix(rgb, vec3(1.0, 0.9, 0.55), 0.45 * (1.0 - smoothstep(0.0, w * 0.6 + 0.01, abs(x))) * (1.0 - smoothstep(0.15, 0.55, t)));
+      rgb *= 1.0 - 0.35 * smoothstep(0.35, 0.9, t);   // (the tip cooler, redder)
+    } else if (kind > 6.5) {   // an ice shard: a thin diamond turned by the shape's fraction, one face lit, a bright edge
       float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
       float e = abs(q.x) / 0.16 + abs(q.y) / 0.46; a = 1.0 - smoothstep(0.86, 1.0, e);
       rgb *= mix(0.8, 1.25, step(0.0, q.x)) + 0.35 * smoothstep(0.7, 0.95, e);
@@ -37,7 +100,7 @@ const PFS = `varying vec4 vCol; varying float vShape;
       float r = fract(vShape) * 6.2832; vec2 q = mat2(cos(r), -sin(r), sin(r), cos(r)) * c;
       float w = 0.17 * (1.0 - pow(abs(q.y) / 0.46, 2.0)); a = (1.0 - smoothstep(w - 0.03, w + 0.01, abs(q.x))) * step(abs(q.y), 0.46);
       rgb *= 0.78 + 0.5 * smoothstep(-0.15, 0.15, q.x) - 0.25 * (1.0 - smoothstep(0.0, 0.02, abs(q.x)));
-    } else if (vShape > 0.5) {   // a spark: a crisp round dot (shapes: -1 a soft dot, 0 a glow, 1 a spark, 2 a leaf, 3 a blade, 4 a petal, 5 a glint, 6 an ember, 7 a shard; it was a square: specks of square pixels over the 3D, the user's report)
+    } else if (vShape > 0.5) {   // a spark: a crisp round dot (shapes: -1 a soft dot, 0 a glow, 1 a spark, 2 a leaf, 3 a blade, 4 a petal, 5 a glint, 6 an ember, 7 a shard, 8 a flame lick, 9 a water drop, 10 a rock chip, 11 a ghost wisp, 12 a snowflake; it was a square: specks of square pixels over the 3D, the user's report)
       a = 1.0 - smoothstep(0.3, 0.46, d);   // (its own colour: brightened in the middle, added light burnt it to white)
     } else a = (1.0 - smoothstep(0.0, 0.5, d)) * (vShape < -0.5 ? 1.0 : (0.35 + 0.65 * (1.0 - smoothstep(0.0, 0.22, d))));
     if (a < 0.01) discard; gl_FragColor = vec4(rgb, vCol.a * a); }`;
@@ -56,9 +119,11 @@ class Particles {
   add(p) {
     if (this.list.length >= this.n) this.list.shift();
     const q = Object.assign({ vx: 0, vy: 0, vz: 0, g: 0, drag: 0, age: 0, life: 1, size: 0.1, size1: null, r: 1, gg: 1, b: 1, a: 1, shape: 0, fadeIn: 0.08, wob: 0 }, p);
+    themeParticle(q);
     if ((q.shape === 5 || q.shape === 7) && !q.spin) q.shape += Math.random() * 0.999;   // a glint or a shard: each turned its own way
-    const grow = { 5: 2.2, 6: 1.3, 7: 1.5 }[Math.floor(q.shape)];   // (a glint's thin rays, a shard's sliver, an ember's halo: larger than a spark to read as one)
+    const grow = { 5: 2.2, 6: 1.3, 7: 1.5, 8: 1.7, 9: 1.5, 10: 1.3, 11: 1.9, 12: 1.9 }[Math.floor(q.shape)];   // (a glint's thin rays, a shard's sliver, an ember's halo: larger than a spark to read as one)
     if (grow) { q.size *= grow; if (q.size1 != null) q.size1 *= grow; }
+    if (QA_PARTS()) window.__qa.parts.push([Math.floor(q.shape), +q.size.toFixed(3), +q.life.toFixed(2), +q.r.toFixed(2), +q.gg.toFixed(2), +q.b.toFixed(2), motifNow ? 1 : 0]);   // (tools/qa/motifs.js; the last: added through the themed handle, the spell's or level-up's own)
     this.list.push(q);
   }
   update(dt) {
@@ -180,7 +245,9 @@ class Flames {
       blending: smoke ? THREE.NormalBlending : THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, toneMapped: false });
     this.mesh = new THREE.Mesh(geo, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = smoke ? 4 : 5; scene.add(this.mesh);
   }
-  add(o) { if (this.list.length >= this.n) this.list.shift(); this.list.push(Object.assign({ vx: 0, vy: 0, vz: 0, g: 0, drag: 0, age: 0, life: 1, size: 0.5, size1: null, asp: 1, mode: 0, tint: [1, 1, 1], seed: Math.random() }, o)); const q = this.list[this.list.length - 1]; if (!q.tint) q.tint = [1, 1, 1]; }
+  add(o) { if (this.list.length >= this.n) this.list.shift(); this.list.push(Object.assign({ vx: 0, vy: 0, vz: 0, g: 0, drag: 0, age: 0, life: 1, size: 0.5, size1: null, asp: 1, mode: 0, tint: [1, 1, 1], seed: Math.random() }, o));
+    const q = this.list[this.list.length - 1]; if (!q.tint) q.tint = [1, 1, 1];
+    if (QA_PARTS()) window.__qa.parts.push(['flame' + q.mode, +q.size.toFixed(3), +q.life.toFixed(2)]); }   // (tools/qa/motifs.js)
   update(dt, t) {
     this.mat.uniforms.uT.value = t;
     const L = this.list; let w = 0;
@@ -243,7 +310,14 @@ class Ribbon {
     this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 6;
     vfx.timed(this.mesh, 1e9, (k, dt) => this.tick(dt));
   }
-  push(p) { if (!this.dead) { this.pts.unshift(p.clone()); if (this.pts.length > this.o.n) this.pts.pop(); } }
+  push(p) {
+    if (this.dead) return;
+    // QA (window.__qa: tools/qa/spells.js): a jump, one step far longer than the steps either side of it, draws a straight
+    // line across the effect [颶風矢's streaks, wrapping from the cyclone's top to its foot in one ribbon: 2026-11-19]
+    if (window.__qa && this.pts.length) { const s = p.distanceTo(this.pts[0]), q = this.steps || (this.steps = []); q.push(s); if (q.length > 3) q.shift();
+      if (q.length === 3 && q[1] > 1.5 && q[1] > 6 * Math.max(q[0], q[2])) (window.__qa.ribbonJumps || (window.__qa.ribbonJumps = [])).push(+q[1].toFixed(2)); }
+    this.pts.unshift(p.clone()); if (this.pts.length > this.o.n) this.pts.pop();
+  }
   end() { this.dead = true; }
   tick(dt) {
     const it = this.v.items.find(i => i.mesh === this.mesh);
@@ -266,6 +340,14 @@ class Ribbon {
 export class VFX {
   constructor(world) {
     this.world = world; const S = this.scene = world.scene;
+    // the themed handle: every call through it adds under this.motif (a spell's or a level-up's, battle.js; see SHAPE)
+    // (themed: the motif of the moment, for src/levelup.js and src/casts.js; themedWith(m): one held, a spell's ctx.vfx,
+    // so what the spell leaves running after its cast keeps its shapes)
+    this.motif = null;
+    const handle = m => new Proxy(this, { get: (t, k) => { const v = t[k]; if (typeof v !== 'function') return v;
+      return (...a) => { const prev = motifNow; motifNow = m === undefined ? t.motif : m; try { return v.apply(t, a); } finally { motifNow = prev; } }; },
+      set: (t, k, v) => { t[k] = v; return true; } });
+    this.themed = handle(undefined); this.themedWith = m => handle(m || null);
     this.add = new Particles(S, 9000, THREE.AdditiveBlending);
     this.soft = new Particles(S, 4000, THREE.NormalBlending);
     this.flames = new Flames(S, 2500, false); this.smokes = new Flames(S, 700, true);
@@ -279,7 +361,7 @@ export class VFX {
     this.ringTex = ringTexture(); this.beamTex = beamTexture();
     this.glowTex = ctex(128, 128, (g, W) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, W); });
     this.lights = [];
-    for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 1.6); l.position.set(0, -50, 0); S.add(l); this.lights.push({ l, t: 0, life: 0, base: 0 }); }
+    for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 1.6); l.position.set(0, -50, 0); l.userData.pool = true; S.add(l); this.lights.push({ l, t: 0, life: 0, base: 0 }); }   // (pool: never one of the set's lamps, World.trimLamps)
     this.screen = { shake: 0, shakeT: 0, flash: 0, flashCol: new THREE.Color(1, 1, 1), chroma: 0, dark: 0, darkTarget: 0, darkCol: new THREE.Color(1, 1, 1), bars: 0, barsTarget: 0, heat: 0, heatTarget: 0 };
     this.hitstop = 0; this.timeScale = 1;
   }
@@ -296,7 +378,9 @@ export class VFX {
         size: o.size * rand(0.7, 1.3), r: c[0], gg: c[1], b: c[2], shape: o.shape, floor: effectH(p.x, p.z) + 0.02, ph: rand(0, 9), flicker: o.flicker });
     }
   }
-  flame(x, y, z, o) { this.sys('flames', x, z).add(Object.assign({ x, y, z }, o)); }
+  // a flame: real fire, as realFire (a tongue, mode 0, read as a little cone or triangle however it was drawn [the user's
+  // report, 2026-11-21: 哪吒's landing, a ring of triangles]; mode 0 stays for a caller that asks for it by name)
+  flame(x, y, z, o) { this.sys('flames', x, z).add(Object.assign({ x, y, z, mode: 3 }, o)); }
   realFire(x, y, z, o) { this.sys('flames', x, z).add(Object.assign({ x, y, z, mode: 3 }, o)); }   // real fire: noise-shaped flame bodies (not tongues), mode 3
   puff(x, y, z, o) { this.sys('flames', x, z).add(Object.assign({ x, y, z, mode: 1 }, o)); }
   smokePuff(x, y, z, o) { this.sys('smokes', x, z).add(Object.assign({ x, y, z, mode: 2, tint: [0.16, 0.13, 0.12] }, o)); }

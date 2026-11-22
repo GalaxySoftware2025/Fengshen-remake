@@ -149,7 +149,7 @@ async function arrow(ctx, wind) {
   {
     // whirlwind: a twisting funnel with leaves and dust caught in it
     await ctx.wait(250);
-    swirl(v, ctx.at.clone().setY(ctx.at.y), wind ? col : [0.85, 0.95, 0.8], 0.35, 1.25, 3.2, 1.9, { speed: 5, twist: 5, sway: true, foam: [0.9, 1, 0.9], intensity: 0.75, ragged: true });
+    swirl(v, ctx.at.clone().setY(ctx.at.y), wind ? col : [0.85, 0.95, 0.8], 0.35, 1.25, 3.2, 1.9, { speed: 5, twist: 5, sway: true, foam: [0.9, 1, 0.9], intensity: 0.75, soft: true });
     for (let i = 0; i < 90; i++) later(ctx, i * 16, () => {
       const ang = rand(0, 6.28), r = rand(0.3, 0.9), leaf = Math.random() < 0.5;
       const cc = leaf ? [[0.45, 0.75, 0.25], [0.6, 0.85, 0.35]][(Math.random() * 2) | 0] : [0.85, 1, 0.9];

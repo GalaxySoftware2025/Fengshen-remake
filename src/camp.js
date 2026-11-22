@@ -57,6 +57,10 @@ export function slotList(E, box, mode, state) {
 // (shown only on the camp's menu: the jobs that open it, not every scene the campaign passes on the way)
 // @qa job:hud job:saving job:flow
 const MENU = [['people', '查看人物'], ['cond', '勝利條件'], ['pick', '出戰人選'], ['items', '裝備物品'], ['go', '出　　擊'], ['save', '儲存記錄'], ['load', '讀取記錄'], ['title', '回到標題']];   // 出戰人選 (the original's 選擇人物, renamed: the user's call) before 裝備物品 [the user's call; the original lists 道具 first]
+// a page's first item, where the keyboard's frame goes when the menu opens it (勝利條件 has none: the frame stays on the menu);
+// 讀取記錄: 記錄一, as 儲存記錄 [the user's call, 2026-11-21: it framed the first slot holding a record, 自動記錄 at the
+// bottom when only that held one]
+const FIRST = { people: ['.htabs .pt'], items: ['.htabs .pt'], pick: ['.lh:not(.ro)'], save: ['.sl:not(.head):not(.locked)'], load: ['.sl:not(.head)'] };
 const statLine = r => `生命 ${r.mhp}　法力 ${r.mmp}　攻 ${r.atk}　防 ${r.df}　速 ${r.spd}　移 ${r.move}`;
 function itemName(id) { const it = C().items[id]; return it.name + (it.equip ? '<i class="eq">裝</i>' : ''); }
 
@@ -195,6 +199,28 @@ export async function campScene(E, state, onChange) {
   const box = $('c-panel');
   $('c-place').textContent = D.name;
   E.ui.show('camp', true);
+  // the battle's name on 選單's row, right of it (the menu button, src/gamemenu.js, sits over the camp's top left: the name
+  // was under it [the user's report, 2026-11-21]); kept clear of it as it grows (the speed shown in it) or the window changes
+  // A short window (a phone held sideways): the camp laid out at 412 high, zoomed down to the window's height, and on a
+  // touch screen kept between the touch pad's D-pad and its buttons [the user's report, 2026-11-21, a Galaxy S21 at 800 x
+  // 360: the pages ran off the bottom, and the pad was missing here]; --vh: the window's height in its own pixels
+  const head = $('camp').querySelector('.c-head'), gm = document.querySelector('#gmenu .gm-open'), campEl = $('camp');
+  const fit = () => {
+    const c = campEl; c.style.zoom = ''; c.style.left = c.style.right = ''; c.style.removeProperty('--vh');
+    if (matchMedia('(max-height: 520px)').matches) {
+      const pad = $('touchpad'), shown = e => e && e.offsetParent && e.getBoundingClientRect().width > 0;
+      const dp = pad && pad.querySelector('.tp-left'), ok = pad && pad.querySelector('.tp-right');   // (the pad's areas whole: a touch there is the pad's)
+      const gl = shown(dp) ? Math.round(dp.getBoundingClientRect().right + 8) : 0, gr = shown(ok) ? Math.round(innerWidth - ok.getBoundingClientRect().left + 8) : 0;
+      const z = Math.min(1, innerHeight / 412, (innerWidth - gl - gr) / 760);
+      c.style.zoom = z; c.style.setProperty('--vh', innerHeight / z + 'px'); c.style.left = gl + 'px'; c.style.right = gr + 'px';
+      const r = c.getBoundingClientRect(); if (Math.abs(r.left - gl) > 2) { c.style.left = gl / z + 'px'; c.style.right = gr / z + 'px'; }   // (a zoom that scales the box's own offsets too)
+    }
+    fitHead();
+  };
+  const fitHead = () => { if (!head) return; head.style.paddingLeft = '0px'; const g = gm && gm.offsetParent ? gm.getBoundingClientRect() : null, z = +campEl.style.zoom || 1;
+    head.style.paddingLeft = g ? Math.max(0, Math.round((g.right + 16 - head.getBoundingClientRect().left) / z)) + 'px' : ''; };   // (in the camp's own pixels: it may be zoomed)
+  const ro = typeof ResizeObserver !== 'undefined' && gm ? new ResizeObserver(fitHead) : null; if (ro) ro.observe(gm);
+  window.addEventListener('resize', fit); requestAnimationFrame(fit); fit();
   const refreshParty = onChange;
   // who goes: kept from an earlier visit to this battle's camp if still allowed, else only the heroes it must take
   // (campaign.js campPick)
@@ -221,7 +247,13 @@ export async function campScene(E, state, onChange) {
     else if (id === 'cond') conditions(E, box);
     else if (id === 'items') items(E, box, state, refreshParty);
     else if (id === 'pick') lineup(E, box, state, false);
-    else if (id === 'save' || id === 'load') slotList(E, box, id, state).then(v => { if (id === 'load' && v) pick({ load: v }); else open('people'); });
+    else if (id === 'save' || id === 'load') slotList(E, box, id, state).then(v => {
+      if (id === 'load' && v) return pick({ load: v });
+      // 返回 (or O): back to the menu, the frame on the button that opened them, nothing else lit [the user's reports,
+      // 2026-11-21: the frame went to 查看人物's page; then 查看人物 stayed marked as the open page beside it]
+      for (const b of menu.children) b.classList.remove('on');
+      box.innerHTML = ''; box.classList.add('hidden'); nav.focus(menu.querySelector(`[data-id="${id}"]`), true);
+    });
   };
   const result = await new Promise(res => {
     pick = res;
@@ -238,11 +270,14 @@ export async function campScene(E, state, onChange) {
         }
         if (id === 'title') return res('title');
         open(id);
+        // the frame straight onto the page's first item [the user's call, 2026-11-21: 出戰人選 on 林雲, 儲存記錄 on 記錄一]
+        const first = FIRST[id] && FIRST[id].map(q => box.querySelector(q)).find(Boolean);
+        if (first) nav.focus(first, true);
       };
     }
     open('people');
   });
-  nav.stop();
+  nav.stop(); if (ro) ro.disconnect(); window.removeEventListener('resize', fit); campEl.style.zoom = ''; campEl.style.left = campEl.style.right = '';
   E.ui.show('camp', false);
   return result;
 }

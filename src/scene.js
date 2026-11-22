@@ -15,6 +15,7 @@ import { speed } from './speed.js';
 import { soften, pinned, camOf, paceMs, at, offFade, mapKeyOf, parked as parkedOff, LINE_FACE, LINE_SHOW, songOf } from './tracks.js';
 import * as CUT from './cutfx.js';
 import { tabletOf, recolor } from './tablets.js';
+import * as Tex from './kit/tex.js';
 registerSets(REMADE);
 const { G } = R;
 const $ = id => document.getElementById(id);
@@ -43,9 +44,22 @@ function isCourt(S, f) {
   return who.length > 0 && who.every(w => COURT.includes(w));
 }
 
+// a scene's song asked for while the screen is dark waits for the picture [the user's report, 2026-11-21: the next
+// scene's song started before the scene showed]: nearly every scene sets its song, then loads its map, then fades in
+// (tools/rom: music, map, fadeIn within 2-19 frames), and the map is built in between, seconds on a slow machine. It
+// starts as the screen starts to clear (fade to 0) or a page shows (card); a scene that ends dark carries it to the next
+// one's first picture; one that ends at its battle drops it (the camp plays the battle's). tools/qa/xfade.js
+// It is fetched and decoded while the screen is dark (Audio.preload: seconds for a long song on a phone, under way as
+// the map is built), so it is ready as the picture comes; the fade-in never waits for it: a fade-in held back in the
+// dark after its warm-up frame (warm) came up with a 200-280 ms hitch (tools/qa/xfade.js).
+let heldSong = null;
+const dark = () => $('fade').style.opacity === '1';
+function song(id) { if (dark()) { heldSong = id; Audio.preload(id); } else { heldSong = null; Audio.play(id); } }
+function letSong() { if (heldSong == null) return; const id = heldSong; heldSong = null; Audio.play(id); }
 // a black overlay for the original's fades; white where the original loads a map from white (op 52, scene 54's way into
 // heaven), its fade-in then out of white (op 53)
 function fade(to, sec, white) {
+  if (to === 0) letSong();
   if (window.__qa) window.__qa.fades.push({ t: performance.now(), to });
   const f = $('fade'); if (to === 1) f.style.background = white ? '#fff' : '';
   if (f.style.opacity === String(to)) return Promise.resolve();   // already there (or going there): a new transition would restart it from the old value
@@ -55,7 +69,7 @@ function fade(to, sec, white) {
 // narration pages (op 54): ink text on black, click to continue
 async function card(E, lines, cls, beforeHide) {
   const c = $('card-screen'); c.className = 'screen ' + (cls || ''); c.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
-  c.classList.remove('hidden'); if (window.__qa) window.__qa.shown.push({ t: performance.now(), kind: 'card' });
+  c.classList.remove('hidden'); if (window.__qa) window.__qa.shown.push({ t: performance.now(), kind: 'card' }); letSong();
   await new Promise(res => { const go = () => { c.removeEventListener('click', go); window.removeEventListener('keydown', key); res(); }; const key = e => { if (Keys.is(e, 'ok') || Keys.is(e, 'fast')) go(); }; c.addEventListener('click', go); window.addEventListener('keydown', key); });
   if (beforeHide) beforeHide();
   if (c.classList.contains('over')) { c.style.transition = 'opacity .6s'; c.style.opacity = '0'; await new Promise(r => setTimeout(r, 600)); }   // a page over the map clears off it (no jump to the lit map)
@@ -99,8 +113,9 @@ async function showMap(E, S, key, court) {
   const sprites = new Set();
   for (const tr of Object.values(S.actors)) for (const p of tr) if (p[3]) sprites.add(spriteKey(parseInt(p[3], 16)));
   const set = setFor(key); view = set ? set.view || SET_VIEW : VIEW;   // (a set may frame itself: the world map fills the view as the original's screen)
+  if (set) await Tex.prepaint(Tex.planOf('map:' + key));   // (its shared textures painted side by side off the main thread: src/kit/tex.js)
   await E.loadWorld({ look: set ? { set } : { mapSD: 'assets/maps/' + key + '.png' }, sprites: [...sprites] });
-  if (set) await dress(E, set);
+  if (set) { await dress(E, set); Tex.learn('map:' + key); }
   if (court) E.world.grade.uniforms.uSat.value = set ? 0.98 : 0.85;      // 紂王's court: colour a little drained, and a letterbox
   E.vfx.screen.barsTarget = court ? 0.55 : 0;
   E.world.camera.fov = view.fov; E.world.camera.updateProjectionMatrix();
@@ -116,7 +131,7 @@ function warm(E) {
   W.render(); for (const o of off) o.frustumCulled = true;
 }
 
-// play one part of a scene; hooks: { join(cid) }. Resolves 'battle' when the intro reaches the battle, else 'end'.
+// play one part of a scene; hooks: { join(cid), after(): the next scene's first world, painted ahead }. Resolves 'battle' when the intro reaches the battle, else 'end'.
 // development: #scene=N&at=F starts the first scene played at frame F (the events before it run at once: maps, set
 // edits, joins, the song; no lines, cards or fades), posed as the original has it then; a frame past the scene's
 // battle starts its outro there (the battle skipped); with &hold the clock then stays at F
@@ -171,10 +186,18 @@ export async function play(E, tag, part, hooks) {
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
   E.ui.show('hud', false);
   const atLabel = document.getElementById('scene-at'); atLabel.classList.remove('hidden');
+  // the world after this one: the next map this part loads, else (an intro) its battle's set, painted ahead while this one plays
+  const nextWorld = () => {   // (an intro ends at its battle: the battle's set, not the outro's map after it)
+    const e = evs.find(x => x.f > t && (x.kind === 'map' || x.kind === 'descent' || (part === 'intro' && x.kind === 'battle')));
+    return e && e.kind !== 'battle' ? 'map:' + e.map : part === 'intro' && S.battle ? 'battle:' + S.battle : null;
+  };
   const setMap = async (key, cut, white) => {
+    const t0 = performance.now(), painted = setFor(key) ? Tex.prepaint(Tex.planOf('map:' + key)) : null;   // (under way while the screen goes dark)
     await fade(1, white ? 0 : 0.25, white);   // (from white: at once, as the original's palette turns white)
+    await painted; const t1 = performance.now();
     units.clear(); emote = null; groupEv = null; group = []; toss = null; tossEv = null; props.clear(); lineProp = null; rollEv = null; clearRoll();
     await showMap(E, S, key, !cut && isCourt(S, t)); worldReady = !cut; fresh = true;
+    if (window.__qa) (window.__qa.builds ||= []).push({ key, at: t0, painting: t1 - t0, building: performance.now() - t1 });   // (tools/qa/xfade.js)
     if (window.__remake) { window.__remake.world = 'map:' + key; window.__remake.mapAt = t; }
     for (const [slot, tr] of Object.entries(S.actors)) {
       const u = { side: 'npc', name: '', sprite: 'p0', x: 0, y: 0, facing: 'down', alive: true, status: { sleep: 0, seal: 0, poison: 0 }, buf: {}, hp: 1, mhp: 1, mp: 0, mmp: 0, done: false, slot };
@@ -184,6 +207,8 @@ export async function play(E, tag, part, hooks) {
     if (window.__remake) window.__remake.tracks = Object.fromEntries([...units].map(([k, a]) => [k, a.tr]));   // what is shown (src/qa.js)
     G.units = []; E.syncActors();
     if (!cut) pose(true);
+    const nx = nextWorld(); if (nx) Tex.prepaint(Tex.planOf(nx), true);
+    else if (hooks && hooks.after) hooks.after().then(k => { if (k) Tex.prepaint(Tex.planOf(k), true); });   // (the last map of the part: the next scene's first)
   };
   const clock = () => new Promise(r => { const t1 = performance.now(); requestAnimationFrame(() => r(Math.min(0.1, (performance.now() - t1) / 1000) * (fast ? 4 : 1) * speed())); });   // (speed: the player's pick, src/speed.js)
   const strike = (e, act, t, snap) => {
@@ -318,7 +343,7 @@ export async function play(E, tag, part, hooks) {
     }
   };
   if (mapKey) await setMap(mapKey);
-  if (tag === 'prologue' && part === 'intro') Audio.music(0x15);   // the new game's prologue sets its song before its script (0x2cdc)
+  if (tag === 'prologue' && part === 'intro') song(0x15);   // the new game's prologue sets its song before its script (0x2cdc)
   let ei = 0;
   try {
     for (;;) {
@@ -327,7 +352,7 @@ export async function play(E, tag, part, hooks) {
         const e = evs[ei++];
         if (e.kind === 'prop') propsPassed.add(e);
         if (seek != null && e.f < seek) {   // seeking (#at=): the state at the seek frame, nothing shown on the way
-          if (e.kind === 'music') { if (e.id < 0x8000) Audio.play(songOf(tag, e)); }
+          if (e.kind === 'music') { if (e.id < 0x8000) song(songOf(tag, e)); }
           else if (e.kind === 'map') { await setMap(e.map, false, e.white); lit = false; }
           else if (e.kind === 'descent') { await setMap(e.map, true); await fade(1, 0); lit = false; }
           else if (e.kind === 'fadeIn' || e.kind === 'say' || (e.kind === 'native' && e.name === 'vision' && seek > e.show)) lit = true;
@@ -349,7 +374,7 @@ export async function play(E, tag, part, hooks) {
           else if (e.kind === 'battle') { ei--; seek = null; }   // past the first part: the battle comes as usual
           continue;
         }
-        if (e.kind === 'music') { if (!skip || e.id < 0x8000) Audio.play(e.id < 0x8000 ? songOf(tag, e) : e.id); continue; }   // a song (skipping: still the right one; tracks.js SCENE_SONG: the user's songs), an effect
+        if (e.kind === 'music') { if (e.id < 0x8000) song(songOf(tag, e)); else if (!skip) Audio.play(e.id); continue; }   // a song (skipping: still the right one; tracks.js SCENE_SONG: the user's songs), an effect
         // @qa scene:42 scene:54
         if (skip && !['map', 'join', 'gift', 'cell', 'battle'].includes(e.kind)) continue;
         if (e.kind === 'map') await setMap(e.map, false, e.white);   // stays dark until the original's fade-in (or the first line / card)
@@ -426,7 +451,7 @@ export async function play(E, tag, part, hooks) {
         else if (e.kind === 'native' && worldReady && CUT[e.name]) CUT[e.name](E, e, () => t, slotActor);   // a native cut the player acts out (src/cutfx.js: scene 42's wisp, scene 43's slash)
         else if (e.kind === 'native' && worldReady) setFor(mapKeyOf(S, e.f))?.native?.(E, e, () => t);   // a native cut a remade set acts out (scene 6's bridge): it reads the scene clock
         else if (e.kind === 'appear' && worldReady && !skip && !((units.get(e.slot) || {}).tr || { gone: [] }).gone.some(g => Math.abs(g - e.f) <= 12)) appearing.set(e.slot, { t0: e.f, dur: Math.max(20, e.dur || 30), burst: true });
-        else if (e.kind === 'battle') { await fade(1, 0.4); return 'battle'; }   // dark while the battle's world is built
+        else if (e.kind === 'battle') { await fade(1, 0.4); heldSong = null; return 'battle'; }   // dark while the battle's world is built (the camp plays the battle's song)
       }
       if (seek != null) {   // the seek frame reached: pose, snap the camera, show it if the original shows the world then
         t = Math.max(t, seek); seek = null;
